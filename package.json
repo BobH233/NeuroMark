@@ -1,0 +1,79 @@
+{
+  "name": "neuromark-client",
+  "version": "0.1.0",
+  "description": "NeuroMark Electron 桌面端首版骨架",
+  "type": "module",
+  "main": "dist-electron/main/index.js",
+  "scripts": {
+    "dev": "node ./node_modules/electron-vite/bin/electron-vite.js dev",
+    "build": "vue-tsc --noEmit && node ./node_modules/electron-vite/bin/electron-vite.js build",
+    "typecheck": "vue-tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.node.json",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "test:unit": "vitest run -c vitest.config.ts",
+    "test:e2e": "playwright test",
+    "rebuild:native": "electron-builder install-app-deps",
+    "postinstall": "electron-builder install-app-deps"
+  },
+  "keywords": [
+    "electron",
+    "vue",
+    "education",
+    "grading"
+  ],
+  "author": "Codex",
+  "license": "MIT",
+  "dependencies": {
+    "@techstark/opencv-js": "^4.12.0-release.1",
+    "@vueuse/core": "^14.2.1",
+    "better-sqlite3": "^12.8.0",
+    "dayjs": "^1.11.20",
+    "dompurify": "^3.3.3",
+    "drizzle-orm": "^0.45.2",
+    "fs-extra": "^11.3.4",
+    "highlight.js": "^11.11.1",
+    "katex": "^0.16.44",
+    "markdown-it": "^14.1.1",
+    "markdown-it-katex": "^2.0.3",
+    "md-editor-v3": "^6.4.1",
+    "naive-ui": "^2.44.1",
+    "nanoid": "^5.1.7",
+    "openai": "^6.33.0",
+    "p-queue": "^9.1.0",
+    "pinia": "^3.0.4",
+    "sharp": "^0.34.5",
+    "viewerjs": "^1.11.7",
+    "vue": "^3.5.31",
+    "vue-router": "^5.0.4",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@electron/rebuild": "^4.0.3",
+    "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.58.2",
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/fs-extra": "^11.0.4",
+    "@types/node": "^25.5.0",
+    "@vitejs/plugin-vue": "^6.0.5",
+    "electron": "^41.1.0",
+    "electron-builder": "^26.8.1",
+    "electron-vite": "^5.0.0",
+    "eslint": "^10.1.0",
+    "eslint-plugin-vue": "^10.8.0",
+    "globals": "^17.4.0",
+    "playwright": "^1.58.2",
+    "prettier": "^3.8.1",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.57.2",
+    "vite": "^7.2.1",
+    "vitest": "^4.1.2",
+    "vue-eslint-parser": "^10.4.0",
+    "vue-tsc": "^3.2.6"
+  },
+  "build": {
+    "extends": "./build/electron-builder.yml"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  }
+}

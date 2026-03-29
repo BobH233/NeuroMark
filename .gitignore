@@ -1,0 +1,14 @@
+reference_python_project/
+node_modules/
+dist/
+dist-electron/
+release/
+playwright-report/
+test-results/
+coverage/
+.DS_Store
+*.log
+*.tmp
+.idea/
+.vscode/
+

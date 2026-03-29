@@ -1,0 +1,40 @@
+import { defineStore } from 'pinia';
+import type { AnswerDraftInput, AnswerDraftRecord, PromptPreset } from '@preload/contracts';
+
+export const useAnswerGeneratorStore = defineStore('answer-generator', {
+  state: () => ({
+    drafts: [] as AnswerDraftRecord[],
+    presets: [] as PromptPreset[],
+  }),
+  getters: {
+    draftMap(state) {
+      return new Map(state.drafts.map((item) => [item.id, item]));
+    },
+  },
+  actions: {
+    async bootstrap() {
+      const [drafts, presets] = await Promise.all([
+        window.neuromark.answerGenerator.listDrafts(),
+        window.neuromark.answerGenerator.listPromptPresets(),
+      ]);
+      this.drafts = drafts;
+      this.presets = presets;
+    },
+    async createDraft(input: AnswerDraftInput) {
+      const draft = await window.neuromark.answerGenerator.createDraft(input);
+      await this.bootstrap();
+      return draft;
+    },
+    async updateDraft(draftId: string, markdown: string) {
+      const updated = await window.neuromark.answerGenerator.updateDraft(
+        draftId,
+        markdown,
+      );
+      await this.bootstrap();
+      return updated;
+    },
+    getDraftById(draftId: string) {
+      return this.drafts.find((item) => item.id === draftId) ?? null;
+    },
+  },
+});

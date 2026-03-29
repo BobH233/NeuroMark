@@ -1,0 +1,19 @@
+appId: cn.bit-helper.neuromark
+productName: NeuroMark
+directories:
+  output: release
+files:
+  - dist/**
+  - dist-electron/**
+asar: true
+mac:
+  category: public.app-category.education
+win:
+  target:
+    - nsis
+linux:
+  target:
+    - AppImage
+    - deb
+  category: Education
+
