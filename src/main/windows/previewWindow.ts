@@ -6,20 +6,25 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export async function createPreviewWindow(token: string): Promise<BrowserWindow> {
   const window = new BrowserWindow({
+    show: false,
     width: 1320,
     height: 880,
     minWidth: 1000,
     minHeight: 720,
     title: 'NeuroMark 图片预览',
-    backgroundColor: '#0d1d28',
+    backgroundColor: '#111111',
     autoHideMenuBar: true,
-    titleBarStyle: 'default',
+    titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.mjs'),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
     },
+  });
+
+  window.once('ready-to-show', () => {
+    window.show();
   });
 
   const hash = `#/preview/${token}`;

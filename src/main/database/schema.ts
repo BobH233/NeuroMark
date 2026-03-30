@@ -68,6 +68,15 @@ export const answerDraftsTable = sqliteTable('answer_drafts', {
   updatedAt: text('updated_at').notNull(),
 });
 
+export const promptPresetsTable = sqliteTable('prompt_presets', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  description: text('description').notNull(),
+  prompt: text('prompt').notNull(),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+});
+
 export type Schema = {
   projectsTable: typeof projectsTable;
   paperRecordsTable: typeof paperRecordsTable;
@@ -75,4 +84,5 @@ export type Schema = {
   tasksTable: typeof tasksTable;
   settingsTable: typeof settingsTable;
   answerDraftsTable: typeof answerDraftsTable;
+  promptPresetsTable: typeof promptPresetsTable;
 };

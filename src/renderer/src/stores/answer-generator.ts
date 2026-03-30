@@ -1,5 +1,10 @@
 import { defineStore } from 'pinia';
-import type { AnswerDraftInput, AnswerDraftRecord, PromptPreset } from '@preload/contracts';
+import type {
+  AnswerDraftInput,
+  AnswerDraftRecord,
+  PromptPreset,
+  PromptPresetInput,
+} from '@preload/contracts';
 
 export const useAnswerGeneratorStore = defineStore('answer-generator', {
   state: () => ({
@@ -24,6 +29,15 @@ export const useAnswerGeneratorStore = defineStore('answer-generator', {
       const draft = await window.neuromark.answerGenerator.createDraft(input);
       await this.bootstrap();
       return draft;
+    },
+    async savePromptPreset(input: PromptPresetInput) {
+      const preset = await window.neuromark.answerGenerator.savePromptPreset(input);
+      await this.bootstrap();
+      return preset;
+    },
+    async deletePromptPreset(presetId: string) {
+      await window.neuromark.answerGenerator.deletePromptPreset(presetId);
+      await this.bootstrap();
     },
     async updateDraft(draftId: string, markdown: string) {
       const updated = await window.neuromark.answerGenerator.updateDraft(

@@ -1,4 +1,6 @@
-import { app, BrowserWindow, nativeTheme } from 'electron';
+import { app, BrowserWindow, nativeTheme, net, protocol } from 'electron';
+import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { registerIpcHandlers } from './ipc';
 import { createMainWindow } from './windows/mainWindow';
 import { createPreviewWindow } from './windows/previewWindow';
@@ -9,6 +11,34 @@ import { SettingsService } from './services/settingsService';
 import { TaskManager } from './services/taskManager';
 
 let mainWindow: BrowserWindow | null = null;
+const ALLOWED_IMAGE_EXTENSIONS = new Set([
+  '.png',
+  '.jpg',
+  '.jpeg',
+  '.webp',
+  '.bmp',
+  '.gif',
+  '.tif',
+  '.tiff',
+  '.svg',
+]);
+
+function registerLocalFileProtocol(): void {
+  protocol.handle('local-file', (request) => {
+    const targetPath = new URL(request.url).searchParams.get('path');
+
+    if (!targetPath) {
+      return new Response('Missing path', { status: 400 });
+    }
+
+    const extension = path.extname(targetPath).toLowerCase();
+    if (!ALLOWED_IMAGE_EXTENSIONS.has(extension)) {
+      return new Response('Unsupported file type', { status: 403 });
+    }
+
+    return net.fetch(pathToFileURL(targetPath).toString());
+  });
+}
 
 async function bootstrap(): Promise<void> {
   const projects = new ProjectService();
@@ -43,7 +73,10 @@ app.setAppUserModelId('cn.bit-helper.neuromark');
 
 nativeTheme.themeSource = 'light';
 
-app.whenReady().then(bootstrap);
+app.whenReady().then(async () => {
+  registerLocalFileProtocol();
+  await bootstrap();
+});
 
 app.on('activate', async () => {
   if (BrowserWindow.getAllWindows().length === 0) {

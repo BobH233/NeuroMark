@@ -1,18 +1,20 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { useRoute } from 'vue-router';
-import { NButton, NEmpty, NSpace } from 'naive-ui';
+import { NEmpty } from 'naive-ui';
 import type { PreviewSession } from '@preload/contracts';
 import { toImageSrc } from '@/utils/file';
 
 const route = useRoute();
 const session = ref<PreviewSession | null>(null);
+const loading = ref(true);
 const activeIndex = ref(0);
 const zoom = ref(1);
-const rotation = ref(0);
+const rotations = ref<Record<number, number>>({});
 const translate = ref({ x: 0, y: 0 });
 const dragging = ref(false);
 const dragOrigin = ref({ x: 0, y: 0 });
+const suppressTransformTransition = ref(false);
 
 const activeImage = computed(() => {
   if (!session.value) {
@@ -21,27 +23,95 @@ const activeImage = computed(() => {
   return session.value.images[activeIndex.value] ?? null;
 });
 
+const zoomPercent = computed(() => Math.round(zoom.value * 100));
+const hasMultipleImages = computed(() => (session.value?.images.length ?? 0) > 1);
+const activeTitle = computed(() => activeImage.value?.title ?? '图片预览');
+const activeCaption = computed(() => activeImage.value?.caption ?? '');
+const activeRotation = computed(() => rotations.value[activeIndex.value] ?? 0);
+
 onMounted(async () => {
   const token = String(route.params.token ?? '');
-  const previewSession = await window.neuromark.app.getPreviewSession(token);
-  session.value = previewSession;
-  activeIndex.value = previewSession?.initialIndex ?? 0;
+  try {
+    const previewSession = await window.neuromark.app.getPreviewSession(token);
+    session.value = previewSession;
+    activeIndex.value = previewSession?.initialIndex ?? 0;
+  } finally {
+    loading.value = false;
+  }
+  window.addEventListener('keydown', handleKeydown);
+});
+
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', handleKeydown);
 });
 
 function resetView() {
   zoom.value = 1;
-  rotation.value = 0;
+  rotations.value[activeIndex.value] = 0;
   translate.value = { x: 0, y: 0 };
+}
+
+function fitView() {
+  zoom.value = 1;
+  translate.value = { x: 0, y: 0 };
+}
+
+function setZoom(nextZoom: number) {
+  zoom.value = Math.min(4, Math.max(0.25, Number(nextZoom.toFixed(2))));
+}
+
+function zoomIn() {
+  setZoom(zoom.value + 0.1);
+}
+
+function zoomOut() {
+  setZoom(zoom.value - 0.1);
+}
+
+function rotateLeft() {
+  rotations.value[activeIndex.value] = activeRotation.value - 90;
+}
+
+function rotateRight() {
+  rotations.value[activeIndex.value] = activeRotation.value + 90;
+}
+
+function selectImage(index: number) {
+  suppressTransformTransition.value = true;
+  activeIndex.value = index;
+  fitView();
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      suppressTransformTransition.value = false;
+    });
+  });
+}
+
+function showPrevious() {
+  if (!session.value?.images.length) {
+    return;
+  }
+  selectImage((activeIndex.value - 1 + session.value.images.length) % session.value.images.length);
+}
+
+function showNext() {
+  if (!session.value?.images.length) {
+    return;
+  }
+  selectImage((activeIndex.value + 1) % session.value.images.length);
 }
 
 function handleWheel(event: WheelEvent) {
   event.preventDefault();
-  zoom.value = Math.min(4, Math.max(0.5, zoom.value + (event.deltaY > 0 ? -0.1 : 0.1)));
+  setZoom(zoom.value + (event.deltaY > 0 ? -0.08 : 0.08));
 }
 
 function startDrag(event: MouseEvent) {
   dragging.value = true;
-  dragOrigin.value = { x: event.clientX - translate.value.x, y: event.clientY - translate.value.y };
+  dragOrigin.value = {
+    x: event.clientX - translate.value.x,
+    y: event.clientY - translate.value.y,
+  };
 }
 
 function moveDrag(event: MouseEvent) {
@@ -57,69 +127,474 @@ function moveDrag(event: MouseEvent) {
 function endDrag() {
   dragging.value = false;
 }
+
+function handleKeydown(event: KeyboardEvent) {
+  if (!session.value) {
+    return;
+  }
+
+  if (event.key === 'ArrowLeft') {
+    showPrevious();
+  } else if (event.key === 'ArrowRight') {
+    showNext();
+  } else if (event.key === '+' || event.key === '=') {
+    zoomIn();
+  } else if (event.key === '-') {
+    zoomOut();
+  } else if (event.key === '0') {
+    fitView();
+  } else if (event.key === '[') {
+    rotateLeft();
+  } else if (event.key === ']') {
+    rotateRight();
+  }
+}
 </script>
 
 <template>
   <div class="preview-page" @mousemove="moveDrag" @mouseup="endDrag" @mouseleave="endDrag">
     <template v-if="session && activeImage">
-      <aside class="preview-sidebar">
-        <div class="preview-title">{{ session.title }}</div>
-        <div class="preview-subtitle">点击缩略图切换页面，滚轮缩放，按住拖动查看局部。</div>
-        <div class="preview-thumb-list">
-          <button
-            v-for="(image, index) in session.images"
-            :key="image.title"
-            class="preview-thumb"
-            :class="{ active: index === activeIndex }"
-            @click="activeIndex = index"
-          >
-            <img :src="toImageSrc(image.src)" :alt="image.title" />
-            <span>{{ image.title }}</span>
-          </button>
-        </div>
-      </aside>
-
-      <section class="preview-stage-shell">
-        <div class="preview-toolbar">
-          <NSpace>
-            <NButton size="small" @click="zoom = Math.max(0.5, zoom - 0.1)">缩小</NButton>
-            <NButton size="small" @click="zoom = Math.min(4, zoom + 0.1)">放大</NButton>
-            <NButton size="small" @click="rotation -= 90">左旋</NButton>
-            <NButton size="small" @click="rotation += 90">右旋</NButton>
-            <NButton size="small" @click="resetView">重置</NButton>
-          </NSpace>
-          <div class="preview-toolbar-meta">
-            缩放 {{ Math.round(zoom * 100) }}% · 旋转 {{ rotation }}°
-          </div>
-        </div>
-
-        <div class="preview-stage" @wheel="handleWheel">
-          <div
-            class="preview-canvas"
-            :style="{
-              transform: `translate(${translate.x}px, ${translate.y}px) scale(${zoom}) rotate(${rotation}deg)`
-            }"
-            @mousedown="startDrag"
-          >
-            <img class="preview-image" :src="toImageSrc(activeImage.src)" :alt="activeImage.title" />
-            <div
-              v-for="region in activeImage.regions"
-              :key="`${activeImage.title}-${region.questionId}`"
-              class="preview-region"
-              :style="{
-                left: `${region.x * 100}%`,
-                top: `${region.y * 100}%`,
-                width: `${region.width * 100}%`,
-                height: `${region.height * 100}%`
-              }"
-            >
-              <span>{{ region.questionId }}</span>
+      <section class="preview-shell">
+        <div class="preview-header">
+          <div>
+            <div class="preview-title">{{ session.title }}</div>
+            <div class="preview-subtitle">
+              {{ activeTitle }}
+              <span v-if="activeCaption"> · {{ activeCaption }}</span>
             </div>
           </div>
+
+          <div class="preview-counter">{{ activeIndex + 1 }} / {{ session.images.length }}</div>
         </div>
+
+        <main class="preview-stage-shell" :class="{ 'preview-stage-shell--single': !hasMultipleImages }">
+          <aside v-if="hasMultipleImages" class="preview-rail">
+            <button
+              v-for="(image, index) in session.images"
+              :key="`${image.title}-${index}`"
+              class="preview-thumb"
+              :class="{ active: index === activeIndex }"
+              @click="selectImage(index)"
+            >
+              <img :src="toImageSrc(image.src)" :alt="image.title" />
+              <span>{{ image.title }}</span>
+            </button>
+          </aside>
+
+          <div class="preview-stage" @wheel="handleWheel">
+            <button v-if="hasMultipleImages" class="preview-nav preview-nav-left" @click="showPrevious" aria-label="上一张">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M14.5 5.5 8 12l6.5 6.5" />
+              </svg>
+            </button>
+
+            <div
+              class="preview-canvas"
+              :class="{ dragging, 'preview-canvas--no-transition': suppressTransformTransition }"
+              :style="{
+                transform: `translate(${translate.x}px, ${translate.y}px) scale(${zoom}) rotate(${activeRotation}deg)`
+              }"
+              @mousedown="startDrag"
+            >
+              <img
+                class="preview-image"
+                :src="toImageSrc(activeImage.src)"
+                :alt="activeImage.title"
+                draggable="false"
+              />
+              <div
+                v-for="region in activeImage.regions"
+                :key="`${activeImage.title}-${region.questionId}`"
+                class="preview-region"
+                :style="{
+                  left: `${region.x * 100}%`,
+                  top: `${region.y * 100}%`,
+                  width: `${region.width * 100}%`,
+                  height: `${region.height * 100}%`
+                }"
+              >
+                <span>{{ region.questionId }}</span>
+              </div>
+            </div>
+
+            <button v-if="hasMultipleImages" class="preview-nav preview-nav-right" @click="showNext" aria-label="下一张">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M9.5 5.5 16 12l-6.5 6.5" />
+              </svg>
+            </button>
+          </div>
+        </main>
+
+        <footer class="preview-toolbar">
+          <button class="toolbar-icon-button" aria-label="缩小" @click="zoomOut">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <circle cx="10.5" cy="10.5" r="6.5" />
+              <path d="M16 16 21 21" />
+              <path d="M7.5 10.5h6" />
+            </svg>
+          </button>
+
+          <div class="toolbar-readout">{{ zoomPercent }}%</div>
+
+          <button class="toolbar-icon-button" aria-label="放大" @click="zoomIn">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <circle cx="10.5" cy="10.5" r="6.5" />
+              <path d="M16 16 21 21" />
+              <path d="M7.5 10.5h6" />
+              <path d="M10.5 7.5v6" />
+            </svg>
+          </button>
+
+          <span class="toolbar-divider" />
+
+          <button class="toolbar-icon-button" aria-label="左旋转" @click="rotateLeft">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M8 7H4v4" />
+              <path d="M5 10a8 8 0 1 0 2.3-5.6L4 7" />
+            </svg>
+          </button>
+
+          <button class="toolbar-icon-button" aria-label="右旋转" @click="rotateRight">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M16 7h4v4" />
+              <path d="M19 10a8 8 0 1 1-2.3-5.6L20 7" />
+            </svg>
+          </button>
+        </footer>
       </section>
     </template>
-    <n-empty v-else description="未找到预览数据，请从主界面重新打开图片预览。" />
+
+    <div v-else-if="loading" class="preview-loading">
+      <div class="preview-loading-shell">
+        <div class="preview-loading-stage" />
+        <div class="preview-loading-copy">正在准备图片预览...</div>
+      </div>
+    </div>
+
+    <NEmpty v-else description="未找到预览数据，请从主界面重新打开图片预览。" />
   </div>
 </template>
 
+<style scoped>
+.preview-page {
+  min-height: 100vh;
+  padding: 0;
+  background: #111;
+  color: #eef4f8;
+  box-sizing: border-box;
+}
+
+.preview-shell {
+  width: 100vw;
+  height: 100vh;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  border-radius: 0;
+  overflow: hidden;
+  background: #111;
+  border: none;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+.preview-loading {
+  width: 100vw;
+  height: 100vh;
+  display: grid;
+  place-items: center;
+}
+
+.preview-loading-shell {
+  width: min(920px, calc(100vw - 120px));
+  display: grid;
+  gap: 18px;
+}
+
+.preview-loading-stage {
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  border-radius: 28px;
+  background:
+    linear-gradient(110deg, rgba(255, 255, 255, 0.04) 8%, rgba(255, 255, 255, 0.12) 18%, rgba(255, 255, 255, 0.04) 33%),
+    linear-gradient(180deg, rgba(27, 27, 27, 0.96), rgba(19, 19, 19, 0.96));
+  background-size: 200% 100%, 100% 100%;
+  animation: preview-loading-shimmer 1.1s linear infinite;
+}
+
+.preview-loading-copy {
+  text-align: center;
+  color: rgba(255, 255, 255, 0.62);
+  font-size: 14px;
+}
+
+@keyframes preview-loading-shimmer {
+  from {
+    background-position: 200% 0, 0 0;
+  }
+
+  to {
+    background-position: -200% 0, 0 0;
+  }
+}
+
+.preview-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  padding: 34px 24px 14px;
+}
+
+.preview-title {
+  font-size: 24px;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+}
+
+.preview-subtitle {
+  margin-top: 6px;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.preview-counter {
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.preview-stage-shell {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 18px;
+  padding: 0 22px 16px;
+}
+
+.preview-stage-shell--single {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.preview-rail {
+  width: 144px;
+  padding: 16px 12px;
+  border-radius: 24px;
+  background: linear-gradient(180deg, rgba(13, 13, 13, 0.96), rgba(24, 24, 24, 0.9));
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+  overflow-y: auto;
+}
+
+.preview-thumb {
+  width: 100%;
+  display: grid;
+  gap: 8px;
+  margin: 0 0 12px;
+  padding: 10px;
+  border: none;
+  border-radius: 16px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.72);
+  text-align: left;
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease, transform 120ms ease;
+}
+
+.preview-thumb:last-child {
+  margin-bottom: 0;
+}
+
+.preview-thumb.active {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  transform: translateY(-1px);
+}
+
+.preview-thumb img {
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  object-fit: cover;
+  border-radius: 12px;
+}
+
+.preview-thumb span {
+  font-size: 12px;
+  line-height: 1.35;
+  word-break: break-word;
+}
+
+.preview-stage {
+  position: relative;
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border-radius: 28px;
+  background: linear-gradient(180deg, rgba(27, 27, 27, 0.96), rgba(19, 19, 19, 0.96));
+}
+
+.preview-canvas {
+  position: relative;
+  width: fit-content;
+  max-width: none;
+  margin: 0;
+  display: inline-block;
+  transform-origin: center center;
+  cursor: grab;
+  user-select: none;
+  transition: transform 120ms ease-out;
+}
+
+.preview-canvas.dragging {
+  cursor: grabbing;
+  transition: none;
+}
+
+.preview-canvas--no-transition {
+  transition: none;
+}
+
+.preview-image {
+  display: block;
+  max-width: min(78vw, 1180px);
+  max-height: calc(100vh - 240px);
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.26);
+}
+
+.preview-nav {
+  position: absolute;
+  top: 50%;
+  z-index: 2;
+  width: 48px;
+  height: 48px;
+  display: grid;
+  place-items: center;
+  border: none;
+  border-radius: 999px;
+  background: rgba(13, 13, 13, 0.72);
+  color: #fff;
+  transform: translateY(-50%);
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+}
+
+.preview-nav svg {
+  width: 22px;
+  height: 22px;
+  stroke: currentColor;
+  stroke-width: 2;
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.preview-nav-left {
+  left: 18px;
+}
+
+.preview-nav-right {
+  right: 18px;
+}
+
+.preview-toolbar {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 24px 18px;
+}
+
+.toolbar-icon-button {
+  height: 42px;
+  min-width: 42px;
+  display: grid;
+  place-items: center;
+  border: none;
+  border-radius: 12px;
+  background: rgba(10, 10, 10, 0.84);
+  color: #fff;
+  cursor: pointer;
+  transition: background 120ms ease, transform 120ms ease;
+}
+
+.toolbar-icon-button:hover,
+.toolbar-icon-button:hover {
+  background: rgba(255, 255, 255, 0.12);
+  transform: translateY(-1px);
+}
+
+.toolbar-icon-button svg {
+  width: 22px;
+  height: 22px;
+  stroke: currentColor;
+  stroke-width: 1.9;
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.toolbar-readout {
+  min-width: 72px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  padding: 0 12px;
+  border-radius: 12px;
+  background: rgba(10, 10, 10, 0.84);
+  color: #fff;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.toolbar-divider {
+  width: 1px;
+  height: 28px;
+  margin: 0 4px;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+@media (max-width: 980px) {
+  .preview-page {
+    padding: 0;
+  }
+
+  .preview-shell {
+    height: 100vh;
+  }
+
+  .preview-stage-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .preview-rail {
+    width: auto;
+    display: flex;
+    gap: 10px;
+    padding: 10px;
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+
+  .preview-thumb {
+    width: 110px;
+    min-width: 110px;
+    margin: 0;
+  }
+
+  .preview-image {
+    max-width: calc(100vw - 60px);
+    max-height: calc(100vh - 300px);
+  }
+
+  .preview-toolbar {
+    flex-wrap: wrap;
+  }
+}
+</style>

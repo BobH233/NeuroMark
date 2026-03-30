@@ -127,10 +127,8 @@ export interface BackgroundJob {
 export interface GlobalLlmSettings {
   baseUrl: string;
   model: string;
-  apiKeyMasked: string;
-  apiKeyStored: boolean;
+  apiKey: string;
   timeoutMs: number;
-  storageMode: 'safeStorage' | 'plainText';
 }
 
 export interface SaveGlobalLlmSettingsInput {
@@ -166,6 +164,13 @@ export interface AnswerDraftRecord {
 
 export interface PromptPreset {
   id: string;
+  name: string;
+  description: string;
+  prompt: string;
+}
+
+export interface PromptPresetInput {
+  id?: string;
   name: string;
   description: string;
   prompt: string;
@@ -272,6 +277,8 @@ export interface NeuromarkApi {
   answerGenerator: {
     listDrafts: () => Promise<AnswerDraftRecord[]>;
     listPromptPresets: () => Promise<PromptPreset[]>;
+    savePromptPreset: (input: PromptPresetInput) => Promise<PromptPreset>;
+    deletePromptPreset: (presetId: string) => Promise<void>;
     createDraft: (input: AnswerDraftInput) => Promise<AnswerDraftRecord>;
     updateDraft: (draftId: string, markdown: string) => Promise<AnswerDraftRecord>;
     deleteDraft: (draftId: string) => Promise<void>;

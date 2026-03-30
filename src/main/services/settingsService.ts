@@ -1,4 +1,3 @@
-import { safeStorage } from 'electron';
 import { eq } from 'drizzle-orm';
 import OpenAI from 'openai';
 import type {
@@ -11,44 +10,6 @@ import { getDatabase } from '@main/database/client';
 import { settingsTable } from '@main/database/schema';
 
 const SETTINGS_ID = 1;
-
-function toMaskedSecret(secret: string): string {
-  if (!secret) {
-    return '';
-  }
-
-  if (secret.length <= 8) {
-    return `${secret.slice(0, 2)}***${secret.slice(-2)}`;
-  }
-
-  return `${secret.slice(0, 4)}********${secret.slice(-4)}`;
-}
-
-function encodeSecret(secret: string): { value: string; mode: 'safeStorage' | 'plainText' } {
-  if (secret && safeStorage.isEncryptionAvailable()) {
-    return {
-      value: safeStorage.encryptString(secret).toString('base64'),
-      mode: 'safeStorage',
-    };
-  }
-
-  return {
-    value: secret,
-    mode: 'plainText',
-  };
-}
-
-function decodeSecret(value: string, mode: string): string {
-  if (!value) {
-    return '';
-  }
-
-  if (mode === 'safeStorage' && safeStorage.isEncryptionAvailable()) {
-    return safeStorage.decryptString(Buffer.from(value, 'base64'));
-  }
-
-  return value;
-}
 
 export class SettingsService {
   async getSettings(): Promise<GlobalLlmSettings> {
@@ -63,21 +24,16 @@ export class SettingsService {
       return {
         baseUrl: 'https://api.openai.com/v1',
         model: 'gpt-4.1',
-        apiKeyMasked: '',
-        apiKeyStored: false,
+        apiKey: '',
         timeoutMs: 180000,
-        storageMode: safeStorage.isEncryptionAvailable() ? 'safeStorage' : 'plainText',
       };
     }
 
-    const decoded = decodeSecret(current.apiKeyEncrypted, current.storageMode);
     return {
       baseUrl: current.baseUrl,
       model: current.model,
-      apiKeyMasked: toMaskedSecret(decoded),
-      apiKeyStored: Boolean(decoded),
+      apiKey: current.apiKeyEncrypted,
       timeoutMs: current.timeoutMs,
-      storageMode: current.storageMode as 'safeStorage' | 'plainText',
     };
   }
 
@@ -89,8 +45,7 @@ export class SettingsService {
       .where(eq(settingsTable.id, SETTINGS_ID))
       .get();
 
-    const apiKey = input.apiKey?.trim() || decodeSecret(existing?.apiKeyEncrypted ?? '', existing?.storageMode ?? '');
-    const encoded = encodeSecret(apiKey);
+    const apiKey = input.apiKey?.trim() || existing?.apiKeyEncrypted || '';
 
     db
       .insert(settingsTable)
@@ -98,18 +53,18 @@ export class SettingsService {
         id: SETTINGS_ID,
         baseUrl: input.baseUrl.trim(),
         model: input.model.trim(),
-        apiKeyEncrypted: encoded.value,
+        apiKeyEncrypted: apiKey,
         timeoutMs: input.timeoutMs,
-        storageMode: encoded.mode,
+        storageMode: 'plainText',
       })
       .onConflictDoUpdate({
         target: settingsTable.id,
         set: {
           baseUrl: input.baseUrl.trim(),
           model: input.model.trim(),
-          apiKeyEncrypted: encoded.value,
+          apiKeyEncrypted: apiKey,
           timeoutMs: input.timeoutMs,
-          storageMode: encoded.mode,
+          storageMode: 'plainText',
         },
       })
       .run();
@@ -156,7 +111,6 @@ export class SettingsService {
       .from(settingsTable)
       .where(eq(settingsTable.id, SETTINGS_ID))
       .get();
-    return decodeSecret(current?.apiKeyEncrypted ?? '', current?.storageMode ?? '');
+    return current?.apiKeyEncrypted ?? '';
   }
 }
-

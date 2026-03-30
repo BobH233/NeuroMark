@@ -23,15 +23,17 @@ export const useProjectsStore = defineStore('projects', {
   actions: {
     async bootstrap() {
       await this.loadProjects();
-      if (this.projects.length > 0 && !this.selectedProjectId) {
-        this.selectedProjectId = this.projects[0].id;
-      }
-      if (this.selectedProjectId) {
-        await this.loadProjectDetail(this.selectedProjectId);
-      }
     },
     async loadProjects() {
       this.projects = await window.neuromark.projects.list();
+      if (!this.projects.some((item) => item.id === this.selectedProjectId)) {
+        this.selectedProjectId = '';
+        this.detail = null;
+      }
+    },
+    clearSelection() {
+      this.selectedProjectId = '';
+      this.detail = null;
     },
     async selectProject(projectId: string) {
       this.selectedProjectId = projectId;
@@ -75,4 +77,3 @@ export const useProjectsStore = defineStore('projects', {
     },
   },
 });
-

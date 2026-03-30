@@ -12,7 +12,7 @@ const currentTitle = computed(() => {
   if (name.startsWith('answer-generator')) {
     return '参考答案生成';
   }
-  if (name === 'projects') {
+  if (name.startsWith('projects') || name === 'project-detail') {
     return '项目工作台';
   }
   if (name === 'tasks') {

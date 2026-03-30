@@ -1,9 +1,22 @@
 <script setup lang="ts">
-import { onMounted, reactive } from 'vue';
-import { NButton, NCard, NForm, NFormItem, NInput, NInputNumber } from 'naive-ui';
+import { computed, onMounted, reactive, ref } from 'vue';
+import {
+  NButton,
+  NCard,
+  NEmpty,
+  NForm,
+  NFormItem,
+  NInput,
+  NInputNumber,
+  NPopconfirm,
+} from 'naive-ui';
+import type { PromptPreset } from '@preload/contracts';
+import { useAnswerGeneratorStore } from '@/stores/answer-generator';
 import { useSettingsStore } from '@/stores/settings';
 
-const store = useSettingsStore();
+const settingsStore = useSettingsStore();
+const answerGeneratorStore = useAnswerGeneratorStore();
+
 const form = reactive({
   baseUrl: 'https://api.openai.com/v1',
   model: 'gpt-4.1',
@@ -11,22 +24,66 @@ const form = reactive({
   timeoutMs: 180000,
 });
 
+const presetForm = reactive({
+  id: '',
+  name: '',
+  description: '',
+  prompt: '',
+});
+
+const presets = computed(() => answerGeneratorStore.presets);
+const presetEditorTitle = computed(() => (presetForm.id ? '编辑模板' : '新建模板'));
+
 onMounted(async () => {
-  await store.load();
-  if (store.settings) {
-    form.baseUrl = store.settings.baseUrl;
-    form.model = store.settings.model;
-    form.timeoutMs = store.settings.timeoutMs;
+  await Promise.all([settingsStore.load(), answerGeneratorStore.bootstrap()]);
+
+  if (settingsStore.settings) {
+    form.baseUrl = settingsStore.settings.baseUrl;
+    form.model = settingsStore.settings.model;
+    form.apiKey = settingsStore.settings.apiKey;
+    form.timeoutMs = settingsStore.settings.timeoutMs;
   }
 });
 
 async function save() {
-  await store.save({ ...form });
+  const settings = await settingsStore.save({ ...form });
+  form.apiKey = settings.apiKey;
 }
 
 async function test() {
-  const result = await store.test({ ...form, apiKey: form.apiKey || '' });
+  const result = await settingsStore.test({ ...form, apiKey: form.apiKey || '' });
   window.alert(`${result.message}\n耗时：${result.latencyMs} ms`);
+}
+
+function startCreatePreset() {
+  presetForm.id = '';
+  presetForm.name = '';
+  presetForm.description = '';
+  presetForm.prompt = '';
+}
+
+function editPreset(preset: PromptPreset) {
+  presetForm.id = preset.id;
+  presetForm.name = preset.name;
+  presetForm.description = preset.description;
+  presetForm.prompt = preset.prompt;
+}
+
+async function savePreset() {
+  await answerGeneratorStore.savePromptPreset({
+    id: presetForm.id || undefined,
+    name: presetForm.name,
+    description: presetForm.description,
+    prompt: presetForm.prompt,
+  });
+  startCreatePreset();
+}
+
+async function deletePreset(presetId: string) {
+  await answerGeneratorStore.deletePromptPreset(presetId);
+  if (presetForm.id === presetId) {
+    startCreatePreset();
+  }
 }
 </script>
 
@@ -37,7 +94,7 @@ async function test() {
         <div class="eyebrow">全局后端能力配置</div>
         <h2 class="section-title">全局设置页面</h2>
         <p class="section-copy">
-          配置用于参考答案生成与批阅任务的模型后端、访问密钥与连接参数。
+          配置模型后端，并统一维护参考答案生成使用的模板。
         </p>
       </div>
     </section>
@@ -55,26 +112,85 @@ async function test() {
             v-model:value="form.apiKey"
             type="password"
             show-password-on="click"
-            placeholder="留空则保持现有已保存的密钥"
+            placeholder="直接填写用于调用模型的 API Key"
           />
         </n-form-item>
         <n-form-item label="请求超时（毫秒）">
           <n-input-number v-model:value="form.timeoutMs" :min="5000" :max="600000" />
         </n-form-item>
 
-        <div class="settings-foot">
-          <div v-if="store.settings" class="stored-key-copy">
-            已保存密钥：{{ store.settings.apiKeyStored ? store.settings.apiKeyMasked : '未设置' }} ·
-            存储方式：{{ store.settings.storageMode === 'safeStorage' ? '系统加密' : '明文降级' }}
-          </div>
-          <div class="settings-actions">
-            <n-button secondary type="primary" :loading="store.testing" @click="test">
-              测试连接
-            </n-button>
-            <n-button type="primary" @click="save">保存设置</n-button>
-          </div>
+        <div class="settings-actions">
+          <n-button secondary type="primary" :loading="settingsStore.testing" @click="test">
+            测试连接
+          </n-button>
+          <n-button type="primary" @click="save">保存设置</n-button>
         </div>
       </n-form>
     </n-card>
+
+    <section class="settings-template-layout">
+      <n-card class="surface-card" title="参考答案生成模板">
+        <div v-if="presets.length" class="settings-template-list">
+          <button
+            v-for="preset in presets"
+            :key="preset.id"
+            class="settings-template-item"
+            :class="{ active: presetForm.id === preset.id }"
+            @click="editPreset(preset)"
+          >
+            <div class="settings-template-item-head">
+              <div class="settings-template-item-title">{{ preset.name }}</div>
+            </div>
+            <div class="settings-template-item-copy">
+              {{ preset.description || '未填写模板说明' }}
+            </div>
+          </button>
+        </div>
+        <n-empty v-else description="还没有模板，先新建一个参考答案生成模板。" />
+
+        <div class="settings-actions">
+          <n-button tertiary @click="startCreatePreset">新建模板</n-button>
+          <n-popconfirm
+            v-if="presetForm.id"
+            positive-text="删除"
+            negative-text="取消"
+            @positive-click="deletePreset(presetForm.id)"
+          >
+            <template #trigger>
+              <n-button tertiary type="error">删除当前模板</n-button>
+            </template>
+            删除这个模板后将无法恢复，确认继续吗？
+          </n-popconfirm>
+        </div>
+      </n-card>
+
+      <n-card class="surface-card" :title="presetEditorTitle">
+        <n-form label-placement="top">
+          <n-form-item label="模板名称">
+            <n-input v-model:value="presetForm.name" placeholder="例如：物理计算题模板" />
+          </n-form-item>
+          <n-form-item label="模板说明">
+            <n-input
+              v-model:value="presetForm.description"
+              placeholder="简单说明这个模板适合什么场景"
+            />
+          </n-form-item>
+          <n-form-item label="模板内容（Markdown）">
+            <n-input
+              v-model:value="presetForm.prompt"
+              type="textarea"
+              :autosize="{ minRows: 12, maxRows: 20 }"
+              placeholder="在这里填写 Markdown 格式的参考答案生成模板内容"
+            />
+          </n-form-item>
+
+          <div class="settings-actions">
+            <n-button type="primary" :disabled="!presetForm.name.trim() || !presetForm.prompt.trim()" @click="savePreset">
+              保存模板
+            </n-button>
+          </div>
+        </n-form>
+      </n-card>
+    </section>
   </div>
 </template>

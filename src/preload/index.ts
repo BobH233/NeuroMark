@@ -44,6 +44,8 @@ const api: NeuromarkApi = {
   answerGenerator: {
     listDrafts: () => ipcRenderer.invoke('answer-generator:list-drafts'),
     listPromptPresets: () => ipcRenderer.invoke('answer-generator:list-presets'),
+    savePromptPreset: (input) => ipcRenderer.invoke('answer-generator:save-preset', input),
+    deletePromptPreset: (presetId) => ipcRenderer.invoke('answer-generator:delete-preset', presetId),
     createDraft: (input) => ipcRenderer.invoke('answer-generator:create-draft', input),
     updateDraft: (draftId, markdown) =>
       ipcRenderer.invoke('answer-generator:update-draft', draftId, markdown),

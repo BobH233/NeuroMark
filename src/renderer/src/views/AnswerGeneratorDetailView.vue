@@ -103,7 +103,7 @@ async function deleteDraft() {
             </div>
             <div class="summary-row">
               <span>模板</span>
-              <strong>{{ preset?.name || draft.promptPreset }}</strong>
+              <strong>{{ preset?.name || '自定义内容' }}</strong>
             </div>
             <div class="summary-row">
               <span>更新时间</span>
@@ -114,7 +114,7 @@ async function deleteDraft() {
                 type="primary"
                 round
               >
-                {{ preset?.name || draft.promptPreset }}
+                {{ preset?.name || '自定义内容' }}
               </n-tag>
               <n-tag
                 type="info"

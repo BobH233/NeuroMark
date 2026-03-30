@@ -69,7 +69,7 @@ async function deleteDraft(draftId: string) {
               round
               type="primary"
             >
-              {{ presetNameMap.get(draft.promptPreset) || draft.promptPreset }}
+              {{ presetNameMap.get(draft.promptPreset) || '自定义内容' }}
             </n-tag>
             <n-popconfirm
               positive-text="删除"

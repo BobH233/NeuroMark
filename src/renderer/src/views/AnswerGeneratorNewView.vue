@@ -29,7 +29,6 @@ const currentPreset = computed(() =>
 const selectedImageSources = computed(() => selectedImages.value.map((item) => item.source));
 const canCreate = computed(
   () =>
-    Boolean(selectedPreset.value) &&
     draftTitle.value.trim().length > 0 &&
     promptText.value.trim().length > 0 &&
     selectedImages.value.length > 0,
@@ -49,7 +48,6 @@ watch(
   () => selectedPreset.value,
   (value, previousValue) => {
     if (!value) {
-      promptText.value = '';
       return;
     }
 
@@ -110,6 +108,23 @@ function goBack() {
 
 function removeImage(imageId: string) {
   selectedImages.value = selectedImages.value.filter((item) => item.id !== imageId);
+}
+
+async function openPreview(imageId: string) {
+  const currentIndex = selectedImages.value.findIndex((item) => item.id === imageId);
+  if (currentIndex < 0) {
+    return;
+  }
+
+  await window.neuromark.preview.open(
+    selectedImages.value.map((item, index) => ({
+      src: item.source,
+      title: `题目图片 ${index + 1}`,
+      caption: item.name,
+    })),
+    currentIndex,
+    '题目图片预览',
+  );
 }
 
 function clearImages() {
@@ -259,6 +274,7 @@ function readFileAsDataUrl(file: File) {
                 v-model:value="selectedPreset"
                 :options="presetOptions"
                 placeholder="选择提示词模板"
+                clearable
               />
             </div>
           </div>
@@ -331,12 +347,6 @@ function readFileAsDataUrl(file: File) {
             </n-button>
             <n-button
               tertiary
-              @click="focusUploadZone"
-            >
-              聚焦粘贴区域
-            </n-button>
-            <n-button
-              tertiary
               :disabled="!selectedImages.length"
               @click="clearImages"
             >
@@ -348,10 +358,12 @@ function readFileAsDataUrl(file: File) {
             v-if="selectedImages.length"
             class="upload-preview-grid"
           >
-            <article
+            <button
               v-for="(image, index) in selectedImages"
               :key="image.id"
               class="upload-preview-card"
+              type="button"
+              @click="openPreview(image.id)"
             >
               <img
                 class="upload-preview-image"
@@ -368,11 +380,12 @@ function readFileAsDataUrl(file: File) {
               </div>
               <button
                 class="upload-preview-remove"
+                type="button"
                 @click.stop="removeImage(image.id)"
               >
                 删除
               </button>
-            </article>
+            </button>
           </div>
           <n-empty
             v-else
