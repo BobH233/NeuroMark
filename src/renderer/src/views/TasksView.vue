@@ -74,6 +74,10 @@ function getTaskProgressColor(task: BackgroundJob) {
     return '#d14343';
   }
 
+  if (task.status === 'completed') {
+    return '#18a058';
+  }
+
   return '#3f7ae0';
 }
 
