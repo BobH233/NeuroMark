@@ -5,8 +5,15 @@
   --shell-gutter: 24px;
   --top-bar-top: 40px;
   --top-bar-safe-space: 142px;
+  --top-scroll-fade-height: 180px;
+  --top-scroll-fade-solid: 78px;
   --sidebar-margin-top: 30px;
   --sidebar-top-padding: 28px;
+  --sidebar-left: 20px;
+  --sidebar-width: 320px;
+  --sidebar-gap: 24px;
+  --sidebar-bottom-gap: 20px;
+  --sidebar-footprint: calc(var(--sidebar-left) + var(--sidebar-width) + var(--sidebar-gap));
   --panel: rgba(255, 255, 255, 0.94);
   --panel-strong: #ffffff;
   --text: #163243;
@@ -17,6 +24,11 @@
   --accent-deep: #0f5661;
   --warning: #d97706;
   --shadow: 0 6px 18px rgba(24, 54, 73, 0.04);
+  --top-bar-surface: rgba(255, 255, 255, 0.72);
+  --top-bar-border: rgba(119, 152, 173, 0.16);
+  --top-bar-shadow:
+    0 18px 42px rgba(20, 56, 76, 0.08),
+    0 8px 18px rgba(20, 56, 76, 0.06);
 }
 
 * {
@@ -29,9 +41,7 @@ body,
   margin: 0;
   width: 100%;
   height: 100%;
-  background:
-    radial-gradient(circle at top right, rgba(15, 139, 141, 0.15), transparent 24%),
-    linear-gradient(180deg, var(--bg-top), var(--bg-bottom));
+  background: var(--bg-bottom);
   color: var(--text);
   font-family:
     'PingFang SC', 'Noto Sans SC', 'Microsoft YaHei', 'Segoe UI', sans-serif;
@@ -76,14 +86,16 @@ textarea {
 }
 
 .app-shell {
-  display: grid;
-  grid-template-columns: 320px 1fr;
+  position: relative;
+  isolation: isolate;
   height: 100dvh;
   min-height: 100dvh;
 }
 
 .shell-main {
-  position: relative;
+  position: absolute;
+  inset: 0;
+  z-index: 1;
   min-width: 0;
   min-height: 0;
   overflow: hidden;
@@ -94,9 +106,28 @@ textarea {
   top: 0;
   left: 0;
   right: 0;
-  height: var(--top-bar-top);
+  height: calc(var(--top-bar-top) + 12px);
   z-index: 9;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0));
   -webkit-app-region: drag;
+}
+
+.shell-scroll-fade {
+  position: absolute;
+  left: calc(var(--sidebar-footprint));
+  right: var(--shell-gutter);
+  height: var(--top-scroll-fade-height);
+  z-index: 9;
+  pointer-events: none;
+  background: linear-gradient(
+    180deg,
+    var(--bg-bottom) 0,
+    var(--bg-bottom) var(--top-scroll-fade-solid),
+    rgba(247, 250, 251, 0.96) calc(var(--top-scroll-fade-solid) + 12px),
+    rgba(247, 250, 251, 0.78) calc(var(--top-scroll-fade-solid) + 36px),
+    rgba(247, 250, 251, 0.42) calc(var(--top-scroll-fade-solid) + 64px),
+    rgba(247, 250, 251, 0) 100%
+  );
 }
 
 .shell-content {
@@ -108,7 +139,8 @@ textarea {
   padding:
     calc(var(--top-bar-safe-space) + var(--shell-gutter))
     var(--shell-gutter)
-    28px;
+    28px
+    calc(var(--sidebar-footprint) + var(--shell-gutter));
 }
 
 .glass-panel,
@@ -129,11 +161,17 @@ textarea {
 }
 
 .nav-sidebar {
-  margin: var(--sidebar-margin-top) 20px 20px;
+  position: absolute;
+  top: var(--sidebar-margin-top);
+  left: var(--sidebar-left);
+  bottom: var(--sidebar-bottom-gap);
+  width: var(--sidebar-width);
+  z-index: 2;
+  margin: 0;
   padding: var(--sidebar-top-padding) 22px 28px;
   display: flex;
   align-items: flex-start;
-  min-height: calc(100vh - var(--sidebar-margin-top) - 20px);
+  min-height: calc(100dvh - var(--sidebar-margin-top) - var(--sidebar-bottom-gap));
 }
 
 .nav-sidebar-main {
@@ -218,7 +256,7 @@ textarea {
 .top-bar {
   position: absolute;
   top: var(--top-bar-top);
-  left: 0;
+  left: calc(var(--sidebar-footprint));
   right: var(--shell-gutter);
   margin: 0;
   padding: 18px 22px;
@@ -228,19 +266,33 @@ textarea {
   gap: 20px;
   z-index: 10;
   isolation: isolate;
-  background: var(--panel-strong);
-  border: 1px solid var(--line);
+  overflow: visible;
+  background: var(--top-bar-surface);
+  border: 1px solid var(--top-bar-border);
   border-radius: 24px;
-  box-shadow: var(--shadow);
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
+  box-shadow: var(--top-bar-shadow);
+  -webkit-backdrop-filter: blur(34px) saturate(135%) brightness(1.04);
+  backdrop-filter: blur(34px) saturate(135%) brightness(1.04);
   -webkit-app-region: drag;
+}
+
+.top-bar > * {
+  position: relative;
+  z-index: 1;
 }
 
 .top-title,
 .section-title,
 .detail-title {
   margin: 0;
+}
+
+.top-title {
+  position: relative;
+  z-index: 1;
+  font-size: 16px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
 }
 
 .page-stack {
@@ -370,7 +422,7 @@ textarea {
 
 .draft-card-head {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr);
   align-items: start;
 }
 
@@ -379,6 +431,11 @@ textarea {
   justify-content: flex-end;
   align-self: start;
   flex-shrink: 0;
+}
+
+.draft-card-actions--below-title {
+  margin-top: 12px;
+  justify-content: flex-start;
 }
 
 @media (max-width: 760px) {
@@ -1335,10 +1392,8 @@ textarea {
 @media (max-width: 1200px) {
   :root {
     --top-bar-safe-space: 166px;
-  }
-
-  .app-shell {
-    grid-template-columns: 260px 1fr;
+    --sidebar-width: 260px;
+    --sidebar-gap: 20px;
   }
 
   .generator-create-layout,
@@ -1353,7 +1408,7 @@ textarea {
   }
 
   .nav-sidebar {
-    min-height: calc(100dvh - var(--sidebar-margin-top) - 20px);
+    min-height: calc(100dvh - var(--sidebar-margin-top) - var(--sidebar-bottom-gap));
   }
 
   .nav-sidebar-main {

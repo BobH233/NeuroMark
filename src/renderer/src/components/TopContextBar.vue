@@ -12,7 +12,7 @@ const currentTitle = computed(() => {
   if (name.startsWith('projects') || name === 'project-detail') {
     return '项目工作台';
   }
-  if (name === 'tasks') {
+  if (name === 'tasks' || name === 'tasks-archived') {
     return '后台任务中心';
   }
   if (name === 'settings') {

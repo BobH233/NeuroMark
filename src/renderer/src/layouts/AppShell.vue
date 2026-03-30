@@ -9,6 +9,7 @@ import TopContextBar from '@/components/TopContextBar.vue';
     <div class="shell-main">
       <div class="window-drag-strip" aria-hidden="true" />
       <TopContextBar />
+      <div class="shell-scroll-fade" aria-hidden="true" />
       <main class="shell-content">
         <slot />
       </main>

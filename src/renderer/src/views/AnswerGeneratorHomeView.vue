@@ -10,6 +10,27 @@ const store = useAnswerGeneratorStore();
 
 const drafts = computed(() => store.drafts);
 
+function formatLocalDateTime(value: string | null | undefined) {
+  if (!value) {
+    return '暂无';
+  }
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return value;
+  }
+
+  return parsed.toLocaleString('zh-CN', {
+    year: 'numeric',
+    month: 'numeric',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  });
+}
+
 function openDraft(draftId: string) {
   router.push(`/answer-generator/${draftId}`);
 }
@@ -69,28 +90,28 @@ async function deleteDraft(draftId: string) {
           <div class="draft-card-title">
             {{ draft.title }}
           </div>
-          <div class="draft-card-actions">
-            <StatusPill :value="draft.generationStatus" />
-            <n-popconfirm
-              positive-text="删除"
-              negative-text="取消"
-              @positive-click="deleteDraft(draft.id)"
-            >
-              <template #trigger>
-                <button
-                  class="draft-delete-button"
-                  type="button"
-                  @click.stop
-                >
-                  删除
-                </button>
-              </template>
-              删除这份参考答案草稿后将无法恢复，确认继续吗？
-            </n-popconfirm>
-          </div>
+        </div>
+        <div class="draft-card-actions draft-card-actions--below-title">
+          <StatusPill :value="draft.generationStatus" />
+          <n-popconfirm
+            positive-text="删除"
+            negative-text="取消"
+            @positive-click="deleteDraft(draft.id)"
+          >
+            <template #trigger>
+              <button
+                class="draft-delete-button"
+                type="button"
+                @click.stop
+              >
+                删除
+              </button>
+            </template>
+            删除这份参考答案草稿后将无法恢复，确认继续吗？
+          </n-popconfirm>
         </div>
         <div class="draft-card-meta">
-          最近更新时间：{{ draft.updatedAt }}
+          最近更新时间：{{ formatLocalDateTime(draft.updatedAt) }}
         </div>
         <div
           v-if="draft.generationError"
