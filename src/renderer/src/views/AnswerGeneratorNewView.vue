@@ -358,34 +358,38 @@ function readFileAsDataUrl(file: File) {
             v-if="selectedImages.length"
             class="upload-preview-grid"
           >
-            <button
+            <div
               v-for="(image, index) in selectedImages"
               :key="image.id"
               class="upload-preview-card"
-              type="button"
-              @click="openPreview(image.id)"
             >
-              <img
-                class="upload-preview-image"
-                :src="toImageSrc(image.source)"
-                :alt="image.name"
+              <button
+                class="upload-preview-open"
+                type="button"
+                @click="openPreview(image.id)"
               >
-              <div class="upload-preview-meta">
-                <div class="upload-preview-title">
-                  题目图片 {{ index + 1 }}
+                <img
+                  class="upload-preview-image"
+                  :src="toImageSrc(image.source)"
+                  :alt="image.name"
+                >
+                <div class="upload-preview-meta">
+                  <div class="upload-preview-title">
+                    题目图片 {{ index + 1 }}
+                  </div>
+                  <div class="upload-preview-name">
+                    {{ image.name }}
+                  </div>
                 </div>
-                <div class="upload-preview-name">
-                  {{ image.name }}
-                </div>
-              </div>
+              </button>
               <button
                 class="upload-preview-remove"
                 type="button"
-                @click.stop="removeImage(image.id)"
+                @click="removeImage(image.id)"
               >
                 删除
               </button>
-            </button>
+            </div>
           </div>
           <n-empty
             v-else

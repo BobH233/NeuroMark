@@ -12,7 +12,15 @@ export async function createMainWindow(): Promise<BrowserWindow> {
     minHeight: 760,
     title: 'NeuroMark',
     backgroundColor: '#ecf4f4',
-    titleBarStyle: 'default',
+    titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
+    ...(process.platform === 'darwin'
+      ? {
+          trafficLightPosition: {
+            x: 18,
+            y: 16,
+          },
+        }
+      : {}),
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.mjs'),
       contextIsolation: true,

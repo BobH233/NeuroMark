@@ -7,6 +7,7 @@ import TopContextBar from '@/components/TopContextBar.vue';
   <div class="app-shell">
     <NavSidebar />
     <div class="shell-main">
+      <div class="window-drag-strip" aria-hidden="true" />
       <TopContextBar />
       <main class="shell-content">
         <slot />
@@ -14,4 +15,3 @@ import TopContextBar from '@/components/TopContextBar.vue';
     </div>
   </div>
 </template>
-

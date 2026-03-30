@@ -7,6 +7,9 @@ import './styles/global.css';
 import 'katex/dist/katex.min.css';
 import 'md-editor-v3/lib/style.css';
 
+const isMacOS = /mac/i.test(navigator.platform) || /mac os/i.test(navigator.userAgent);
+document.documentElement.classList.toggle('platform-macos', isMacOS);
+
 const app = createApp(App);
 const pinia = createPinia();
 
@@ -25,4 +28,3 @@ app.config.globalProperties.$loadingBar = loadingBar;
 app.use(pinia);
 app.use(router);
 app.mount('#app');
-
