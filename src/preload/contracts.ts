@@ -160,6 +160,7 @@ export interface AnswerDraftRecord {
   title: string;
   sourceImages: string[];
   promptPreset: string;
+  promptText: string;
   markdown: string;
 }
 
@@ -212,7 +213,9 @@ export interface StartJobOptions {
 }
 
 export interface AnswerDraftInput {
+  title: string;
   promptPreset: string;
+  promptText: string;
   sourceImages: string[];
 }
 
@@ -271,6 +274,7 @@ export interface NeuromarkApi {
     listPromptPresets: () => Promise<PromptPreset[]>;
     createDraft: (input: AnswerDraftInput) => Promise<AnswerDraftRecord>;
     updateDraft: (draftId: string, markdown: string) => Promise<AnswerDraftRecord>;
+    deleteDraft: (draftId: string) => Promise<void>;
   };
   tasks: {
     list: () => Promise<BackgroundJob[]>;
@@ -284,4 +288,3 @@ export interface NeuromarkApi {
     ) => Promise<void>;
   };
 }
-

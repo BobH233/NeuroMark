@@ -24,6 +24,11 @@ const currentTitle = computed(() => {
   return 'NeuroMark';
 });
 
+const showRefreshButton = computed(() => {
+  const name = String(route.name ?? 'projects');
+  return !name.startsWith('answer-generator');
+});
+
 const selectedProject = computed(() => projectsStore.selectedProject);
 </script>
 
@@ -40,7 +45,12 @@ const selectedProject = computed(() => projectsStore.selectedProject);
           {{ selectedProject.stats.gradedPaperCount }} 已批改
         </span>
       </div>
-      <n-button tertiary type="primary" @click="projectsStore.loadProjects()">
+      <n-button
+        v-if="showRefreshButton"
+        tertiary
+        type="primary"
+        @click="projectsStore.loadProjects()"
+      >
         刷新数据
       </n-button>
     </div>

@@ -48,6 +48,10 @@ export class AnswerGeneratorService {
         id: item.id,
         title: item.title,
         promptPreset: item.promptPreset,
+        promptText:
+          'promptText' in item && typeof item.promptText === 'string' && item.promptText.trim().length > 0
+            ? item.promptText
+            : (PROMPT_PRESETS.find((preset) => preset.id === item.promptPreset)?.prompt ?? ''),
         sourceImages: JSON.parse(item.sourceImagesJson) as string[],
         markdown: item.markdown,
         createdAt: item.createdAt,
@@ -62,7 +66,9 @@ export class AnswerGeneratorService {
     }
 
     await this.createDraft({
+      title: `参考答案草稿 ${new Date().toLocaleString('zh-CN')}`,
       promptPreset: PROMPT_PRESETS[0].id,
+      promptText: PROMPT_PRESETS[0].prompt,
       sourceImages: [],
     });
   }
@@ -71,10 +77,13 @@ export class AnswerGeneratorService {
     const db = getDatabase();
     const now = new Date().toISOString();
     const preset = PROMPT_PRESETS.find((item) => item.id === input.promptPreset) ?? PROMPT_PRESETS[0];
+    const title = input.title.trim() || `参考答案草稿 ${new Date().toLocaleString('zh-CN')}`;
+    const promptText = input.promptText.trim() || preset.prompt;
     const record: AnswerDraftRecord = {
       id: nanoid(),
-      title: `参考答案草稿 ${new Date().toLocaleString('zh-CN')}`,
+      title,
       promptPreset: preset.id,
+      promptText,
       sourceImages: input.sourceImages,
       markdown: `# ${preset.name}\n\n## 参考答案\n### 第1题\n- 关键知识点：请在此补充。\n- 满分建议：10 分\n\n### 第2题\n- 关键知识点：请在此补充。\n- 满分建议：15 分\n\n## 评分规则\n1. 关键步骤完整得满分。\n2. 仅写结论不写过程时酌情扣分。\n3. 表达等价但逻辑正确时可给过程分。\n`,
       createdAt: now,
@@ -86,6 +95,7 @@ export class AnswerGeneratorService {
         id: record.id,
         title: record.title,
         promptPreset: record.promptPreset,
+        promptText: record.promptText,
         sourceImagesJson: JSON.stringify(record.sourceImages),
         markdown: record.markdown,
         createdAt: record.createdAt,
@@ -121,10 +131,19 @@ export class AnswerGeneratorService {
       id: existing.id,
       title: existing.title,
       promptPreset: existing.promptPreset,
+      promptText:
+        'promptText' in existing && typeof existing.promptText === 'string' && existing.promptText.trim().length > 0
+          ? existing.promptText
+          : (PROMPT_PRESETS.find((preset) => preset.id === existing.promptPreset)?.prompt ?? ''),
       sourceImages: JSON.parse(existing.sourceImagesJson) as string[],
       markdown,
       createdAt: existing.createdAt,
       updatedAt,
     };
+  }
+
+  async deleteDraft(draftId: string): Promise<void> {
+    const db = getDatabase();
+    db.delete(answerDraftsTable).where(eq(answerDraftsTable.id, draftId)).run();
   }
 }

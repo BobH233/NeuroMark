@@ -1,7 +1,6 @@
 import path from 'node:path';
 import fs from 'fs-extra';
-import { and, desc, eq, sql } from 'drizzle-orm';
-import { nanoid } from 'nanoid';
+import { desc, eq } from 'drizzle-orm';
 import type {
   CreateProjectInput,
   FinalResult,
@@ -15,15 +14,20 @@ import type {
   ResultRecord,
 } from '@preload/contracts';
 import { getDatabase } from '@main/database/client';
-import {
-  paperRecordsTable,
-  projectsTable,
-  resultRecordsTable,
-  tasksTable,
-} from '@main/database/schema';
-import { ensureMockPaperSvg } from './mockAssets';
+import { projectsTable, tasksTable } from '@main/database/schema';
+import { processDocumentImage } from './documentScanService';
 
 const PAGE_SUFFIX_PATTERN = /^(?<base>.+)_(?<page>[1-9]\d?)$/;
+const SUPPORTED_IMAGE_EXTENSIONS = new Set([
+  '.jpg',
+  '.jpeg',
+  '.png',
+  '.bmp',
+  '.tif',
+  '.tiff',
+  '.webp',
+  '.svg',
+]);
 
 const DEFAULT_PROJECT_SETTINGS: ProjectSettings = {
   gradingConcurrency: 1,
@@ -71,78 +75,16 @@ function getProjectStructure(rootPath: string) {
   };
 }
 
-function basenameWithoutExt(filePath: string): string {
-  return path.basename(filePath, path.extname(filePath));
-}
-
-function groupImagesByPaperCode(filePaths: string[]): Map<string, string[]> {
-  const groups = new Map<string, string[]>();
-  for (const filePath of filePaths) {
-    const stem = basenameWithoutExt(filePath);
-    const matched = stem.match(PAGE_SUFFIX_PATTERN);
-    const groupKey = matched?.groups?.base ?? stem;
-    const existing = groups.get(groupKey) ?? [];
-    existing.push(filePath);
-    groups.set(groupKey, existing);
-  }
-
-  for (const [key, values] of groups.entries()) {
-    values.sort((left, right) => left.localeCompare(right, 'zh-Hans-CN'));
-    groups.set(key, values);
-  }
-
-  return groups;
-}
-
-function createMockModelResult(paperCode: string, score: number): ModelResult {
-  return {
-    studentInfo: {
-      className: '06212401',
-      studentId: `112024${paperCode.slice(-4).padStart(4, '0')}`,
-      name: `学生 ${paperCode.slice(-2).toUpperCase()}`,
-    },
-    questionScores: [
-      {
-        questionId: '1',
-        questionTitle: '电路分析基础',
-        maxScore: 15,
-        score: Math.max(8, score - 9),
-        reasoning:
-          '### 学生答案\n- 已完成主要作图与推导。\n\n### 正确答案\n- 应给出完整分析链路。\n\n### 得分依据\n- 本题重点检查交流通路、微变等效电路和关键公式书写，例如：$A_u = -\\frac{\\beta(R_C \\parallel R_L)}{r_{be}}$。\n\n### 问题与建议\n- 建议补充过程分析与扣分依据说明。',
-        issues: ['存在 1 处过程描述不完整'],
-      },
-      {
-        questionId: '2',
-        questionTitle: '两端口网络计算',
-        maxScore: 10,
-        score: Math.min(10, score - Math.max(8, score - 9)),
-        reasoning:
-          '### 学生答案\n- 计算过程完整。\n\n### 正确答案\n- 输入输出分压和总增益推导正确。\n\n### 得分依据\n- 本题按输入分压、输出分压和总增益三个部分分别评分。\n\n### 问题与建议\n- 建议复核最终结果的量级。',
-        issues: [],
-      },
-    ],
-    totalScore: score,
-    overallComment:
-      '## 总体完成情况\n该答卷整体完成情况较好，主要题目均已作答。\n\n## 主要错误与正确答案\n- 请重点核对过程分、关键公式和最终结论是否一致。\n\n## 建议补充的知识点\n- 建议复习交流通路分析、微变等效模型和带载增益计算。',
-    questionRegions: [
-      {
-        questionId: '1',
-        pageIndex: 0,
-        x: 0.12,
-        y: 0.2,
-        width: 0.5,
-        height: 0.2,
-      },
-      {
-        questionId: '2',
-        pageIndex: 0,
-        x: 0.18,
-        y: 0.54,
-        width: 0.56,
-        height: 0.18,
-      },
-    ],
-  };
+async function ensureProjectDirectories(rootPath: string): Promise<void> {
+  const structure = getProjectStructure(rootPath);
+  await Promise.all([
+    fs.ensureDir(structure.originalsDir),
+    fs.ensureDir(structure.scannedDir),
+    fs.ensureDir(structure.scanDebugDir),
+    fs.ensureDir(structure.referenceDir),
+    fs.ensureDir(structure.resultsDir),
+    fs.ensureDir(structure.exportsDir),
+  ]);
 }
 
 async function writeProjectManifest(project: ProjectMeta): Promise<void> {
@@ -160,155 +102,152 @@ async function writeProjectManifest(project: ProjectMeta): Promise<void> {
   );
 }
 
-async function ensureProjectDirectories(rootPath: string): Promise<void> {
+function isSupportedImage(filePath: string): boolean {
+  return SUPPORTED_IMAGE_EXTENSIONS.has(path.extname(filePath).toLowerCase());
+}
+
+async function listSortedFiles(targetDir: string): Promise<string[]> {
+  if (!(await fs.pathExists(targetDir))) {
+    return [];
+  }
+
+  const entries = await fs.readdir(targetDir, { withFileTypes: true });
+  return entries
+    .filter((entry) => entry.isFile())
+    .map((entry) => path.join(targetDir, entry.name))
+    .filter(isSupportedImage)
+    .sort((left, right) => left.localeCompare(right, 'zh-Hans-CN'));
+}
+
+async function listSortedSubDirectories(targetDir: string): Promise<string[]> {
+  if (!(await fs.pathExists(targetDir))) {
+    return [];
+  }
+
+  const entries = await fs.readdir(targetDir, { withFileTypes: true });
+  return entries
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .sort((left, right) => left.localeCompare(right, 'zh-Hans-CN'));
+}
+
+function normalizeResultPayload(payload: unknown): {
+  modelResult: ModelResult;
+  finalResult: FinalResult;
+} | null {
+  if (!payload || typeof payload !== 'object') {
+    return null;
+  }
+
+  const candidate = payload as Record<string, unknown>;
+  if (candidate.modelResult && candidate.finalResult) {
+    return {
+      modelResult: candidate.modelResult as ModelResult,
+      finalResult: candidate.finalResult as FinalResult,
+    };
+  }
+
+  if (candidate.studentInfo || candidate.student_info) {
+    const legacy = candidate as Record<string, any>;
+    const studentInfo = legacy.studentInfo ?? legacy.student_info;
+    const questionScores = legacy.questionScores ?? legacy.question_scores ?? [];
+    const totalScore = legacy.totalScore ?? legacy.total_score ?? 0;
+    const overallComment = legacy.overallComment ?? legacy.overall_comment ?? '';
+    const questionRegions = legacy.questionRegions ?? legacy.question_regions;
+
+    const modelResult: ModelResult = {
+      studentInfo: {
+        className: studentInfo.className ?? studentInfo.class_name ?? '',
+        studentId: studentInfo.studentId ?? studentInfo.student_id ?? '',
+        name: studentInfo.name ?? '',
+      },
+      questionScores: questionScores.map((item: Record<string, any>) => ({
+        questionId: item.questionId ?? item.question_id ?? '',
+        questionTitle: item.questionTitle ?? item.question_title ?? '',
+        maxScore: Number(item.maxScore ?? item.max_score ?? 0),
+        score: Number(item.score ?? 0),
+        reasoning: String(item.reasoning ?? ''),
+        issues: Array.isArray(item.issues) ? item.issues.map((issue) => String(issue)) : [],
+      })),
+      totalScore: Number(totalScore),
+      overallComment: String(overallComment),
+      questionRegions: Array.isArray(questionRegions)
+        ? questionRegions.map((item: Record<string, any>) => ({
+            questionId: item.questionId ?? item.question_id ?? '',
+            pageIndex: Number(item.pageIndex ?? item.page_index ?? 0),
+            x: Number(item.x ?? 0),
+            y: Number(item.y ?? 0),
+            width: Number(item.width ?? 0),
+            height: Number(item.height ?? 0),
+          }))
+        : undefined,
+    };
+
+    return {
+      modelResult,
+      finalResult: {
+        ...modelResult,
+      },
+    };
+  }
+
+  return null;
+}
+
+function getFileNameWithoutExtension(filePath: string): string {
+  return path.basename(filePath, path.extname(filePath));
+}
+
+function getPaperPageAssetPaths(
+  rootPath: string,
+  paperCode: string,
+  originalPath: string,
+) {
   const structure = getProjectStructure(rootPath);
-  await Promise.all([
-    fs.ensureDir(structure.originalsDir),
-    fs.ensureDir(structure.scannedDir),
-    fs.ensureDir(structure.scanDebugDir),
-    fs.ensureDir(structure.referenceDir),
-    fs.ensureDir(structure.resultsDir),
-    fs.ensureDir(structure.exportsDir),
-  ]);
+  const baseName = getFileNameWithoutExtension(originalPath);
+  return {
+    scannedPath: path.join(structure.scannedDir, paperCode, `${baseName}.png`),
+    debugPreviewPath: path.join(structure.scanDebugDir, paperCode, `${baseName}_debug.jpg`),
+    cornersPath: path.join(structure.scanDebugDir, paperCode, `${baseName}.json`),
+  };
+}
+
+function buildGroupedImportMap(filePaths: string[]): Map<string, string[]> {
+  const groups = new Map<string, string[]>();
+  for (const filePath of filePaths) {
+    const stem = getFileNameWithoutExtension(filePath);
+    const matched = stem.match(PAGE_SUFFIX_PATTERN);
+    const paperCode = matched?.groups?.base ?? stem;
+    const list = groups.get(paperCode) ?? [];
+    list.push(filePath);
+    groups.set(paperCode, list);
+  }
+
+  for (const [paperCode, files] of groups.entries()) {
+    files.sort((left, right) => left.localeCompare(right, 'zh-Hans-CN'));
+    groups.set(paperCode, files);
+  }
+
+  return groups;
+}
+
+function inferScanStatus(pages: PaperPage[]): PaperRecord['scanStatus'] {
+  if (pages.length === 0) {
+    return 'pending';
+  }
+  const completedCount = pages.filter((page) => page.scannedPath).length;
+  if (completedCount === 0) {
+    return 'pending';
+  }
+  if (completedCount === pages.length) {
+    return 'completed';
+  }
+  return 'processing';
 }
 
 export class ProjectService {
-  async ensureSeedData(userDataPath: string): Promise<void> {
-    const db = getDatabase();
-    const projectCount = db
-      .select({ count: sql<number>`count(*)` })
-      .from(projectsTable)
-      .get();
-
-    if ((projectCount?.count ?? 0) > 0) {
-      return;
-    }
-
-    const rootPath = path.join(userDataPath, 'demo-projects', '模拟电路第一次作业');
-    const project = await this.createProject({
-      name: '模拟电路第一次作业',
-      basePath: path.join(userDataPath, 'demo-projects'),
-      drawRegions: true,
-      gradingConcurrency: 2,
-      defaultImageDetail: 'high',
-    });
-
-    const structure = getProjectStructure(rootPath);
-    await fs.writeFile(
-      structure.referenceAnswerPath,
-      '# 模拟电路章节测试参考答案\n\n## 第1题\n- 写出交流通路、微变等效电路以及关键公式。\n\n## 第2题\n- 写出输入回路分压、输出回路分压与总增益。\n',
-      'utf-8',
-    );
-
-    const mockPapers = [
-      { code: 'NM-001', score: 22, accent: '#0f766e' },
-      { code: 'NM-002', score: 18, accent: '#0f8b8d' },
-      { code: 'NM-003', score: 25, accent: '#1d9c8f' },
-    ];
-
-    for (const [index, paper] of mockPapers.entries()) {
-      const originalPath = path.join(
-        structure.originalsDir,
-        paper.code,
-        `${paper.code}_1.svg`,
-      );
-      const scannedPath = path.join(
-        structure.scannedDir,
-        paper.code,
-        `${paper.code}_1.svg`,
-      );
-      const debugPath = path.join(
-        structure.scanDebugDir,
-        paper.code,
-        'boundary-preview.svg',
-      );
-      await ensureMockPaperSvg(
-        originalPath,
-        `${project.name} - 原始答卷`,
-        `${paper.code} · 第 1 页`,
-        paper.accent,
-      );
-      await ensureMockPaperSvg(
-        scannedPath,
-        `${project.name} - 扫描件`,
-        `${paper.code} · 第 1 页`,
-        '#245f73',
-      );
-      await ensureMockPaperSvg(
-        debugPath,
-        `${project.name} - 边界识别`,
-        `${paper.code} · 角点可视化`,
-        '#d97706',
-      );
-
-      const now = new Date().toISOString();
-      const paperId = nanoid();
-      const pages: PaperPage[] = [
-        {
-          pageIndex: 0,
-          originalPath,
-          scannedPath,
-          debugPreviewPath: debugPath,
-          corners: [
-            { x: 0.08, y: 0.05 },
-            { x: 0.93, y: 0.05 },
-            { x: 0.93, y: 0.95 },
-            { x: 0.08, y: 0.95 },
-          ],
-        },
-      ];
-
-      db.insert(paperRecordsTable)
-        .values({
-          id: paperId,
-          projectId: project.id,
-          paperCode: paper.code,
-          pageCount: 1,
-          originalPagesJson: JSON.stringify(pages),
-          scanStatus: 'completed',
-          gradingStatus: 'completed',
-          createdAt: now,
-          updatedAt: now,
-        })
-        .run();
-
-      const modelResult = createMockModelResult(paper.code, paper.score);
-      const finalResult: FinalResult = {
-        ...modelResult,
-      };
-
-      const resultPath = path.join(structure.resultsDir, `${paper.code}.json`);
-      await fs.writeJson(
-        resultPath,
-        {
-          modelResult,
-          finalResult,
-        },
-        { spaces: 2 },
-      );
-
-      db.insert(resultRecordsTable)
-        .values({
-          id: nanoid(),
-          projectId: project.id,
-          paperId,
-          filePath: resultPath,
-          modelResultJson: JSON.stringify(modelResult),
-          finalResultJson: JSON.stringify(finalResult),
-          updatedAt: now,
-        })
-        .run();
-
-      if (index === 0) {
-        await fs.writeJson(
-          path.join(structure.exportsDir, 'batch-results-demo.json'),
-          [{ paperCode: paper.code, totalScore: paper.score }],
-          { spaces: 2 },
-        );
-      }
-    }
-
-    await this.recomputeStats(project.id);
+  async ensureSeedData(): Promise<void> {
+    return;
   }
 
   async listProjects(): Promise<ProjectMeta[]> {
@@ -355,7 +294,7 @@ export class ProjectService {
   async createProject(input: CreateProjectInput): Promise<ProjectMeta> {
     const db = getDatabase();
     const now = new Date().toISOString();
-    const projectId = nanoid();
+    const projectId = input.name.trim() ? `${Date.now()}-${toSafeFolderName(input.name)}` : `${Date.now()}`;
     const targetRootPath = path.join(input.basePath, toSafeFolderName(input.name));
     const settings: ProjectSettings = {
       gradingConcurrency: input.gradingConcurrency ?? DEFAULT_PROJECT_SETTINGS.gradingConcurrency,
@@ -363,7 +302,10 @@ export class ProjectService {
       defaultImageDetail:
         input.defaultImageDetail ?? DEFAULT_PROJECT_SETTINGS.defaultImageDetail,
     };
-    const stats = createEmptyStats();
+
+    if (await fs.pathExists(path.join(targetRootPath, 'project.json'))) {
+      throw new Error('该目录下已经存在同名项目。');
+    }
 
     await ensureProjectDirectories(targetRootPath);
     const structure = getProjectStructure(targetRootPath);
@@ -381,7 +323,7 @@ export class ProjectService {
       rootPath: targetRootPath,
       createdAt: now,
       updatedAt: now,
-      stats,
+      stats: createEmptyStats(),
       settings,
     };
 
@@ -398,7 +340,7 @@ export class ProjectService {
       .run();
 
     await writeProjectManifest(project);
-    return project;
+    return this.recomputeStats(project.id);
   }
 
   async updateProjectSettings(
@@ -427,7 +369,7 @@ export class ProjectService {
   }
 
   async getProjectDetail(projectId: string): Promise<ProjectDetail> {
-    const project = await this.getProjectById(projectId);
+    const project = await this.recomputeStats(projectId);
     const structure = getProjectStructure(project.rootPath);
     const referenceAnswerMarkdown = (await fs.pathExists(structure.referenceAnswerPath))
       ? await fs.readFile(structure.referenceAnswerPath, 'utf-8')
@@ -435,6 +377,7 @@ export class ProjectService {
 
     const originals = await this.listProjectPapers(projectId);
     const results = await this.listResults(projectId);
+    const scans = originals.filter((item) => item.originalPages.some((page) => page.scannedPath));
     const db = getDatabase();
     const recentJobs = db
       .select()
@@ -463,73 +406,159 @@ export class ProjectService {
       project,
       referenceAnswerMarkdown,
       originals,
-      scans: originals,
+      scans,
       results,
       recentJobs,
     };
   }
 
   async listProjectPapers(projectId: string): Promise<PaperRecord[]> {
-    const db = getDatabase();
-    return db
-      .select()
-      .from(paperRecordsTable)
-      .where(eq(paperRecordsTable.projectId, projectId))
-      .orderBy(desc(paperRecordsTable.updatedAt))
-      .all()
-      .map((row) => ({
-        id: row.id,
-        projectId: row.projectId,
-        paperCode: row.paperCode,
-        pageCount: row.pageCount,
-        originalPages: parseJson<PaperPage[]>(row.originalPagesJson),
-        scanStatus: row.scanStatus as any,
-        gradingStatus: row.gradingStatus as any,
-      }));
+    const project = await this.getProjectById(projectId);
+    const structure = getProjectStructure(project.rootPath);
+    const paperCodes = await listSortedSubDirectories(structure.originalsDir);
+    const results = await this.listResults(projectId);
+    const gradedPaperIds = new Set(results.map((item) => item.paperId));
+    const papers: PaperRecord[] = [];
+
+    for (const paperCode of paperCodes) {
+      const originalPaths = await listSortedFiles(path.join(structure.originalsDir, paperCode));
+      if (originalPaths.length === 0) {
+        continue;
+      }
+
+      const pages: PaperPage[] = [];
+      for (const [index, originalPath] of originalPaths.entries()) {
+        const assets = getPaperPageAssetPaths(project.rootPath, paperCode, originalPath);
+        const corners =
+          (await fs.pathExists(assets.cornersPath))
+            ? ((await fs.readJson(assets.cornersPath)) as { corners?: PaperPage['corners'] }).corners
+            : undefined;
+
+        pages.push({
+          pageIndex: index,
+          originalPath,
+          scannedPath: (await fs.pathExists(assets.scannedPath)) ? assets.scannedPath : undefined,
+          debugPreviewPath:
+            (await fs.pathExists(assets.debugPreviewPath)) ? assets.debugPreviewPath : undefined,
+          corners,
+        });
+      }
+
+      papers.push({
+        id: paperCode,
+        projectId,
+        paperCode,
+        pageCount: pages.length,
+        originalPages: pages,
+        scanStatus: inferScanStatus(pages),
+        gradingStatus: gradedPaperIds.has(paperCode) ? 'completed' : 'pending',
+      });
+    }
+
+    return papers;
+  }
+
+  async scanProjectDocuments(
+    projectId: string,
+    options?: {
+      skipCompleted?: boolean;
+      signal?: AbortSignal;
+      onProgress?: (payload: {
+        completedPageCount: number;
+        processedPageCount: number;
+        skippedPageCount: number;
+        totalPageCount: number;
+        currentPaperLabel: string;
+      }) => Promise<void> | void;
+    },
+  ): Promise<{
+    totalPageCount: number;
+    processedPageCount: number;
+    skippedPageCount: number;
+  }> {
+    const project = await this.getProjectById(projectId);
+    const papers = await this.listProjectPapers(projectId);
+    const skipCompleted = options?.skipCompleted ?? true;
+    const pagesToHandle = papers.flatMap((paper) =>
+      paper.originalPages
+        .filter((page) => !(skipCompleted && page.scannedPath && page.debugPreviewPath))
+        .map((page) => ({
+          paperCode: paper.paperCode,
+          page,
+        })),
+    );
+
+    let processedPageCount = 0;
+    let skippedPageCount = 0;
+    const totalPageCount = pagesToHandle.length;
+
+    for (const item of pagesToHandle) {
+      if (options?.signal?.aborted) {
+        throw new Error('扫描任务已取消');
+      }
+
+      const assets = getPaperPageAssetPaths(project.rootPath, item.paperCode, item.page.originalPath);
+      if (
+        skipCompleted &&
+        (await fs.pathExists(assets.scannedPath)) &&
+        (await fs.pathExists(assets.debugPreviewPath))
+      ) {
+        skippedPageCount += 1;
+      } else {
+        await processDocumentImage(
+          item.page.originalPath,
+          assets.scannedPath,
+          assets.debugPreviewPath,
+          assets.cornersPath,
+        );
+        processedPageCount += 1;
+      }
+
+      await options?.onProgress?.({
+        completedPageCount: processedPageCount + skippedPageCount,
+        processedPageCount,
+        skippedPageCount,
+        totalPageCount,
+        currentPaperLabel: item.paperCode,
+      });
+    }
+
+    await this.recomputeStats(projectId);
+    return {
+      totalPageCount,
+      processedPageCount,
+      skippedPageCount,
+    };
   }
 
   async importOriginalImages(projectId: string, filePaths: string[]) {
     const project = await this.getProjectById(projectId);
     const structure = getProjectStructure(project.rootPath);
-    const groups = groupImagesByPaperCode(filePaths);
-    const db = getDatabase();
-
+    const grouped = buildGroupedImportMap(filePaths);
     let addedPaperCount = 0;
     let addedPageCount = 0;
 
-    for (const [paperCode, pages] of groups.entries()) {
-      const paperId = nanoid();
-      const storedPages: PaperPage[] = [];
-      for (const [pageIndex, sourcePath] of pages.entries()) {
+    for (const [paperCode, sourceFiles] of grouped.entries()) {
+      const paperDir = path.join(structure.originalsDir, paperCode);
+      await fs.ensureDir(paperDir);
+      const existingPaths = await listSortedFiles(paperDir);
+      const wasEmpty = existingPaths.length === 0;
+      let nextPageIndex = existingPaths.length;
+
+      for (const sourcePath of sourceFiles) {
+        nextPageIndex += 1;
+        const extension = path.extname(sourcePath).toLowerCase() || '.jpg';
         const targetPath = path.join(
-          structure.originalsDir,
-          paperCode,
-          path.basename(sourcePath),
+          paperDir,
+          `${paperCode}_${String(nextPageIndex).padStart(2, '0')}${extension}`,
         );
-        await fs.ensureDir(path.dirname(targetPath));
-        await fs.copy(sourcePath, targetPath);
-        storedPages.push({
-          pageIndex,
-          originalPath: targetPath,
-        });
+        await fs.copy(sourcePath, targetPath, { overwrite: false, errorOnExist: false });
         addedPageCount += 1;
       }
 
-      const now = new Date().toISOString();
-      db.insert(paperRecordsTable)
-        .values({
-          id: paperId,
-          projectId,
-          paperCode,
-          pageCount: storedPages.length,
-          originalPagesJson: JSON.stringify(storedPages),
-          scanStatus: 'pending',
-          gradingStatus: 'pending',
-          createdAt: now,
-          updatedAt: now,
-        })
-        .run();
-      addedPaperCount += 1;
+      if (wasEmpty) {
+        addedPaperCount += 1;
+      }
     }
 
     await this.recomputeStats(projectId);
@@ -541,50 +570,49 @@ export class ProjectService {
   }
 
   async listResults(projectId: string): Promise<ResultRecord[]> {
-    const db = getDatabase();
-    return db
-      .select()
-      .from(resultRecordsTable)
-      .where(eq(resultRecordsTable.projectId, projectId))
-      .orderBy(desc(resultRecordsTable.updatedAt))
-      .all()
-      .map((row) => ({
-        id: row.id,
-        projectId: row.projectId,
-        paperId: row.paperId,
-        filePath: row.filePath,
-        modelResult: parseJson<ModelResult>(row.modelResultJson),
-        finalResult: parseJson<FinalResult>(row.finalResultJson),
-        updatedAt: row.updatedAt,
-      }));
+    const project = await this.getProjectById(projectId);
+    const structure = getProjectStructure(project.rootPath);
+    if (!(await fs.pathExists(structure.resultsDir))) {
+      return [];
+    }
+
+    const entries = await fs.readdir(structure.resultsDir, { withFileTypes: true });
+    const files = entries
+      .filter((entry) => entry.isFile() && entry.name.toLowerCase().endsWith('.json'))
+      .map((entry) => path.join(structure.resultsDir, entry.name))
+      .sort((left, right) => left.localeCompare(right, 'zh-Hans-CN'));
+
+    const records: ResultRecord[] = [];
+    for (const filePath of files) {
+      try {
+        const payload = await fs.readJson(filePath);
+        const normalized = normalizeResultPayload(payload);
+        if (!normalized) {
+          continue;
+        }
+
+        const paperId = getFileNameWithoutExtension(filePath);
+        const stat = await fs.stat(filePath);
+        records.push({
+          id: filePath,
+          projectId,
+          paperId,
+          filePath,
+          modelResult: normalized.modelResult,
+          finalResult: normalized.finalResult,
+          updatedAt: stat.mtime.toISOString(),
+        });
+      } catch {
+        continue;
+      }
+    }
+
+    return records;
   }
 
   async getResult(projectId: string, paperId: string): Promise<ResultRecord | null> {
-    const db = getDatabase();
-    const row = db
-      .select()
-      .from(resultRecordsTable)
-      .where(
-        and(
-          eq(resultRecordsTable.projectId, projectId),
-          eq(resultRecordsTable.paperId, paperId),
-        ),
-      )
-      .get();
-
-    if (!row) {
-      return null;
-    }
-
-    return {
-      id: row.id,
-      projectId: row.projectId,
-      paperId: row.paperId,
-      filePath: row.filePath,
-      modelResult: parseJson<ModelResult>(row.modelResultJson),
-      finalResult: parseJson<FinalResult>(row.finalResultJson),
-      updatedAt: row.updatedAt,
-    };
+    const results = await this.listResults(projectId);
+    return results.find((item) => item.paperId === paperId) ?? null;
   }
 
   async saveFinalResult(
@@ -592,23 +620,17 @@ export class ProjectService {
     paperId: string,
     finalResult: FinalResult,
   ): Promise<ResultRecord> {
+    const project = await this.getProjectById(projectId);
+    const structure = getProjectStructure(project.rootPath);
     const current = await this.getResult(projectId, paperId);
     if (!current) {
       throw new Error('未找到待保存的评分结果。');
     }
 
-    const updatedAt = new Date().toISOString();
-    const db = getDatabase();
-    db.update(resultRecordsTable)
-      .set({
-        finalResultJson: JSON.stringify(finalResult),
-        updatedAt,
-      })
-      .where(eq(resultRecordsTable.id, current.id))
-      .run();
-
+    const filePath = path.join(structure.resultsDir, `${paperId}.json`);
+    await fs.ensureDir(path.dirname(filePath));
     await fs.writeJson(
-      current.filePath,
+      filePath,
       {
         modelResult: current.modelResult,
         finalResult,
@@ -617,11 +639,7 @@ export class ProjectService {
     );
 
     await this.recomputeStats(projectId);
-    return {
-      ...current,
-      finalResult,
-      updatedAt,
-    };
+    return (await this.getResult(projectId, paperId))!;
   }
 
   async exportResults(projectId: string, targetPath?: string): Promise<string> {
@@ -629,7 +647,8 @@ export class ProjectService {
     const results = await this.listResults(projectId);
     const structure = getProjectStructure(project.rootPath);
     const outputPath =
-      targetPath ?? path.join(structure.exportsDir, `${toSafeFolderName(project.name)}-results.json`);
+      targetPath ??
+      path.join(structure.exportsDir, `${toSafeFolderName(project.name)}-results.json`);
 
     await fs.ensureDir(path.dirname(outputPath));
     await fs.writeJson(
@@ -654,7 +673,9 @@ export class ProjectService {
     const averageScore =
       scoreList.length > 0
         ? Number(
-            (scoreList.reduce((sum, value) => sum + value, 0) / scoreList.length).toFixed(2),
+            (
+              scoreList.reduce((sum, value) => sum + value, 0) / scoreList.length
+            ).toFixed(2),
           )
         : 0;
     const latestJob = db
@@ -671,7 +692,7 @@ export class ProjectService {
       gradedPaperCount: papers.filter((item) => item.gradingStatus === 'completed').length,
       averageScore,
       pageCount: papers.reduce((sum, item) => sum + item.pageCount, 0),
-      lastTaskSummary: latestJob?.summary ?? project.stats.lastTaskSummary,
+      lastTaskSummary: latestJob?.summary ?? '尚未启动任务',
     };
 
     const updatedAt = new Date().toISOString();
@@ -693,71 +714,12 @@ export class ProjectService {
   }
 
   async completeMockScan(projectId: string): Promise<void> {
-    const project = await this.getProjectById(projectId);
-    const structure = getProjectStructure(project.rootPath);
-    const db = getDatabase();
-    const papers = await this.listProjectPapers(projectId);
-
-    for (const paper of papers) {
-      const updatedPages = await Promise.all(
-        paper.originalPages.map(async (page, pageIndex) => {
-          if (page.scannedPath && page.debugPreviewPath) {
-            return page;
-          }
-
-          const scannedPath = path.join(
-            structure.scannedDir,
-            paper.paperCode,
-            `${paper.paperCode}_${pageIndex + 1}.svg`,
-          );
-          const debugPreviewPath = path.join(
-            structure.scanDebugDir,
-            paper.paperCode,
-            `boundary-preview-${pageIndex + 1}.svg`,
-          );
-          await ensureMockPaperSvg(
-            scannedPath,
-            `${project.name} - 扫描答卷`,
-            `${paper.paperCode} · 第 ${pageIndex + 1} 页`,
-            '#256b7f',
-          );
-          await ensureMockPaperSvg(
-            debugPreviewPath,
-            `${project.name} - 边界标注`,
-            `${paper.paperCode} · 第 ${pageIndex + 1} 页`,
-            '#c2410c',
-          );
-          return {
-            ...page,
-            scannedPath,
-            debugPreviewPath,
-            corners: [
-              { x: 0.08, y: 0.06 },
-              { x: 0.92, y: 0.06 },
-              { x: 0.92, y: 0.94 },
-              { x: 0.08, y: 0.94 },
-            ],
-          };
-        }),
-      );
-
-      db.update(paperRecordsTable)
-        .set({
-          originalPagesJson: JSON.stringify(updatedPages),
-          scanStatus: 'completed',
-          updatedAt: new Date().toISOString(),
-        })
-        .where(eq(paperRecordsTable.id, paper.id))
-        .run();
-    }
-
-    await this.recomputeStats(projectId);
+    await this.scanProjectDocuments(projectId, { skipCompleted: false });
   }
 
   async completeMockGrading(projectId: string, skipCompleted = true): Promise<void> {
     const project = await this.getProjectById(projectId);
     const structure = getProjectStructure(project.rootPath);
-    const db = getDatabase();
     const papers = await this.listProjectPapers(projectId);
 
     for (const [index, paper] of papers.entries()) {
@@ -767,7 +729,27 @@ export class ProjectService {
       }
 
       const score = 16 + ((index * 3) % 10);
-      const modelResult = createMockModelResult(paper.paperCode, score);
+      const modelResult: ModelResult = {
+        studentInfo: {
+          className: '',
+          studentId: '',
+          name: '',
+        },
+        questionScores: [
+          {
+            questionId: '1',
+            questionTitle: '待接入真实批阅',
+            maxScore: 25,
+            score,
+            reasoning:
+              '### 说明\n当前阶段已接入真实项目文件读写，但批阅引擎尚未替换为真实 LLM 调用。\n',
+            issues: [],
+          },
+        ],
+        totalScore: score,
+        overallComment:
+          '## 说明\n当前结果由占位批阅任务生成。下一阶段会替换为真实批阅输出。',
+      };
       const finalResult: FinalResult = {
         ...modelResult,
       };
@@ -781,38 +763,6 @@ export class ProjectService {
         },
         { spaces: 2 },
       );
-      const now = new Date().toISOString();
-
-      if (existing) {
-        db.update(resultRecordsTable)
-          .set({
-            modelResultJson: JSON.stringify(modelResult),
-            finalResultJson: JSON.stringify(finalResult),
-            updatedAt: now,
-          })
-          .where(eq(resultRecordsTable.id, existing.id))
-          .run();
-      } else {
-        db.insert(resultRecordsTable)
-          .values({
-            id: nanoid(),
-            projectId,
-            paperId: paper.id,
-            filePath,
-            modelResultJson: JSON.stringify(modelResult),
-            finalResultJson: JSON.stringify(finalResult),
-            updatedAt: now,
-          })
-          .run();
-      }
-
-      db.update(paperRecordsTable)
-        .set({
-          gradingStatus: 'completed',
-          updatedAt: now,
-        })
-        .where(eq(paperRecordsTable.id, paper.id))
-        .run();
     }
 
     await this.recomputeStats(projectId);

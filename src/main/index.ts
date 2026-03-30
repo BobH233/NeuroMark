@@ -22,8 +22,7 @@ async function bootstrap(): Promise<void> {
     },
   );
 
-  await projects.ensureSeedData(app.getPath('userData'));
-  await answerGenerator.ensureSeedDraft();
+  await projects.ensureSeedData();
 
   registerIpcHandlers({
     app: appService,
@@ -57,4 +56,3 @@ app.on('window-all-closed', () => {
     app.quit();
   }
 });
-

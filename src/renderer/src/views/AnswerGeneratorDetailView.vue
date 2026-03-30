@@ -2,7 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { MdEditor } from 'md-editor-v3';
-import { NButton, NCard, NEmpty, NTag } from 'naive-ui';
+import { NButton, NCard, NEmpty, NPopconfirm, NTag } from 'naive-ui';
 import ImagePreviewTile from '@/components/ImagePreviewTile.vue';
 import { useAnswerGeneratorStore } from '@/stores/answer-generator';
 
@@ -42,24 +42,60 @@ async function saveDraft(value: string) {
 function goBack() {
   router.push('/answer-generator');
 }
+
+async function deleteDraft() {
+  if (!draft.value) {
+    return;
+  }
+
+  await store.deleteDraft(draft.value.id);
+  router.replace('/answer-generator');
+}
 </script>
 
 <template>
   <div class="page-stack">
     <section class="hero-panel">
       <div>
-        <div class="eyebrow">详情页</div>
-        <h2 class="section-title">{{ draft?.title || '参考答案详情' }}</h2>
+        <div class="eyebrow">
+          详情页
+        </div>
+        <h2 class="section-title">
+          {{ draft?.title || '参考答案详情' }}
+        </h2>
         <p class="section-copy">
           在这里查看 Markdown 预览、直接编辑内容，并回看本次生成关联的题目图片。
         </p>
       </div>
-      <n-button tertiary @click="goBack">返回历史记录</n-button>
+      <div class="hero-actions">
+        <n-popconfirm
+          v-if="draft"
+          positive-text="删除"
+          negative-text="取消"
+          @positive-click="deleteDraft"
+        >
+          <template #trigger>
+            <n-button tertiary type="error">
+              删除草稿
+            </n-button>
+          </template>
+          删除这份参考答案草稿后将无法恢复，确认继续吗？
+        </n-popconfirm>
+        <n-button
+          tertiary
+          @click="goBack"
+        >
+          返回历史记录
+        </n-button>
+      </div>
     </section>
 
     <template v-if="draft">
       <section class="answer-detail-layout">
-        <n-card class="surface-card answer-side-card" title="任务信息">
+        <n-card
+          class="surface-card answer-side-card"
+          title="任务信息"
+        >
           <div class="stack-gap">
             <div class="summary-row">
               <span>标题</span>
@@ -74,17 +110,45 @@ function goBack() {
               <strong>{{ draft.updatedAt }}</strong>
             </div>
             <div class="selected-tags">
-              <n-tag type="primary" round>{{ preset?.name || draft.promptPreset }}</n-tag>
-              <n-tag type="info" round>{{ draft.sourceImages.length }} 张图片</n-tag>
+              <n-tag
+                type="primary"
+                round
+              >
+                {{ preset?.name || draft.promptPreset }}
+              </n-tag>
+              <n-tag
+                type="info"
+                round
+              >
+                {{ draft.sourceImages.length }} 张图片
+              </n-tag>
             </div>
-            <div v-if="preset" class="preset-panel">
-              <div class="preset-panel-title">模板说明</div>
-              <div class="preset-panel-copy">{{ preset.description }}</div>
+            <div
+              v-if="preset"
+              class="preset-panel"
+            >
+              <div class="preset-panel-title">
+                模板说明
+              </div>
+              <div class="preset-panel-copy">
+                {{ preset.description }}
+              </div>
+            </div>
+            <div class="preset-panel">
+              <div class="preset-panel-title">
+                本次生成提示词
+              </div>
+              <div class="preset-panel-prompt">
+                {{ draft.promptText }}
+              </div>
             </div>
           </div>
         </n-card>
 
-        <n-card class="surface-card editor-card" title="Markdown 编辑与预览">
+        <n-card
+          class="surface-card editor-card"
+          title="Markdown 编辑与预览"
+        >
           <MdEditor
             :model-value="markdown"
             language="zh-CN"
@@ -95,8 +159,14 @@ function goBack() {
         </n-card>
       </section>
 
-      <n-card class="surface-card" title="题目图片">
-        <div v-if="draft.sourceImages.length" class="image-grid">
+      <n-card
+        class="surface-card"
+        title="题目图片"
+      >
+        <div
+          v-if="draft.sourceImages.length"
+          class="image-grid"
+        >
           <ImagePreviewTile
             v-for="(image, index) in draft.sourceImages"
             :key="image"
@@ -107,14 +177,25 @@ function goBack() {
             }"
           />
         </div>
-        <n-empty v-else description="当前草稿没有关联题目图片" />
+        <n-empty
+          v-else
+          description="当前草稿没有关联题目图片"
+        />
       </n-card>
     </template>
 
-    <n-card v-else class="surface-card">
+    <n-card
+      v-else
+      class="surface-card"
+    >
       <n-empty description="未找到这份参考答案草稿">
         <template #extra>
-          <n-button type="primary" @click="goBack">返回历史记录</n-button>
+          <n-button
+            type="primary"
+            @click="goBack"
+          >
+            返回历史记录
+          </n-button>
         </template>
       </n-empty>
     </n-card>

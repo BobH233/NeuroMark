@@ -47,6 +47,7 @@ const api: NeuromarkApi = {
     createDraft: (input) => ipcRenderer.invoke('answer-generator:create-draft', input),
     updateDraft: (draftId, markdown) =>
       ipcRenderer.invoke('answer-generator:update-draft', draftId, markdown),
+    deleteDraft: (draftId) => ipcRenderer.invoke('answer-generator:delete-draft', draftId),
   },
   tasks: {
     list: () => ipcRenderer.invoke('tasks:list'),
@@ -67,4 +68,3 @@ const api: NeuromarkApi = {
 };
 
 contextBridge.exposeInMainWorld('neuromark', api);
-

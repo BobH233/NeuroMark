@@ -42,6 +42,7 @@ export function estimateEta(progress: number, speed: number): string | null {
 export class TaskManager {
   private listeners = new Set<TaskListener>();
   private timers = new Map<string, NodeJS.Timeout>();
+  private scanControllers = new Map<string, AbortController>();
 
   constructor(private readonly projects: ProjectService) {}
 
@@ -63,7 +64,7 @@ export class TaskManager {
   }
 
   async startScan(projectId: string, options?: StartJobOptions): Promise<BackgroundJob> {
-    return this.startMockJob(projectId, 'scan', options);
+    return this.startScanJob(projectId, options);
   }
 
   async startGrading(projectId: string, options?: StartJobOptions): Promise<BackgroundJob> {
@@ -80,6 +81,11 @@ export class TaskManager {
       clearInterval(timer);
       this.timers.delete(jobId);
     }
+    const controller = this.scanControllers.get(jobId);
+    if (controller) {
+      controller.abort();
+      this.scanControllers.delete(jobId);
+    }
     const db = getDatabase();
     db.update(tasksTable)
       .set({
@@ -93,6 +99,43 @@ export class TaskManager {
       db.select().from(tasksTable).where(eq(tasksTable.id, jobId)).get()?.projectId ?? '',
     ).catch(() => undefined);
     await this.emit();
+  }
+
+  private async startScanJob(
+    projectId: string,
+    options?: StartJobOptions,
+  ): Promise<BackgroundJob> {
+    const project = await this.projects.getProjectById(projectId);
+    const papers = await this.projects.listProjectPapers(projectId);
+    const db = getDatabase();
+    const now = new Date().toISOString();
+    const jobId = nanoid();
+    const controller = new AbortController();
+
+    db.insert(tasksTable)
+      .values({
+        id: jobId,
+        projectId,
+        projectName: project.name,
+        kind: 'scan',
+        status: 'running',
+        progress: 0,
+        speed: 0,
+        eta: null,
+        abortable: true,
+        currentPaperLabel: papers[0]?.paperCode ?? '准备中',
+        summary: '正在批量扫描识别答卷',
+        createdAt: now,
+        updatedAt: now,
+      })
+      .run();
+
+    this.scanControllers.set(jobId, controller);
+    await this.emit();
+    void this.runScanJob(jobId, projectId, controller, options);
+
+    const row = db.select().from(tasksTable).where(eq(tasksTable.id, jobId)).get();
+    return toJob(row!);
   }
 
   private async startMockJob(
@@ -185,6 +228,84 @@ export class TaskManager {
     return toJob(row!);
   }
 
+  private async runScanJob(
+    jobId: string,
+    projectId: string,
+    controller: AbortController,
+    options?: StartJobOptions,
+  ): Promise<void> {
+    const db = getDatabase();
+    const startedAt = Date.now();
+
+    try {
+      const result = await this.projects.scanProjectDocuments(projectId, {
+        skipCompleted: options?.skipCompleted ?? true,
+        signal: controller.signal,
+        onProgress: async ({ completedPageCount, totalPageCount, currentPaperLabel }) => {
+          const progress =
+            totalPageCount > 0
+              ? Number((completedPageCount / totalPageCount).toFixed(3))
+              : 1;
+          const elapsedMinutes = Math.max((Date.now() - startedAt) / 60000, 1 / 60);
+          const speed = progress > 0 ? Number((progress / elapsedMinutes).toFixed(3)) : 0;
+
+          db.update(tasksTable)
+            .set({
+              progress,
+              speed,
+              eta: estimateEta(progress, speed),
+              currentPaperLabel,
+              summary: `正在识别纸张边界与扫描效果，已完成 ${completedPageCount}/${Math.max(totalPageCount, 1)} 页`,
+              updatedAt: new Date().toISOString(),
+            })
+            .where(eq(tasksTable.id, jobId))
+            .run();
+
+          await this.emit();
+        },
+      });
+
+      if (controller.signal.aborted) {
+        return;
+      }
+
+      db.update(tasksTable)
+        .set({
+          status: 'completed',
+          progress: 1,
+          speed:
+            result.totalPageCount > 0
+              ? Number((1 / Math.max((Date.now() - startedAt) / 60000, 1 / 60)).toFixed(3))
+              : 0,
+          eta: null,
+          summary:
+            result.totalPageCount > 0
+              ? `扫描任务已完成，共处理 ${result.processedPageCount} 页`
+              : '没有需要扫描的新答卷',
+          updatedAt: new Date().toISOString(),
+        })
+        .where(eq(tasksTable.id, jobId))
+        .run();
+    } catch (error) {
+      if (controller.signal.aborted) {
+        return;
+      }
+
+      db.update(tasksTable)
+        .set({
+          status: 'failed',
+          eta: null,
+          summary: error instanceof Error ? error.message : '扫描任务执行失败',
+          updatedAt: new Date().toISOString(),
+        })
+        .where(eq(tasksTable.id, jobId))
+        .run();
+    } finally {
+      this.scanControllers.delete(jobId);
+      await this.emit();
+    }
+  }
+
   private async emit(): Promise<void> {
     const tasks = await this.list();
     for (const listener of this.listeners) {
@@ -192,4 +313,3 @@ export class TaskManager {
     }
   }
 }
-

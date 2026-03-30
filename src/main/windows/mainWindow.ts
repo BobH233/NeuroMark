@@ -14,7 +14,7 @@ export async function createMainWindow(): Promise<BrowserWindow> {
     backgroundColor: '#ecf4f4',
     titleBarStyle: 'default',
     webPreferences: {
-      preload: path.join(__dirname, '../preload/index.js'),
+      preload: path.join(__dirname, '../preload/index.mjs'),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
@@ -23,6 +23,7 @@ export async function createMainWindow(): Promise<BrowserWindow> {
 
   if (process.env.ELECTRON_RENDERER_URL) {
     await window.loadURL(process.env.ELECTRON_RENDERER_URL);
+    window.webContents.openDevTools({ mode: 'detach' });
   } else {
     await window.loadFile(path.join(__dirname, '../../dist/index.html'));
   }

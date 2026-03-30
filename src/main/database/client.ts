@@ -8,6 +8,21 @@ let database:
   | ReturnType<typeof drizzle<typeof schema>> & { $client: Database.Database }
   | null = null;
 
+function ensureColumn(
+  connection: Database.Database,
+  tableName: string,
+  columnName: string,
+  definition: string,
+): void {
+  const columns = connection
+    .prepare(`PRAGMA table_info(${tableName})`)
+    .all() as Array<{ name: string }>;
+
+  if (!columns.some((column) => column.name === columnName)) {
+    connection.exec(`ALTER TABLE ${tableName} ADD COLUMN ${definition};`);
+  }
+}
+
 function ensureSchema(connection: Database.Database): void {
   connection.pragma('journal_mode = WAL');
   connection.exec(`
@@ -72,12 +87,15 @@ function ensureSchema(connection: Database.Database): void {
       id TEXT PRIMARY KEY,
       title TEXT NOT NULL,
       prompt_preset TEXT NOT NULL,
+      prompt_text TEXT NOT NULL DEFAULT '',
       source_images_json TEXT NOT NULL,
       markdown TEXT NOT NULL,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
   `);
+
+  ensureColumn(connection, 'answer_drafts', 'prompt_text', "prompt_text TEXT NOT NULL DEFAULT ''");
 }
 
 export function getDatabase() {
@@ -93,4 +111,3 @@ export function getDatabase() {
   > & { $client: Database.Database };
   return database;
 }
-

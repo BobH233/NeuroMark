@@ -61,6 +61,7 @@ export const answerDraftsTable = sqliteTable('answer_drafts', {
   id: text('id').primaryKey(),
   title: text('title').notNull(),
   promptPreset: text('prompt_preset').notNull(),
+  promptText: text('prompt_text').notNull(),
   sourceImagesJson: text('source_images_json').notNull(),
   markdown: text('markdown').notNull(),
   createdAt: text('created_at').notNull(),
@@ -75,4 +76,3 @@ export type Schema = {
   settingsTable: typeof settingsTable;
   answerDraftsTable: typeof answerDraftsTable;
 };
-

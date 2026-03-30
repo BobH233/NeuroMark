@@ -46,18 +46,23 @@ textarea {
   display: grid;
   grid-template-columns: 320px 1fr;
   height: 100%;
+  min-height: 0;
 }
 
 .shell-main {
   display: flex;
   flex-direction: column;
   min-width: 0;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .shell-content {
-  flex: 1;
+  flex: 1 1 0;
+  height: 0;
   min-height: 0;
-  overflow: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
   padding: 24px 24px 28px;
 }
 
@@ -76,16 +81,16 @@ textarea {
   margin: 20px;
   padding: 28px 22px;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   min-height: calc(100vh - 40px);
 }
 
 .nav-sidebar-main {
   width: 100%;
   display: grid;
-  align-content: center;
+  align-content: start;
   gap: 28px;
-  margin: auto 0;
+  margin: 0;
 }
 
 .brand-block {
@@ -248,8 +253,6 @@ textarea {
 
 .draft-card:hover {
   border-color: rgba(15, 139, 141, 0.32);
-  transform: translateY(-2px);
-  box-shadow: 0 14px 32px rgba(16, 91, 104, 0.10);
 }
 
 .project-card-head,
@@ -260,6 +263,13 @@ textarea {
   display: flex;
   justify-content: space-between;
   gap: 12px;
+}
+
+.draft-card-actions,
+.hero-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
 .draft-card-title {
@@ -277,6 +287,21 @@ textarea {
   margin-top: 16px;
   color: var(--accent-deep);
   line-height: 1.7;
+}
+
+.draft-delete-button {
+  border: 1px solid rgba(203, 63, 63, 0.16);
+  border-radius: 999px;
+  padding: 6px 12px;
+  background: rgba(255, 255, 255, 0.92);
+  color: #b42318;
+  cursor: pointer;
+  transition: border-color 0.18s ease, background-color 0.18s ease;
+}
+
+.draft-delete-button:hover {
+  border-color: rgba(203, 63, 63, 0.34);
+  background: rgba(203, 63, 63, 0.06);
 }
 
 .project-card h3,
@@ -356,6 +381,11 @@ textarea {
 .generator-create-layout {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.generator-create-flow {
+  display: grid;
   gap: 16px;
 }
 
@@ -614,6 +644,31 @@ textarea {
   gap: 16px;
 }
 
+.create-step-card {
+  overflow: hidden;
+}
+
+.create-form-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.field-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.field-label {
+  font-weight: 700;
+}
+
+.field-hint {
+  color: var(--muted);
+  font-size: 13px;
+}
+
 .preset-panel {
   padding: 16px;
   border-radius: 18px;
@@ -672,6 +727,86 @@ textarea {
   border-radius: 999px;
   background: rgba(15, 139, 141, 0.1);
   color: var(--accent-deep);
+}
+
+.image-upload-zone {
+  padding: 28px;
+  border-radius: 22px;
+  border: 1.5px dashed rgba(15, 139, 141, 0.26);
+  background:
+    linear-gradient(180deg, rgba(15, 139, 141, 0.08), rgba(255, 255, 255, 0.78)),
+    rgba(255, 255, 255, 0.72);
+  cursor: pointer;
+  transition: 0.18s ease;
+  outline: none;
+}
+
+.image-upload-zone:hover,
+.image-upload-zone:focus {
+  border-color: rgba(15, 139, 141, 0.5);
+  box-shadow: 0 0 0 4px rgba(15, 139, 141, 0.12);
+}
+
+.image-upload-title {
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.image-upload-copy {
+  margin-top: 8px;
+  color: var(--muted);
+  line-height: 1.7;
+}
+
+.upload-preview-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 14px;
+}
+
+.upload-preview-card {
+  position: relative;
+  overflow: hidden;
+  border-radius: 20px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.88);
+  box-shadow: 0 12px 30px rgba(16, 91, 104, 0.08);
+}
+
+.upload-preview-image {
+  display: block;
+  width: 100%;
+  height: 190px;
+  object-fit: cover;
+  background: linear-gradient(180deg, #f8fbff, #edf5ff);
+}
+
+.upload-preview-meta {
+  padding: 14px;
+  display: grid;
+  gap: 6px;
+}
+
+.upload-preview-title {
+  font-weight: 700;
+}
+
+.upload-preview-name {
+  color: var(--muted);
+  font-size: 13px;
+  word-break: break-word;
+}
+
+.upload-preview-remove {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  border: none;
+  border-radius: 999px;
+  padding: 8px 12px;
+  background: rgba(9, 34, 47, 0.75);
+  color: white;
+  cursor: pointer;
 }
 
 .preview-page {
@@ -804,7 +939,8 @@ textarea {
   .two-pane,
   .scan-panel,
   .two-col,
-  .three-col {
+  .three-col,
+  .create-form-grid {
     grid-template-columns: 1fr;
   }
 

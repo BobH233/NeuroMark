@@ -33,6 +33,10 @@ export const useAnswerGeneratorStore = defineStore('answer-generator', {
       await this.bootstrap();
       return updated;
     },
+    async deleteDraft(draftId: string) {
+      await window.neuromark.answerGenerator.deleteDraft(draftId);
+      await this.bootstrap();
+    },
     getDraftById(draftId: string) {
       return this.drafts.find((item) => item.id === draftId) ?? null;
     },

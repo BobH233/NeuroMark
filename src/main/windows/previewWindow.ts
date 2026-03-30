@@ -15,7 +15,7 @@ export async function createPreviewWindow(token: string): Promise<BrowserWindow>
     autoHideMenuBar: true,
     titleBarStyle: 'default',
     webPreferences: {
-      preload: path.join(__dirname, '../preload/index.js'),
+      preload: path.join(__dirname, '../preload/index.mjs'),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,

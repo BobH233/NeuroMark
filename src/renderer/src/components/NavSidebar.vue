@@ -12,7 +12,17 @@ const navItems = [
   { key: 'settings', label: '全局设置', subtitle: '模型后端与连接测试', path: '/settings' },
 ];
 
-const activeKey = computed(() => String(route.name ?? 'projects'));
+const activeKey = computed(() => {
+  const routeNames = route.matched
+    .map((item) => item.name)
+    .filter((name): name is string => typeof name === 'string');
+
+  if (routeNames.some((name) => name.startsWith('answer-generator'))) {
+    return 'answer-generator';
+  }
+
+  return String(route.name ?? 'projects');
+});
 </script>
 
 <template>
