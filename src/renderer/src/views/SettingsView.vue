@@ -10,8 +10,9 @@ import {
   NInput,
   NInputNumber,
   NPopconfirm,
+  NSelect,
 } from 'naive-ui';
-import type { PromptPreset } from '@preload/contracts';
+import type { LlmReasoningEffort, PromptPreset } from '@preload/contracts';
 import { useAnswerGeneratorStore } from '@/stores/answer-generator';
 import { useSettingsStore } from '@/stores/settings';
 
@@ -23,7 +24,14 @@ const form = reactive({
   model: 'gpt-4.1',
   apiKey: '',
   timeoutMs: 180000,
+  reasoningEffort: 'medium' as LlmReasoningEffort,
 });
+
+const reasoningEffortOptions = [
+  { label: '低', value: 'low' },
+  { label: '中', value: 'medium' },
+  { label: '高', value: 'high' },
+] satisfies Array<{ label: string; value: LlmReasoningEffort }>;
 
 const presetForm = reactive({
   id: '',
@@ -48,6 +56,7 @@ onMounted(async () => {
     form.model = settingsStore.settings.model;
     form.apiKey = settingsStore.settings.apiKey;
     form.timeoutMs = settingsStore.settings.timeoutMs;
+    form.reasoningEffort = settingsStore.settings.reasoningEffort;
   }
 });
 
@@ -163,6 +172,13 @@ async function deletePreset(presetId: string) {
         </n-form-item>
         <n-form-item label="请求超时（毫秒）">
           <n-input-number v-model:value="form.timeoutMs" :min="5000" :max="600000" />
+        </n-form-item>
+        <n-form-item label="思考强度">
+          <n-select
+            v-model:value="form.reasoningEffort"
+            :options="reasoningEffortOptions"
+            placeholder="选择模型思考强度"
+          />
         </n-form-item>
 
         <div class="settings-actions">

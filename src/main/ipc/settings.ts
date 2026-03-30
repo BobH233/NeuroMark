@@ -2,11 +2,14 @@ import { ipcMain } from 'electron';
 import { z } from 'zod';
 import type { ServiceBundle } from '@main/services/types';
 
+const reasoningEffortSchema = z.enum(['low', 'medium', 'high']);
+
 const settingsSchema = z.object({
   baseUrl: z.string().min(1),
   model: z.string().min(1),
   apiKey: z.string().optional(),
   timeoutMs: z.number().int().min(5000).max(600000),
+  reasoningEffort: reasoningEffortSchema,
 });
 
 export function registerSettingsIpc(services: ServiceBundle): void {
@@ -18,4 +21,3 @@ export function registerSettingsIpc(services: ServiceBundle): void {
     services.settings.testConnection(settingsSchema.extend({ apiKey: z.string().min(1) }).parse(payload)),
   );
 }
-

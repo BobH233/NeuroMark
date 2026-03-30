@@ -41,6 +41,8 @@ export const tasksTable = sqliteTable('tasks', {
   progress: real('progress').notNull(),
   speed: real('speed').notNull(),
   eta: text('eta'),
+  startedAt: text('started_at'),
+  finishedAt: text('finished_at'),
   abortable: integer('abortable', { mode: 'boolean' }).notNull(),
   currentPaperLabel: text('current_paper_label'),
   summary: text('summary').notNull(),
@@ -54,6 +56,7 @@ export const settingsTable = sqliteTable('settings', {
   model: text('model').notNull(),
   apiKeyEncrypted: text('api_key_encrypted').notNull(),
   timeoutMs: integer('timeout_ms').notNull(),
+  reasoningEffort: text('reasoning_effort').notNull(),
   storageMode: text('storage_mode').notNull(),
 });
 
@@ -64,6 +67,15 @@ export const answerDraftsTable = sqliteTable('answer_drafts', {
   promptText: text('prompt_text').notNull(),
   sourceImagesJson: text('source_images_json').notNull(),
   markdown: text('markdown').notNull(),
+  generationStatus: text('generation_status').notNull(),
+  generationError: text('generation_error'),
+  generationTaskId: text('generation_task_id'),
+  generationStage: text('generation_stage'),
+  generationLogsJson: text('generation_logs_json').notNull(),
+  generationReasoningText: text('generation_reasoning_text').notNull(),
+  generationPreviewText: text('generation_preview_text').notNull(),
+  lastGenerationStartedAt: text('last_generation_started_at'),
+  lastGenerationCompletedAt: text('last_generation_completed_at'),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
 });

@@ -1,4 +1,5 @@
 export type ImageDetailLevel = 'low' | 'high' | 'auto';
+export type LlmReasoningEffort = 'low' | 'medium' | 'high';
 export type JobKind = 'scan' | 'grading' | 'answer-generation';
 export type JobStatus =
   | 'queued'
@@ -13,6 +14,12 @@ export type PaperStageStatus =
   | 'processing'
   | 'completed'
   | 'skipped';
+export type DraftGenerationStatus =
+  | 'idle'
+  | 'queued'
+  | 'running'
+  | 'completed'
+  | 'failed';
 
 export interface ProjectSettings {
   gradingConcurrency: number;
@@ -117,6 +124,8 @@ export interface BackgroundJob {
   progress: number;
   speed: number;
   eta: string | null;
+  startedAt: string | null;
+  finishedAt: string | null;
   createdAt: string;
   updatedAt: string;
   abortable: boolean;
@@ -129,6 +138,7 @@ export interface GlobalLlmSettings {
   model: string;
   apiKey: string;
   timeoutMs: number;
+  reasoningEffort: LlmReasoningEffort;
 }
 
 export interface SaveGlobalLlmSettingsInput {
@@ -136,6 +146,7 @@ export interface SaveGlobalLlmSettingsInput {
   model: string;
   apiKey?: string;
   timeoutMs: number;
+  reasoningEffort: LlmReasoningEffort;
 }
 
 export interface TestLlmConnectionPayload {
@@ -143,6 +154,7 @@ export interface TestLlmConnectionPayload {
   model: string;
   apiKey: string;
   timeoutMs: number;
+  reasoningEffort: LlmReasoningEffort;
 }
 
 export interface TestLlmConnectionResult {
@@ -151,15 +163,29 @@ export interface TestLlmConnectionResult {
   latencyMs: number;
 }
 
+export interface AnswerSourceImage {
+  src: string;
+  name: string;
+}
+
 export interface AnswerDraftRecord {
   id: string;
   createdAt: string;
   updatedAt: string;
   title: string;
-  sourceImages: string[];
+  sourceImages: AnswerSourceImage[];
   promptPreset: string;
   promptText: string;
   markdown: string;
+  generationStatus: DraftGenerationStatus;
+  generationError: string | null;
+  generationTaskId: string | null;
+  generationStage: string | null;
+  generationLogs: string[];
+  generationReasoningText: string;
+  generationPreviewText: string;
+  lastGenerationStartedAt: string | null;
+  lastGenerationCompletedAt: string | null;
 }
 
 export interface PromptPreset {
@@ -174,6 +200,12 @@ export interface PromptPresetInput {
   name: string;
   description: string;
   prompt: string;
+}
+
+export interface AnswerGeneratorSnapshot {
+  drafts: AnswerDraftRecord[];
+  presets: PromptPreset[];
+  programPromptText: string;
 }
 
 export interface ProjectDetail {
@@ -221,10 +253,13 @@ export interface AnswerDraftInput {
   title: string;
   promptPreset: string;
   promptText: string;
-  sourceImages: string[];
+  sourceImages: AnswerSourceImage[];
 }
 
 export type TaskUpdateHandler = (tasks: BackgroundJob[]) => void;
+export type AnswerGeneratorUpdateHandler = (
+  snapshot: AnswerGeneratorSnapshot,
+) => void;
 
 export interface NeuromarkApi {
   app: {
@@ -275,13 +310,16 @@ export interface NeuromarkApi {
     ) => Promise<TestLlmConnectionResult>;
   };
   answerGenerator: {
+    getState: () => Promise<AnswerGeneratorSnapshot>;
     listDrafts: () => Promise<AnswerDraftRecord[]>;
     listPromptPresets: () => Promise<PromptPreset[]>;
     savePromptPreset: (input: PromptPresetInput) => Promise<PromptPreset>;
     deletePromptPreset: (presetId: string) => Promise<void>;
     createDraft: (input: AnswerDraftInput) => Promise<AnswerDraftRecord>;
+    startGeneration: (draftId: string) => Promise<AnswerDraftRecord>;
     updateDraft: (draftId: string, markdown: string) => Promise<AnswerDraftRecord>;
     deleteDraft: (draftId: string) => Promise<void>;
+    onUpdated: (handler: AnswerGeneratorUpdateHandler) => () => void;
   };
   tasks: {
     list: () => Promise<BackgroundJob[]>;

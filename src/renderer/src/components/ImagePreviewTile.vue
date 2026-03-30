@@ -12,11 +12,25 @@ async function openPreview() {
 </script>
 
 <template>
-  <button class="image-tile" @click="openPreview">
-    <img class="image-tile-media" :src="toImageSrc(image.src)" :alt="image.title" />
+  <button
+    class="image-tile"
+    @click="openPreview"
+  >
+    <img
+      class="image-tile-media"
+      :src="toImageSrc(image.src)"
+      :alt="image.title"
+    >
     <div class="image-tile-footer">
-      <div class="image-tile-title">{{ image.title }}</div>
-      <div v-if="image.caption" class="image-tile-caption">{{ image.caption }}</div>
+      <div class="image-tile-title">
+        {{ image.title }}
+      </div>
+      <div
+        v-if="image.caption"
+        class="image-tile-caption"
+      >
+        {{ image.caption }}
+      </div>
     </div>
   </button>
 </template>

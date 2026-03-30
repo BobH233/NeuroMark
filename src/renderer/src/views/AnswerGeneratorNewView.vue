@@ -19,6 +19,7 @@ const draftTitle = ref(createDefaultTitle());
 const promptText = ref('');
 const selectedImages = ref<PendingImage[]>([]);
 const uploadZoneRef = ref<HTMLElement | null>(null);
+const creating = ref(false);
 
 const presetOptions = computed(() =>
   store.presets.map((item) => ({ label: item.name, value: item.id })),
@@ -26,7 +27,12 @@ const presetOptions = computed(() =>
 const currentPreset = computed(() =>
   store.presets.find((item) => item.id === selectedPreset.value) ?? null,
 );
-const selectedImageSources = computed(() => selectedImages.value.map((item) => item.source));
+const selectedImageSources = computed(() =>
+  selectedImages.value.map((item) => ({
+    src: item.source,
+    name: item.name,
+  })),
+);
 const canCreate = computed(
   () =>
     draftTitle.value.trim().length > 0 &&
@@ -89,17 +95,26 @@ async function chooseImages() {
 }
 
 async function createDraft() {
-  if (!canCreate.value) {
+  if (!canCreate.value || creating.value) {
     return;
   }
 
-  const draft = await store.createDraft({
-    title: draftTitle.value.trim(),
-    promptPreset: selectedPreset.value,
-    promptText: promptText.value.trim(),
-    sourceImages: selectedImageSources.value,
-  });
-  router.replace(`/answer-generator/${draft.id}`);
+  creating.value = true;
+  try {
+    const draft = await store.createDraft({
+      title: draftTitle.value.trim(),
+      promptPreset: selectedPreset.value,
+      promptText: promptText.value.trim(),
+      sourceImages: selectedImageSources.value,
+    });
+    router.replace(`/answer-generator/${draft.id}`);
+  } catch (error) {
+    window.alert(
+      `创建参考答案任务失败：${error instanceof Error ? error.message : String(error)}`,
+    );
+  } finally {
+    creating.value = false;
+  }
 }
 
 function goBack() {
@@ -129,10 +144,6 @@ async function openPreview(imageId: string) {
 
 function clearImages() {
   selectedImages.value = [];
-}
-
-function focusUploadZone() {
-  uploadZoneRef.value?.focus();
 }
 
 function handlePaste(event: ClipboardEvent) {
@@ -165,7 +176,7 @@ async function appendClipboardImages(items: DataTransferItem[]) {
         return readFileAsDataUrl(file).then((source) => ({
           id: createImageId(index),
           source,
-          name: `粘贴图片 ${selectedImages.value.length + index + 1}.${getImageExtension(file.type)}`,
+          name: createPastedImageName(selectedImages.value.length + index + 1, file.type),
         }));
       })
       .filter((item): item is Promise<PendingImage> => item !== null),
@@ -210,6 +221,15 @@ function isEditableTarget(target: HTMLElement | null) {
 
 function getImageExtension(mimeType: string) {
   return mimeType.split('/')[1] || 'png';
+}
+
+function createPastedImageName(index: number, mimeType: string) {
+  const timestamp = new Date()
+    .toLocaleString('sv-SE')
+    .replaceAll('-', '')
+    .replaceAll(':', '')
+    .replace(' ', '-');
+  return `picture-${timestamp}-${index}.${getImageExtension(mimeType)}`;
 }
 
 function readFileAsDataUrl(file: File) {
@@ -452,6 +472,7 @@ function readFileAsDataUrl(file: File) {
             type="primary"
             size="large"
             :disabled="!canCreate"
+            :loading="creating"
             @click="createDraft"
           >
             创建并进入详情

@@ -19,8 +19,10 @@ const theme = computed(() => {
 });
 
 const labelMap: Record<string, string> = {
+  idle: '未开始',
   pending: '待开始',
   ready: '已就绪',
+  queued: '排队中',
   processing: '处理中',
   running: '进行中',
   completed: '已完成',
@@ -31,6 +33,8 @@ const labelMap: Record<string, string> = {
 </script>
 
 <template>
-  <span class="status-pill" :data-theme="theme">{{ labelMap[value] ?? value }}</span>
+  <span
+    class="status-pill"
+    :data-theme="theme"
+  >{{ labelMap[value] ?? value }}</span>
 </template>
-

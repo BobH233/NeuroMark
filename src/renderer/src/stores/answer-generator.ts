@@ -2,6 +2,7 @@ import { defineStore } from 'pinia';
 import type {
   AnswerDraftInput,
   AnswerDraftRecord,
+  AnswerGeneratorSnapshot,
   PromptPreset,
   PromptPresetInput,
 } from '@preload/contracts';
@@ -10,6 +11,8 @@ export const useAnswerGeneratorStore = defineStore('answer-generator', {
   state: () => ({
     drafts: [] as AnswerDraftRecord[],
     presets: [] as PromptPreset[],
+    programPromptText: '',
+    unbind: null as null | (() => void),
   }),
   getters: {
     draftMap(state) {
@@ -18,12 +21,13 @@ export const useAnswerGeneratorStore = defineStore('answer-generator', {
   },
   actions: {
     async bootstrap() {
-      const [drafts, presets] = await Promise.all([
-        window.neuromark.answerGenerator.listDrafts(),
-        window.neuromark.answerGenerator.listPromptPresets(),
-      ]);
-      this.drafts = drafts;
-      this.presets = presets;
+      const snapshot = await window.neuromark.answerGenerator.getState();
+      this.applySnapshot(snapshot);
+      if (!this.unbind) {
+        this.unbind = window.neuromark.answerGenerator.onUpdated((nextSnapshot) => {
+          this.applySnapshot(nextSnapshot);
+        });
+      }
     },
     async createDraft(input: AnswerDraftInput) {
       const draft = await window.neuromark.answerGenerator.createDraft(input);
@@ -51,8 +55,18 @@ export const useAnswerGeneratorStore = defineStore('answer-generator', {
       await window.neuromark.answerGenerator.deleteDraft(draftId);
       await this.bootstrap();
     },
+    async startGeneration(draftId: string) {
+      const updated = await window.neuromark.answerGenerator.startGeneration(draftId);
+      await this.bootstrap();
+      return updated;
+    },
     getDraftById(draftId: string) {
       return this.drafts.find((item) => item.id === draftId) ?? null;
+    },
+    applySnapshot(snapshot: AnswerGeneratorSnapshot) {
+      this.drafts = snapshot.drafts;
+      this.presets = snapshot.presets;
+      this.programPromptText = snapshot.programPromptText;
     },
   },
 });

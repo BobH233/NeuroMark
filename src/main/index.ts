@@ -11,6 +11,7 @@ import { SettingsService } from './services/settingsService';
 import { TaskManager } from './services/taskManager';
 
 let mainWindow: BrowserWindow | null = null;
+let answerGeneratorService: AnswerGeneratorService | null = null;
 const ALLOWED_IMAGE_EXTENSIONS = new Set([
   '.png',
   '.jpg',
@@ -43,8 +44,9 @@ function registerLocalFileProtocol(): void {
 async function bootstrap(): Promise<void> {
   const projects = new ProjectService();
   const settings = new SettingsService();
-  const answerGenerator = new AnswerGeneratorService();
   const tasks = new TaskManager(projects);
+  const answerGenerator = new AnswerGeneratorService(settings, tasks);
+  answerGeneratorService = answerGenerator;
   const appService = new AppService(
     () => mainWindow,
     async (token) => {
@@ -53,6 +55,7 @@ async function bootstrap(): Promise<void> {
   );
 
   await projects.ensureSeedData();
+  await answerGenerator.recoverInterruptedGenerations();
 
   registerIpcHandlers({
     app: appService,
@@ -88,4 +91,8 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit();
   }
+});
+
+app.on('before-quit', () => {
+  void answerGeneratorService?.interruptRunningGenerations();
 });

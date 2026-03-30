@@ -192,7 +192,7 @@ function handleKeydown(event: KeyboardEvent) {
               class="preview-canvas"
               :class="{ dragging, 'preview-canvas--no-transition': suppressTransformTransition }"
               :style="{
-                transform: `translate(${translate.x}px, ${translate.y}px) scale(${zoom}) rotate(${activeRotation}deg)`
+                transform: `translate3d(${translate.x}px, ${translate.y}px, 0) scale(${zoom}) rotate(${activeRotation}deg)`
               }"
               @mousedown="startDrag"
             >
@@ -446,6 +446,8 @@ function handleKeydown(event: KeyboardEvent) {
   transform-origin: center center;
   cursor: grab;
   user-select: none;
+  will-change: transform;
+  backface-visibility: hidden;
   transition: transform 120ms ease-out;
 }
 
@@ -482,7 +484,6 @@ function handleKeydown(event: KeyboardEvent) {
   color: #fff;
   transform: translateY(-50%);
   cursor: pointer;
-  backdrop-filter: blur(8px);
 }
 
 .preview-nav svg {

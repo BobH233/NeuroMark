@@ -7,7 +7,7 @@
   --top-bar-safe-space: 142px;
   --sidebar-margin-top: 30px;
   --sidebar-top-padding: 28px;
-  --panel: rgba(255, 255, 255, 0.88);
+  --panel: rgba(255, 255, 255, 0.94);
   --panel-strong: #ffffff;
   --text: #163243;
   --muted: #5e7485;
@@ -93,10 +93,16 @@ textarea {
 .hero-panel,
 .detail-panel {
   background: var(--panel);
-  backdrop-filter: blur(18px);
   border: 1px solid var(--line);
   border-radius: 24px;
   box-shadow: var(--shadow);
+}
+
+.surface-card,
+.hero-panel,
+.detail-panel {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
 }
 
 .nav-sidebar {
@@ -155,7 +161,10 @@ textarea {
   background: rgba(255, 255, 255, 0.72);
   text-align: left;
   cursor: pointer;
-  transition: all 0.18s ease;
+  transition:
+    transform 0.18s ease,
+    border-color 0.18s ease,
+    background-color 0.18s ease;
 }
 
 .nav-card:hover,
@@ -243,7 +252,7 @@ textarea {
   background: rgba(255, 255, 255, 0.84);
   text-align: left;
   cursor: pointer;
-  transition: 0.18s ease;
+  transition: border-color 0.18s ease, background-color 0.18s ease;
 }
 
 .project-card:hover,
@@ -299,6 +308,10 @@ textarea {
   margin-top: 10px;
 }
 
+.draft-card-meta--error {
+  color: #b42318;
+}
+
 .draft-card-snippet {
   margin-top: 16px;
   color: var(--accent-deep);
@@ -325,6 +338,11 @@ textarea {
 .draft-delete-button:hover {
   border-color: rgba(203, 63, 63, 0.34);
   background: rgba(203, 63, 63, 0.06);
+}
+
+.draft-delete-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
 }
 
 .draft-card-head {
@@ -526,8 +544,9 @@ textarea {
 .image-tile-media {
   display: block;
   width: 100%;
-  height: 210px;
-  object-fit: cover;
+  height: 320px;
+  object-fit: contain;
+  object-position: center;
   background: linear-gradient(180deg, #f8fbff, #edf5ff);
 }
 
@@ -543,6 +562,7 @@ textarea {
   color: var(--muted);
   font-size: 12px;
   margin-top: 4px;
+  word-break: break-word;
 }
 
 .scan-panel {
@@ -704,11 +724,102 @@ textarea {
   gap: 14px;
 }
 
+.task-list-layout {
+  display: grid;
+  gap: 16px;
+}
+
+.task-list-card {
+  overflow: hidden;
+}
+
+.task-list-card-title {
+  font-size: 20px;
+  font-weight: 800;
+}
+
+.task-list-card-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 20px;
+  align-items: start;
+}
+
+.task-list-card-main {
+  display: grid;
+  gap: 22px;
+  min-width: 0;
+}
+
+.task-list-meta-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px 18px;
+}
+
+.task-list-meta-item {
+  display: grid;
+  gap: 8px;
+  align-content: start;
+  min-width: 0;
+  padding: 16px 18px;
+  border-radius: 18px;
+  border: 1px solid rgba(119, 152, 173, 0.16);
+  background: rgba(247, 251, 252, 0.86);
+}
+
+.task-list-meta-item--wide {
+  grid-column: span 2;
+}
+
+.task-list-meta-label {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.task-list-meta-value {
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.55;
+  color: var(--text);
+  word-break: break-word;
+}
+
+.task-list-progress {
+  display: grid;
+  gap: 12px;
+}
+
+.task-list-progress-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.task-list-card-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-self: start;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.task-summary-panel {
+  display: grid;
+  gap: 10px;
+  padding: 16px 18px;
+  border-radius: 18px;
+  background: rgba(15, 139, 141, 0.06);
+  border: 1px solid rgba(15, 139, 141, 0.12);
+}
+
 .task-summary,
 .preset-copy {
   margin: 0;
-  color: var(--muted);
-  line-height: 1.7;
+  color: var(--accent-deep);
+  line-height: 1.8;
 }
 
 .history-item {
@@ -783,6 +894,64 @@ textarea {
 .preset-panel-prompt {
   color: var(--muted);
   line-height: 1.7;
+  white-space: pre-wrap;
+}
+
+.preset-panel--secondary {
+  background: rgba(22, 50, 67, 0.04);
+  border-color: rgba(22, 50, 67, 0.08);
+}
+
+.preset-panel--log {
+  background: rgba(9, 34, 47, 0.04);
+  border-color: rgba(9, 34, 47, 0.08);
+}
+
+.preset-panel--stream {
+  background: rgba(15, 139, 141, 0.06);
+  border-color: rgba(15, 139, 141, 0.12);
+}
+
+.preset-panel-copy--log {
+  font-family: 'SF Mono', 'JetBrains Mono', monospace;
+  font-size: 12px;
+}
+
+.stream-output-box {
+  max-height: 220px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  scrollbar-gutter: stable;
+}
+
+.collapsible-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.answer-generation-alert {
+  border-radius: 22px;
+}
+
+.answer-generation-pending {
+  display: grid;
+  gap: 18px;
+}
+
+.answer-generation-pending-copy {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+}
+
+.answer-generation-preview {
+  padding: 18px;
+  border-radius: 18px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.72);
 }
 
 .summary-row {
@@ -793,6 +962,14 @@ textarea {
 
 .summary-row span {
   color: var(--muted);
+}
+
+.summary-row--stacked {
+  align-items: flex-start;
+}
+
+.summary-row--stacked strong {
+  text-align: right;
 }
 
 .selected-tags {
@@ -891,7 +1068,7 @@ textarea {
     linear-gradient(180deg, rgba(15, 139, 141, 0.08), rgba(255, 255, 255, 0.78)),
     rgba(255, 255, 255, 0.72);
   cursor: pointer;
-  transition: 0.18s ease;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease;
   outline: none;
 }
 
@@ -930,6 +1107,8 @@ textarea {
 }
 
 .upload-preview-open {
+  display: grid;
+  gap: 0;
   padding: 0;
   border: none;
   width: 100%;
@@ -941,8 +1120,9 @@ textarea {
 .upload-preview-image {
   display: block;
   width: 100%;
-  height: 190px;
-  object-fit: cover;
+  height: clamp(220px, 28vw, 360px);
+  object-fit: contain;
+  object-position: center;
   background: linear-gradient(180deg, #f8fbff, #edf5ff);
 }
 
@@ -1126,6 +1306,25 @@ textarea {
 
   .nav-sidebar-main {
     margin: 0;
+  }
+
+  .task-list-card-body,
+  .task-list-meta-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .task-list-meta-item--wide {
+    grid-column: auto;
+  }
+
+  .task-list-card-actions {
+    justify-content: flex-start;
+  }
+}
+
+@media (max-width: 1600px) {
+  .task-list-meta-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 

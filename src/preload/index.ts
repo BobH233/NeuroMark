@@ -1,5 +1,9 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import type { NeuromarkApi, TaskUpdateHandler } from './contracts';
+import type {
+  AnswerGeneratorUpdateHandler,
+  NeuromarkApi,
+  TaskUpdateHandler,
+} from './contracts';
 
 const api: NeuromarkApi = {
   app: {
@@ -42,14 +46,25 @@ const api: NeuromarkApi = {
     testLlmConnection: (payload) => ipcRenderer.invoke('settings:test', payload),
   },
   answerGenerator: {
+    getState: () => ipcRenderer.invoke('answer-generator:get-state'),
     listDrafts: () => ipcRenderer.invoke('answer-generator:list-drafts'),
     listPromptPresets: () => ipcRenderer.invoke('answer-generator:list-presets'),
     savePromptPreset: (input) => ipcRenderer.invoke('answer-generator:save-preset', input),
     deletePromptPreset: (presetId) => ipcRenderer.invoke('answer-generator:delete-preset', presetId),
     createDraft: (input) => ipcRenderer.invoke('answer-generator:create-draft', input),
+    startGeneration: (draftId) => ipcRenderer.invoke('answer-generator:start-generation', draftId),
     updateDraft: (draftId, markdown) =>
       ipcRenderer.invoke('answer-generator:update-draft', draftId, markdown),
     deleteDraft: (draftId) => ipcRenderer.invoke('answer-generator:delete-draft', draftId),
+    onUpdated: (handler: AnswerGeneratorUpdateHandler) => {
+      const listener = (_event: Electron.IpcRendererEvent, snapshot: unknown) => {
+        handler(snapshot as any);
+      };
+      ipcRenderer.on('answer-generator:updated', listener);
+      return () => {
+        ipcRenderer.removeListener('answer-generator:updated', listener);
+      };
+    },
   },
   tasks: {
     list: () => ipcRenderer.invoke('tasks:list'),

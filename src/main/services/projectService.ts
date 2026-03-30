@@ -395,6 +395,8 @@ export class ProjectService {
         progress: row.progress,
         speed: row.speed,
         eta: row.eta,
+        startedAt: row.startedAt,
+        finishedAt: row.finishedAt,
         createdAt: row.createdAt,
         updatedAt: row.updatedAt,
         abortable: row.abortable,

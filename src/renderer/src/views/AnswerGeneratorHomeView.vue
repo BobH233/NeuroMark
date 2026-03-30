@@ -2,6 +2,7 @@
 import { computed } from 'vue';
 import { useRouter } from 'vue-router';
 import { NButton, NCard, NEmpty, NPopconfirm } from 'naive-ui';
+import StatusPill from '@/components/StatusPill.vue';
 import { useAnswerGeneratorStore } from '@/stores/answer-generator';
 
 const router = useRouter();
@@ -18,7 +19,13 @@ function createNewDraft() {
 }
 
 async function deleteDraft(draftId: string) {
-  await store.deleteDraft(draftId);
+  try {
+    await store.deleteDraft(draftId);
+  } catch (error) {
+    window.alert(
+      `删除草稿失败：${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
 }
 </script>
 
@@ -63,6 +70,7 @@ async function deleteDraft(draftId: string) {
             {{ draft.title }}
           </div>
           <div class="draft-card-actions">
+            <StatusPill :value="draft.generationStatus" />
             <n-popconfirm
               positive-text="删除"
               negative-text="取消"
@@ -83,6 +91,12 @@ async function deleteDraft(draftId: string) {
         </div>
         <div class="draft-card-meta">
           最近更新时间：{{ draft.updatedAt }}
+        </div>
+        <div
+          v-if="draft.generationError"
+          class="draft-card-meta draft-card-meta--error"
+        >
+          失败原因：{{ draft.generationError }}
         </div>
         <div class="draft-card-meta">
           图片数量：{{ draft.sourceImages.length }}

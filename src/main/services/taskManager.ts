@@ -18,6 +18,8 @@ function toJob(row: typeof tasksTable.$inferSelect): BackgroundJob {
     progress: row.progress,
     speed: row.speed,
     eta: row.eta,
+    startedAt: row.startedAt,
+    finishedAt: row.finishedAt,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
     abortable: row.abortable,
@@ -75,6 +77,115 @@ export class TaskManager {
     return this.startMockJob(projectId, 'grading', { skipCompleted: true });
   }
 
+  async createJob(input: {
+    kind: JobKind;
+    projectId: string;
+    projectName: string;
+    status?: JobStatus;
+    progress?: number;
+    speed?: number;
+    eta?: string | null;
+    abortable?: boolean;
+    currentPaperLabel?: string;
+    summary: string;
+  }): Promise<BackgroundJob> {
+    const db = getDatabase();
+    const now = new Date().toISOString();
+    const jobId = nanoid();
+    const initialStatus = input.status ?? 'queued';
+    const startedAt = initialStatus === 'running' ? now : null;
+    const finishedAt = this.isTerminalStatus(initialStatus) ? now : null;
+
+    db.insert(tasksTable)
+      .values({
+        id: jobId,
+        projectId: input.projectId,
+        projectName: input.projectName,
+        kind: input.kind,
+        status: initialStatus,
+        progress:
+          input.progress ?? (this.isTerminalStatus(initialStatus) ? 1 : 0),
+        speed: input.speed ?? 0,
+        eta: input.eta ?? null,
+        startedAt,
+        finishedAt,
+        abortable: input.abortable ?? false,
+        currentPaperLabel: input.currentPaperLabel ?? null,
+        summary: input.summary,
+        createdAt: now,
+        updatedAt: now,
+      })
+      .run();
+
+    await this.emit();
+    const row = db.select().from(tasksTable).where(eq(tasksTable.id, jobId)).get();
+    return toJob(row!);
+  }
+
+  async updateJob(
+    jobId: string,
+    patch: Partial<
+      Pick<
+        BackgroundJob,
+        | 'status'
+        | 'progress'
+        | 'speed'
+        | 'eta'
+        | 'abortable'
+        | 'currentPaperLabel'
+        | 'summary'
+        | 'startedAt'
+        | 'finishedAt'
+      >
+    >,
+  ): Promise<BackgroundJob> {
+    const db = getDatabase();
+    const current = db.select().from(tasksTable).where(eq(tasksTable.id, jobId)).get();
+
+    if (!current) {
+      throw new Error('未找到对应的后台任务。');
+    }
+
+    const now = new Date().toISOString();
+    const nextStatus = patch.status ?? (current.status as JobStatus);
+    const nextProgress =
+      patch.progress ??
+      (this.isTerminalStatus(nextStatus) ? 1 : current.progress);
+    const nextStartedAt =
+      patch.startedAt !== undefined
+        ? patch.startedAt
+        : current.startedAt ?? (nextStatus === 'running' ? now : null);
+    const nextFinishedAt =
+      patch.finishedAt !== undefined
+        ? patch.finishedAt
+        : this.isTerminalStatus(nextStatus)
+          ? current.finishedAt ?? now
+          : null;
+
+    db.update(tasksTable)
+      .set({
+        status: nextStatus,
+        progress: nextProgress,
+        speed: patch.speed ?? current.speed,
+        eta: patch.eta === undefined ? current.eta : patch.eta,
+        startedAt: nextStartedAt,
+        finishedAt: nextFinishedAt,
+        abortable: patch.abortable ?? current.abortable,
+        currentPaperLabel:
+          patch.currentPaperLabel === undefined
+            ? current.currentPaperLabel
+            : patch.currentPaperLabel,
+        summary: patch.summary ?? current.summary,
+        updatedAt: now,
+      })
+      .where(eq(tasksTable.id, jobId))
+      .run();
+
+    await this.emit();
+    const updated = db.select().from(tasksTable).where(eq(tasksTable.id, jobId)).get();
+    return toJob(updated!);
+  }
+
   async cancel(jobId: string): Promise<void> {
     const timer = this.timers.get(jobId);
     if (timer) {
@@ -87,16 +198,24 @@ export class TaskManager {
       this.scanControllers.delete(jobId);
     }
     const db = getDatabase();
+    const current = db.select().from(tasksTable).where(eq(tasksTable.id, jobId)).get();
+    if (!current) {
+      return;
+    }
+    const now = new Date().toISOString();
     db.update(tasksTable)
       .set({
         status: 'cancelled',
-        updatedAt: new Date().toISOString(),
+        progress: 1,
+        eta: null,
+        finishedAt: current.finishedAt ?? now,
+        updatedAt: now,
         summary: '任务已取消',
       })
       .where(eq(tasksTable.id, jobId))
       .run();
     await this.projects.recomputeStats(
-      db.select().from(tasksTable).where(eq(tasksTable.id, jobId)).get()?.projectId ?? '',
+      current.projectId,
     ).catch(() => undefined);
     await this.emit();
   }
@@ -122,6 +241,8 @@ export class TaskManager {
         progress: 0,
         speed: 0,
         eta: null,
+        startedAt: now,
+        finishedAt: null,
         abortable: true,
         currentPaperLabel: papers[0]?.paperCode ?? '准备中',
         summary: '正在批量扫描识别答卷',
@@ -159,6 +280,8 @@ export class TaskManager {
         progress: 0,
         speed: baseSpeed,
         eta: estimateEta(0.01, baseSpeed),
+        startedAt: now,
+        finishedAt: null,
         abortable: true,
         currentPaperLabel: papers[0]?.paperCode ?? '准备中',
         summary: kind === 'scan' ? '正在批量扫描识别答卷' : '正在批量批阅扫描答卷',
@@ -213,6 +336,7 @@ export class TaskManager {
             status: 'completed',
             progress: 1,
             eta: null,
+            finishedAt: new Date().toISOString(),
             summary: kind === 'scan' ? '扫描任务已完成' : '批阅任务已完成',
             updatedAt: new Date().toISOString(),
           })
@@ -278,6 +402,7 @@ export class TaskManager {
               ? Number((1 / Math.max((Date.now() - startedAt) / 60000, 1 / 60)).toFixed(3))
               : 0,
           eta: null,
+          finishedAt: new Date().toISOString(),
           summary:
             result.totalPageCount > 0
               ? `扫描任务已完成，共处理 ${result.processedPageCount} 页`
@@ -294,7 +419,9 @@ export class TaskManager {
       db.update(tasksTable)
         .set({
           status: 'failed',
+          progress: 1,
           eta: null,
+          finishedAt: new Date().toISOString(),
           summary: error instanceof Error ? error.message : '扫描任务执行失败',
           updatedAt: new Date().toISOString(),
         })
@@ -311,5 +438,9 @@ export class TaskManager {
     for (const listener of this.listeners) {
       listener(tasks);
     }
+  }
+
+  private isTerminalStatus(status: JobStatus): boolean {
+    return status === 'completed' || status === 'failed' || status === 'cancelled';
   }
 }
