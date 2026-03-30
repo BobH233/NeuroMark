@@ -1,14 +1,13 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import { useRouter } from 'vue-router';
-import { NButton, NCard, NEmpty, NPopconfirm, NTag } from 'naive-ui';
+import { NButton, NCard, NEmpty, NPopconfirm } from 'naive-ui';
 import { useAnswerGeneratorStore } from '@/stores/answer-generator';
 
 const router = useRouter();
 const store = useAnswerGeneratorStore();
 
 const drafts = computed(() => store.drafts);
-const presetNameMap = computed(() => new Map(store.presets.map((item) => [item.id, item.name])));
 
 function openDraft(draftId: string) {
   router.push(`/answer-generator/${draftId}`);
@@ -64,13 +63,6 @@ async function deleteDraft(draftId: string) {
             {{ draft.title }}
           </div>
           <div class="draft-card-actions">
-            <n-tag
-              size="small"
-              round
-              type="primary"
-            >
-              {{ presetNameMap.get(draft.promptPreset) || '自定义内容' }}
-            </n-tag>
             <n-popconfirm
               positive-text="删除"
               negative-text="取消"

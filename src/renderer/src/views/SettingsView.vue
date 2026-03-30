@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue';
 import {
+  NAlert,
   NButton,
   NCard,
   NEmpty,
@@ -33,6 +34,11 @@ const presetForm = reactive({
 
 const presets = computed(() => answerGeneratorStore.presets);
 const presetEditorTitle = computed(() => (presetForm.id ? '编辑模板' : '新建模板'));
+const testFeedback = ref<{
+  type: 'success' | 'error';
+  title: string;
+  text: string;
+} | null>(null);
 
 onMounted(async () => {
   await Promise.all([settingsStore.load(), answerGeneratorStore.bootstrap()]);
@@ -51,8 +57,35 @@ async function save() {
 }
 
 async function test() {
-  const result = await settingsStore.test({ ...form, apiKey: form.apiKey || '' });
-  window.alert(`${result.message}\n耗时：${result.latencyMs} ms`);
+  if (!form.apiKey.trim()) {
+    testFeedback.value = {
+      type: 'error',
+      title: '请先填写 API Key',
+      text: '当前还没有可用的 API Key，无法发起连接测试。',
+    };
+    return;
+  }
+
+  try {
+    const result = await settingsStore.test({ ...form, apiKey: form.apiKey || '' });
+    testFeedback.value = result.success
+      ? {
+          type: 'success',
+          title: '连接测试成功',
+          text: `${result.message} 耗时：${result.latencyMs} ms`,
+        }
+      : {
+          type: 'error',
+          title: '连接测试失败',
+          text: `${result.message} 耗时：${result.latencyMs} ms`,
+        };
+  } catch (error) {
+    testFeedback.value = {
+      type: 'error',
+      title: '连接测试失败',
+      text: error instanceof Error ? error.message : '发生了未知错误，请检查配置后重试。',
+    };
+  }
 }
 
 function startCreatePreset() {
@@ -77,6 +110,19 @@ async function savePreset() {
     prompt: presetForm.prompt,
   });
   startCreatePreset();
+}
+
+async function clonePreset() {
+  if (!presetForm.id) {
+    return;
+  }
+
+  const clonedPreset = await answerGeneratorStore.savePromptPreset({
+    name: `${presetForm.name.trim() || '未命名模板'} 复制`,
+    description: presetForm.description,
+    prompt: presetForm.prompt,
+  });
+  editPreset(clonedPreset);
 }
 
 async function deletePreset(presetId: string) {
@@ -125,6 +171,16 @@ async function deletePreset(presetId: string) {
           </n-button>
           <n-button type="primary" @click="save">保存设置</n-button>
         </div>
+
+        <n-alert
+          v-if="testFeedback"
+          class="settings-inline-feedback"
+          :type="testFeedback.type"
+          :title="testFeedback.title"
+          show-icon
+        >
+          {{ testFeedback.text }}
+        </n-alert>
       </n-form>
     </n-card>
 
@@ -146,10 +202,25 @@ async function deletePreset(presetId: string) {
             </div>
           </button>
         </div>
-        <n-empty v-else description="还没有模板，先新建一个参考答案生成模板。" />
+        <n-empty
+          v-else
+          class="settings-template-empty"
+          description="还没有模板，先新建一个参考答案生成模板。"
+        />
 
-        <div class="settings-actions">
+        <div
+          class="settings-actions settings-template-actions"
+          :class="{ 'settings-actions--empty': !presets.length }"
+        >
           <n-button tertiary @click="startCreatePreset">新建模板</n-button>
+          <n-button
+            v-if="presetForm.id"
+            tertiary
+            type="primary"
+            @click="clonePreset"
+          >
+            克隆模板
+          </n-button>
           <n-popconfirm
             v-if="presetForm.id"
             positive-text="删除"

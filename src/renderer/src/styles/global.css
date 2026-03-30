@@ -5,7 +5,6 @@
   --shell-gutter: 24px;
   --top-bar-top: 40px;
   --top-bar-safe-space: 142px;
-  --window-drag-strip-height: 20px;
   --sidebar-margin-top: 30px;
   --sidebar-top-padding: 28px;
   --panel: rgba(255, 255, 255, 0.88);
@@ -56,8 +55,8 @@ textarea {
 .app-shell {
   display: grid;
   grid-template-columns: 320px 1fr;
-  height: 100%;
-  min-height: 0;
+  height: 100dvh;
+  min-height: 100dvh;
 }
 
 .shell-main {
@@ -72,7 +71,7 @@ textarea {
   top: 0;
   left: 0;
   right: 0;
-  height: var(--window-drag-strip-height);
+  height: var(--top-bar-top);
   z-index: 9;
   -webkit-app-region: drag;
 }
@@ -210,35 +209,6 @@ textarea {
 .section-title,
 .detail-title {
   margin: 0;
-}
-
-.project-brief {
-  padding: 10px 14px;
-  border-radius: 16px;
-  background: rgba(255, 255, 255, 0.75);
-  border: 1px solid var(--line);
-  display: grid;
-}
-
-.project-brief-name {
-  font-weight: 700;
-}
-
-.project-brief-meta {
-  color: var(--muted);
-  font-size: 12px;
-}
-
-.top-actions {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  -webkit-app-region: no-drag;
-}
-
-.project-brief,
-.top-bar button {
-  -webkit-app-region: no-drag;
 }
 
 .page-stack {
@@ -858,6 +828,20 @@ textarea {
   margin-bottom: 16px;
 }
 
+.settings-template-empty {
+  margin-top: 28px;
+}
+
+.settings-template-actions {
+  flex-wrap: wrap;
+  margin-top: 18px;
+}
+
+.settings-actions--empty {
+  justify-content: center;
+  margin-top: 24px;
+}
+
 .settings-template-item {
   width: 100%;
   padding: 14px 16px;
@@ -883,6 +867,10 @@ textarea {
   margin-top: 8px;
   color: var(--muted);
   line-height: 1.6;
+}
+
+.settings-inline-feedback {
+  margin-top: 14px;
 }
 
 .file-chip {
@@ -1133,7 +1121,7 @@ textarea {
   }
 
   .nav-sidebar {
-    min-height: auto;
+    min-height: calc(100dvh - var(--sidebar-margin-top) - 20px);
   }
 
   .nav-sidebar-main {

@@ -9,30 +9,6 @@ import type {
 import { getDatabase } from '@main/database/client';
 import { answerDraftsTable, promptPresetsTable } from '@main/database/schema';
 
-const DEFAULT_PROMPT_PRESETS: Array<Omit<PromptPreset, 'id'> & { id: string }> = [
-  {
-    id: 'structured-marking',
-    name: '结构化参考答案',
-    description: '适合章节作业或常规试卷，按题号生成评分细则。',
-    prompt:
-      '# 生成要求\n\n请根据题目图片输出 Markdown 版参考答案，并按题号列出评分点、过程分和常见误区。',
-  },
-  {
-    id: 'short-answer-latex',
-    name: '公式推导型',
-    description: '适合电路、数学、物理等需要内联公式的题目。',
-    prompt:
-      '# 生成要求\n\n请生成适合教师人工复核的 Markdown 参考答案，重点保留公式、推导步骤和每个步骤的分值建议。',
-  },
-  {
-    id: 'objective-commentary',
-    name: '客观题+讲评',
-    description: '适合选择、填空和判断题，额外输出讲评说明。',
-    prompt:
-      '# 生成要求\n\n请输出标准答案、评分规则和简洁讲评，使用 Markdown 标题分节展示。',
-  },
-];
-
 function toPromptPresetRecord(item: typeof promptPresetsTable.$inferSelect): PromptPreset {
   return {
     id: item.id,
@@ -43,36 +19,8 @@ function toPromptPresetRecord(item: typeof promptPresetsTable.$inferSelect): Pro
 }
 
 export class AnswerGeneratorService {
-  private ensureDefaultPresets(): PromptPreset[] {
-    const db = getDatabase();
-    const existing = db.select().from(promptPresetsTable).all();
-
-    if (existing.length === 0) {
-      const now = new Date().toISOString();
-      db.insert(promptPresetsTable)
-        .values(
-          DEFAULT_PROMPT_PRESETS.map((item) => ({
-            ...item,
-            createdAt: now,
-            updatedAt: now,
-          })),
-        )
-        .run();
-
-      return DEFAULT_PROMPT_PRESETS.map(({ id, name, description, prompt }) => ({
-        id,
-        name,
-        description,
-        prompt,
-      }));
-    }
-
-    return existing.map(toPromptPresetRecord);
-  }
-
   async listPromptPresets(): Promise<PromptPreset[]> {
     const db = getDatabase();
-    this.ensureDefaultPresets();
     return db
       .select()
       .from(promptPresetsTable)
