@@ -69,6 +69,7 @@ function ensureSchema(connection: Database.Database): void {
       eta TEXT,
       started_at TEXT,
       finished_at TEXT,
+      archived_at TEXT,
       abortable INTEGER NOT NULL,
       current_paper_label TEXT,
       summary TEXT NOT NULL,
@@ -127,6 +128,12 @@ function ensureSchema(connection: Database.Database): void {
     'tasks',
     'finished_at',
     'finished_at TEXT',
+  );
+  ensureColumn(
+    connection,
+    'tasks',
+    'archived_at',
+    'archived_at TEXT',
   );
   ensureColumn(
     connection,

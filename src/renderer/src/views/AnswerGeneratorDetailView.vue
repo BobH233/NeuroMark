@@ -390,53 +390,57 @@ async function deleteDraft() {
         class="surface-card editor-card"
         :title="isGenerating ? '生成中预览' : 'Markdown 编辑与预览'"
       >
-        <div
-          v-if="isGenerating"
-          class="answer-generation-pending"
-        >
-          <n-spin size="large" />
-          <div class="answer-generation-pending-copy">
-            <strong>正在请求大模型</strong>
-            <span>{{ draft.generationStage || '你可以离开当前页面，主进程会继续执行这个任务。' }}</span>
-          </div>
+        <div class="editor-card-resizer">
           <div
-            v-if="showReasoningStreamPanel"
-            class="preset-panel preset-panel--stream"
+            v-if="isGenerating"
+            class="answer-generation-pending"
           >
-            <div class="preset-panel-title">
-              模型思考过程（实时）
+            <n-spin size="large" />
+            <div class="answer-generation-pending-copy">
+              <strong>正在请求大模型</strong>
+              <span>{{ draft.generationStage || '你可以离开当前页面，主进程会继续执行这个任务。' }}</span>
             </div>
             <div
-              ref="reasoningStreamRef"
-              class="preset-panel-copy preset-panel-copy--log stream-output-box"
+              v-if="showReasoningStreamPanel"
+              class="preset-panel preset-panel--stream"
             >
-              {{ generationReasoningDisplayText }}
-            </div>
-          </div>
-          <div
-            v-if="showJsonStreamPanel"
-            class="preset-panel preset-panel--stream"
-          >
-            <div class="preset-panel-title">
-              模型实时输出（JSON 草稿）
+              <div class="preset-panel-title">
+                模型思考过程（实时）
+              </div>
+              <div
+                ref="reasoningStreamRef"
+                class="preset-panel-copy preset-panel-copy--log stream-output-box"
+              >
+                {{ generationReasoningDisplayText }}
+              </div>
             </div>
             <div
-              ref="jsonStreamRef"
-              class="preset-panel-copy preset-panel-copy--log stream-output-box"
+              v-if="showJsonStreamPanel"
+              class="preset-panel preset-panel--stream"
             >
-              {{ generationPreviewDisplayText }}
+              <div class="preset-panel-title">
+                模型实时输出（JSON 草稿）
+              </div>
+              <div
+                ref="jsonStreamRef"
+                class="preset-panel-copy preset-panel-copy--log stream-output-box"
+              >
+                {{ generationPreviewDisplayText }}
+              </div>
             </div>
           </div>
-        </div>
 
-        <MdEditor
-          v-else
-          :model-value="markdown"
-          language="zh-CN"
-          preview-theme="github"
-          code-theme="github"
-          @update:model-value="saveDraft"
-        />
+          <MdEditor
+            v-else
+            class="editor-card-editor"
+            :model-value="markdown"
+            language="zh-CN"
+            preview-theme="github"
+            code-theme="github"
+            :toolbars-exclude="['pageFullscreen', 'fullscreen', 'github']"
+            @update:model-value="saveDraft"
+          />
+        </div>
       </n-card>
 
       <n-card

@@ -126,6 +126,7 @@ export interface BackgroundJob {
   eta: string | null;
   startedAt: string | null;
   finishedAt: string | null;
+  archivedAt: string | null;
   createdAt: string;
   updatedAt: string;
   abortable: boolean;
@@ -323,6 +324,8 @@ export interface NeuromarkApi {
   };
   tasks: {
     list: () => Promise<BackgroundJob[]>;
+    listArchived: () => Promise<BackgroundJob[]>;
+    archiveVisible: () => Promise<void>;
     onUpdated: (handler: TaskUpdateHandler) => () => void;
   };
   preview: {

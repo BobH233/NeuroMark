@@ -939,6 +939,8 @@ textarea {
 .answer-generation-pending {
   display: grid;
   gap: 18px;
+  min-height: 100%;
+  align-content: start;
 }
 
 .answer-generation-pending-copy {
@@ -1276,8 +1278,35 @@ textarea {
   width: min(720px, calc(100vw - 40px));
 }
 
-.editor-card :deep(.md-editor) {
-  min-height: 680px;
+.editor-card-resizer {
+  min-height: 560px;
+  height: 760px;
+  max-height: calc(100vh - 180px);
+  display: flex;
+  flex-direction: column;
+  resize: vertical;
+  overflow: auto;
+}
+
+.editor-card-resizer > .answer-generation-pending,
+.editor-card-resizer > .editor-card-editor {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.editor-card-resizer .md-editor {
+  height: 100% !important;
+  min-height: 100%;
+}
+
+.editor-card-resizer .md-editor-content,
+.editor-card-resizer .md-editor-content-wrapper,
+.editor-card-resizer .md-editor-input-wrapper,
+.editor-card-resizer .md-editor-preview-wrapper,
+.editor-card-resizer .cm-editor,
+.editor-card-resizer .cm-scroller {
+  height: 100%;
+  min-height: 0;
 }
 
 @media (max-width: 1200px) {

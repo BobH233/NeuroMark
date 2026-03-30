@@ -1,13 +1,24 @@
 <script setup lang="ts">
 import type { BackgroundJob } from '@preload/contracts';
 import { computed, ref } from 'vue';
-import { NButton, NCard, NEmpty, NProgress } from 'naive-ui';
+import { useRoute, useRouter } from 'vue-router';
+import { NButton, NCard, NEmpty, NPopconfirm, NProgress } from 'naive-ui';
 import StatusPill from '@/components/StatusPill.vue';
 import { useTasksStore } from '@/stores/tasks';
 
+const route = useRoute();
+const router = useRouter();
 const tasksStore = useTasksStore();
-const tasks = computed(() => tasksStore.tasks);
 const expandedTaskIds = ref<Set<string>>(new Set());
+const showArchived = computed(() => route.name === 'tasks-archived');
+const tasks = computed(() => (showArchived.value ? tasksStore.archivedTasks : tasksStore.tasks));
+const pageEyebrow = computed(() => (showArchived.value ? '已归档后台任务' : '后台任务可持续运行'));
+const pageTitle = computed(() => (showArchived.value ? '已删除后台任务' : '后台任务页面'));
+const pageCopy = computed(() =>
+  showArchived.value
+    ? '这里显示已经从前台清空的后台任务记录。归档不会影响任务原始结果，只是不再在默认任务页显示。'
+    : '扫描与批阅任务会常驻主进程运行，你可以随时切换页面查看结果，而不会中断后台进度。',
+);
 
 async function cancelTask(jobId: string) {
   await window.neuromark.grading.cancel(jobId).catch(async () => {
@@ -66,6 +77,10 @@ function getTaskProgressColor(task: BackgroundJob) {
   return '#3f7ae0';
 }
 
+function getTaskArchivedAtLabel(task: BackgroundJob) {
+  return formatTaskTime(task.archivedAt, '未归档');
+}
+
 function isTaskExpanded(taskId: string) {
   return expandedTaskIds.value.has(taskId);
 }
@@ -79,6 +94,10 @@ function toggleTaskExpanded(taskId: string) {
   }
   expandedTaskIds.value = next;
 }
+
+async function archiveVisibleTasks() {
+  await tasksStore.archiveVisible();
+}
 </script>
 
 <template>
@@ -86,14 +105,43 @@ function toggleTaskExpanded(taskId: string) {
     <section class="hero-panel">
       <div>
         <div class="eyebrow">
-          后台任务可持续运行
+          {{ pageEyebrow }}
         </div>
         <h2 class="section-title">
-          后台任务页面
+          {{ pageTitle }}
         </h2>
         <p class="section-copy">
-          扫描与批阅任务会常驻主进程运行，你可以随时切换页面查看结果，而不会中断后台进度。
+          {{ pageCopy }}
         </p>
+      </div>
+      <div class="hero-actions">
+        <n-button
+          v-if="showArchived"
+          tertiary
+          @click="router.push('/tasks')"
+        >
+          返回后台任务
+        </n-button>
+        <n-button
+          v-else
+          tertiary
+          @click="router.push('/tasks/archived')"
+        >
+          查看已删除后台任务
+        </n-button>
+        <n-popconfirm
+          v-if="!showArchived && tasks.length"
+          positive-text="确认清空"
+          negative-text="取消"
+          @positive-click="archiveVisibleTasks"
+        >
+          <template #trigger>
+            <n-button tertiary type="warning">
+              清空后台任务
+            </n-button>
+          </template>
+          清空后这些任务只会从默认列表中隐藏，并移动到“已删除后台任务”页面，不会真正删除任务记录。确认继续吗？
+        </n-popconfirm>
       </div>
     </section>
 
@@ -168,6 +216,17 @@ function toggleTaskExpanded(taskId: string) {
                   {{ getTaskFinishedAtLabel(task) }}
                 </div>
               </div>
+              <div
+                v-if="showArchived"
+                class="task-list-meta-item"
+              >
+                <div class="task-list-meta-label">
+                  归档时间
+                </div>
+                <div class="task-list-meta-value">
+                  {{ getTaskArchivedAtLabel(task) }}
+                </div>
+              </div>
             </div>
 
             <div class="task-list-progress">
@@ -214,7 +273,17 @@ function toggleTaskExpanded(taskId: string) {
     </section>
     <n-empty
       v-else
-      description="当前没有正在跟踪的后台任务"
-    />
+      :description="showArchived ? '当前还没有已归档的后台任务' : '当前没有正在跟踪的后台任务'"
+    >
+      <template #extra>
+        <n-button
+          v-if="showArchived"
+          tertiary
+          @click="router.push('/tasks')"
+        >
+          返回后台任务
+        </n-button>
+      </template>
+    </n-empty>
   </div>
 </template>

@@ -21,6 +21,10 @@ const activeKey = computed(() => {
     return 'answer-generator';
   }
 
+  if (routeNames.some((name) => name.startsWith('tasks'))) {
+    return 'tasks';
+  }
+
   if (routeNames.some((name) => name.startsWith('projects') || name === 'project-detail')) {
     return 'projects';
   }

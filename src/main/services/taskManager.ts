@@ -1,4 +1,4 @@
-import { desc, eq } from 'drizzle-orm';
+import { desc, eq, isNotNull, isNull } from 'drizzle-orm';
 import dayjs from 'dayjs';
 import { nanoid } from 'nanoid';
 import type { BackgroundJob, JobKind, JobStatus, StartJobOptions } from '@preload/contracts';
@@ -20,6 +20,7 @@ function toJob(row: typeof tasksTable.$inferSelect): BackgroundJob {
     eta: row.eta,
     startedAt: row.startedAt,
     finishedAt: row.finishedAt,
+    archivedAt: row.archivedAt,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
     abortable: row.abortable,
@@ -53,7 +54,19 @@ export class TaskManager {
     return db
       .select()
       .from(tasksTable)
+      .where(isNull(tasksTable.archivedAt))
       .orderBy(desc(tasksTable.updatedAt))
+      .all()
+      .map(toJob);
+  }
+
+  async listArchived(): Promise<BackgroundJob[]> {
+    const db = getDatabase();
+    return db
+      .select()
+      .from(tasksTable)
+      .where(isNotNull(tasksTable.archivedAt))
+      .orderBy(desc(tasksTable.archivedAt), desc(tasksTable.updatedAt))
       .all()
       .map(toJob);
   }
@@ -109,6 +122,7 @@ export class TaskManager {
         eta: input.eta ?? null,
         startedAt,
         finishedAt,
+        archivedAt: null,
         abortable: input.abortable ?? false,
         currentPaperLabel: input.currentPaperLabel ?? null,
         summary: input.summary,
@@ -170,6 +184,7 @@ export class TaskManager {
         eta: patch.eta === undefined ? current.eta : patch.eta,
         startedAt: nextStartedAt,
         finishedAt: nextFinishedAt,
+        archivedAt: current.archivedAt,
         abortable: patch.abortable ?? current.abortable,
         currentPaperLabel:
           patch.currentPaperLabel === undefined
@@ -184,6 +199,21 @@ export class TaskManager {
     await this.emit();
     const updated = db.select().from(tasksTable).where(eq(tasksTable.id, jobId)).get();
     return toJob(updated!);
+  }
+
+  async archiveVisible(): Promise<void> {
+    const db = getDatabase();
+    const now = new Date().toISOString();
+
+    db.update(tasksTable)
+      .set({
+        archivedAt: now,
+        updatedAt: now,
+      })
+      .where(isNull(tasksTable.archivedAt))
+      .run();
+
+    await this.emit();
   }
 
   async cancel(jobId: string): Promise<void> {
@@ -243,6 +273,7 @@ export class TaskManager {
         eta: null,
         startedAt: now,
         finishedAt: null,
+        archivedAt: null,
         abortable: true,
         currentPaperLabel: papers[0]?.paperCode ?? '准备中',
         summary: '正在批量扫描识别答卷',
@@ -282,6 +313,7 @@ export class TaskManager {
         eta: estimateEta(0.01, baseSpeed),
         startedAt: now,
         finishedAt: null,
+        archivedAt: null,
         abortable: true,
         currentPaperLabel: papers[0]?.paperCode ?? '准备中',
         summary: kind === 'scan' ? '正在批量扫描识别答卷' : '正在批量批阅扫描答卷',

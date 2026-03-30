@@ -30,6 +30,11 @@ const router = createRouter({
       component: () => import('@/views/TasksView.vue'),
     },
     {
+      path: '/tasks/archived',
+      name: 'tasks-archived',
+      component: () => import('@/views/TasksView.vue'),
+    },
+    {
       path: '/answer-generator',
       name: 'answer-generator',
       component: () => import('@/views/AnswerGeneratorView.vue'),

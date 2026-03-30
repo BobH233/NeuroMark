@@ -43,6 +43,7 @@ export const tasksTable = sqliteTable('tasks', {
   eta: text('eta'),
   startedAt: text('started_at'),
   finishedAt: text('finished_at'),
+  archivedAt: text('archived_at'),
   abortable: integer('abortable', { mode: 'boolean' }).notNull(),
   currentPaperLabel: text('current_paper_label'),
   summary: text('summary').notNull(),

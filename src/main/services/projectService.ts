@@ -1,6 +1,6 @@
 import path from 'node:path';
 import fs from 'fs-extra';
-import { desc, eq } from 'drizzle-orm';
+import { and, desc, eq, isNull } from 'drizzle-orm';
 import type {
   CreateProjectInput,
   FinalResult,
@@ -382,7 +382,7 @@ export class ProjectService {
     const recentJobs = db
       .select()
       .from(tasksTable)
-      .where(eq(tasksTable.projectId, projectId))
+      .where(and(eq(tasksTable.projectId, projectId), isNull(tasksTable.archivedAt)))
       .orderBy(desc(tasksTable.updatedAt))
       .limit(6)
       .all()
@@ -397,6 +397,7 @@ export class ProjectService {
         eta: row.eta,
         startedAt: row.startedAt,
         finishedAt: row.finishedAt,
+        archivedAt: row.archivedAt,
         createdAt: row.createdAt,
         updatedAt: row.updatedAt,
         abortable: row.abortable,

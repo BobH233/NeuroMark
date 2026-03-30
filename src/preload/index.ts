@@ -68,6 +68,8 @@ const api: NeuromarkApi = {
   },
   tasks: {
     list: () => ipcRenderer.invoke('tasks:list'),
+    listArchived: () => ipcRenderer.invoke('tasks:list-archived'),
+    archiveVisible: () => ipcRenderer.invoke('tasks:archive-visible'),
     onUpdated: (handler: TaskUpdateHandler) => {
       const listener = (_event: Electron.IpcRendererEvent, tasks: unknown) => {
         handler(tasks as any);
