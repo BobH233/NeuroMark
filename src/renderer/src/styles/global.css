@@ -46,6 +46,29 @@ html.platform-macos {
   --sidebar-top-padding: 18px;
 }
 
+html.platform-macos :where(
+  button,
+  a,
+  input,
+  textarea,
+  select,
+  summary,
+  [tabindex]
+):focus,
+html.platform-macos :where(
+  button,
+  a,
+  input,
+  textarea,
+  select,
+  summary,
+  [tabindex]
+):focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
+  -webkit-focus-ring-color: transparent;
+}
+
 button,
 input,
 textarea {
