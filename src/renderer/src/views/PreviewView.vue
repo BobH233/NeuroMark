@@ -247,17 +247,17 @@ function handleKeydown(event: KeyboardEvent) {
 
           <span class="toolbar-divider" />
 
-          <button class="toolbar-icon-button" aria-label="左旋转" @click="rotateLeft">
+          <button class="toolbar-icon-button" aria-label="逆时针旋转" @click="rotateLeft">
             <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M8 7H4v4" />
-              <path d="M5 10a8 8 0 1 0 2.3-5.6L4 7" />
+              <path class="rotate-icon-primary" d="M7 17.29A8 8 0 1 0 5.06 11" />
+              <polyline class="rotate-icon-accent" points="3 6 5 11 10 9" />
             </svg>
           </button>
 
-          <button class="toolbar-icon-button" aria-label="右旋转" @click="rotateRight">
+          <button class="toolbar-icon-button" aria-label="顺时针旋转" @click="rotateRight">
             <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M16 7h4v4" />
-              <path d="M19 10a8 8 0 1 1-2.3-5.6L20 7" />
+              <path class="rotate-icon-primary" d="M17 17.29A8 8 0 1 1 18.94 11" />
+              <polyline class="rotate-icon-accent" points="21 6 19 11 14 9" />
             </svg>
           </button>
         </footer>
@@ -539,6 +539,11 @@ function handleKeydown(event: KeyboardEvent) {
   fill: none;
   stroke-linecap: round;
   stroke-linejoin: round;
+}
+
+.toolbar-icon-button .rotate-icon-primary,
+.toolbar-icon-button .rotate-icon-accent {
+  stroke: rgba(255, 255, 255, 0.92);
 }
 
 .toolbar-readout {
