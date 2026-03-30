@@ -69,7 +69,7 @@ const generationPreviewDisplayText = computed(() =>
 const generationReasoningDisplayText = computed(() =>
   draft.value?.generationReasoningText?.trim().length
     ? draft.value.generationReasoningText
-    : '当前还没有接收到模型的思考文本。如果后端不透传 reasoning 字段，这里会保持为空，但后台任务仍在继续。',
+    : '当前还没有接收到模型的思考文本。',
 );
 const hasJsonStreamOutput = computed(() =>
   Boolean(draft.value?.generationPreviewText?.trim().length),
@@ -154,6 +154,27 @@ function collapseText(value: string, maxLength: number) {
   }
 
   return `${trimmed.slice(0, maxLength)}...`;
+}
+
+function formatLocalDateTime(value: string | null | undefined) {
+  if (!value) {
+    return '暂无';
+  }
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return value;
+  }
+
+  return parsed.toLocaleString('zh-CN', {
+    year: 'numeric',
+    month: 'numeric',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  });
 }
 
 async function retryGeneration() {
@@ -308,21 +329,21 @@ async function deleteDraft() {
           </div>
           <div class="summary-row">
             <span>更新时间</span>
-            <strong>{{ draft.updatedAt }}</strong>
+            <strong>{{ formatLocalDateTime(draft.updatedAt) }}</strong>
           </div>
           <div
             v-if="draft.lastGenerationStartedAt"
             class="summary-row"
           >
             <span>开始生成</span>
-            <strong>{{ draft.lastGenerationStartedAt }}</strong>
+            <strong>{{ formatLocalDateTime(draft.lastGenerationStartedAt) }}</strong>
           </div>
           <div
             v-if="draft.lastGenerationCompletedAt"
             class="summary-row"
           >
             <span>最近结束</span>
-            <strong>{{ draft.lastGenerationCompletedAt }}</strong>
+            <strong>{{ formatLocalDateTime(draft.lastGenerationCompletedAt) }}</strong>
           </div>
           <div class="selected-tags">
             <n-tag
@@ -390,48 +411,50 @@ async function deleteDraft() {
         class="surface-card editor-card"
         :title="isGenerating ? '生成中预览' : 'Markdown 编辑与预览'"
       >
-        <div class="editor-card-resizer">
+        <div
+          v-if="isGenerating"
+          class="answer-generation-pending"
+        >
+          <n-spin size="large" />
+          <div class="answer-generation-pending-copy">
+            <strong>正在请求大模型</strong>
+            <span>{{ draft.generationStage || '你可以离开当前页面，主进程会继续执行这个任务。' }}</span>
+          </div>
           <div
-            v-if="isGenerating"
-            class="answer-generation-pending"
+            v-if="showReasoningStreamPanel"
+            class="preset-panel preset-panel--stream"
           >
-            <n-spin size="large" />
-            <div class="answer-generation-pending-copy">
-              <strong>正在请求大模型</strong>
-              <span>{{ draft.generationStage || '你可以离开当前页面，主进程会继续执行这个任务。' }}</span>
+            <div class="preset-panel-title">
+              模型思考过程（实时）
             </div>
             <div
-              v-if="showReasoningStreamPanel"
-              class="preset-panel preset-panel--stream"
+              ref="reasoningStreamRef"
+              class="preset-panel-copy preset-panel-copy--log stream-output-box"
             >
-              <div class="preset-panel-title">
-                模型思考过程（实时）
-              </div>
-              <div
-                ref="reasoningStreamRef"
-                class="preset-panel-copy preset-panel-copy--log stream-output-box"
-              >
-                {{ generationReasoningDisplayText }}
-              </div>
-            </div>
-            <div
-              v-if="showJsonStreamPanel"
-              class="preset-panel preset-panel--stream"
-            >
-              <div class="preset-panel-title">
-                模型实时输出（JSON 草稿）
-              </div>
-              <div
-                ref="jsonStreamRef"
-                class="preset-panel-copy preset-panel-copy--log stream-output-box"
-              >
-                {{ generationPreviewDisplayText }}
-              </div>
+              {{ generationReasoningDisplayText }}
             </div>
           </div>
+          <div
+            v-if="showJsonStreamPanel"
+            class="preset-panel preset-panel--stream"
+          >
+            <div class="preset-panel-title">
+              模型实时输出（JSON 草稿）
+            </div>
+            <div
+              ref="jsonStreamRef"
+              class="preset-panel-copy preset-panel-copy--log stream-output-box"
+            >
+              {{ generationPreviewDisplayText }}
+            </div>
+          </div>
+        </div>
 
+        <div
+          v-else
+          class="editor-card-resizer"
+        >
           <MdEditor
-            v-else
             class="editor-card-editor"
             :model-value="markdown"
             language="zh-CN"
