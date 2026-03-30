@@ -80,6 +80,13 @@ const showReasoningStreamPanel = computed(() =>
 const showJsonStreamPanel = computed(() =>
   isGenerating.value && hasJsonStreamOutput.value,
 );
+const sourcePreviewImages = computed(() =>
+  (draft.value?.sourceImages ?? []).map((image, index) => ({
+    src: image.src,
+    title: `题目图片 ${index + 1}`,
+    caption: image.name,
+  })),
+);
 
 watch(
   () => draft.value?.markdown,
@@ -475,13 +482,12 @@ async function deleteDraft() {
           class="image-grid"
         >
           <ImagePreviewTile
-            v-for="(image, index) in draft.sourceImages"
+            v-for="(image, index) in sourcePreviewImages"
             :key="image.src"
-            :image="{
-              src: image.src,
-              title: `题目图片 ${index + 1}`,
-              caption: image.name
-            }"
+            :image="image"
+            :preview-images="sourcePreviewImages"
+            :initial-index="index"
+            preview-title="题目图片预览"
           />
         </div>
         <n-empty

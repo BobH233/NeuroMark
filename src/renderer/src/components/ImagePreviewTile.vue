@@ -4,10 +4,23 @@ import { toImageSrc } from '@/utils/file';
 
 const props = defineProps<{
   image: PreviewImageItem;
+  previewImages?: PreviewImageItem[];
+  initialIndex?: number;
+  previewTitle?: string;
 }>();
 
 async function openPreview() {
-  await window.neuromark.preview.open([props.image], 0, props.image.title);
+  const previewImages = props.previewImages?.length ? props.previewImages : [props.image];
+  const currentIndex =
+    props.previewImages?.length
+      ? Math.min(Math.max(props.initialIndex ?? 0, 0), previewImages.length - 1)
+      : 0;
+
+  await window.neuromark.preview.open(
+    previewImages,
+    currentIndex,
+    props.previewTitle ?? props.image.title,
+  );
 }
 </script>
 
@@ -34,4 +47,3 @@ async function openPreview() {
     </div>
   </button>
 </template>
-

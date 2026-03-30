@@ -15,6 +15,14 @@ export async function createPreviewWindow(token: string): Promise<BrowserWindow>
     backgroundColor: '#111111',
     autoHideMenuBar: true,
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
+    ...(process.platform === 'darwin'
+      ? {
+          trafficLightPosition: {
+            x: 18,
+            y: 16,
+          },
+        }
+      : {}),
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.mjs'),
       contextIsolation: true,

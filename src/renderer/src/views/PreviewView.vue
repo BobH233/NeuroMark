@@ -155,6 +155,7 @@ function handleKeydown(event: KeyboardEvent) {
   <div class="preview-page" @mousemove="moveDrag" @mouseup="endDrag" @mouseleave="endDrag">
     <template v-if="session && activeImage">
       <section class="preview-shell">
+        <div class="preview-window-drag-strip" aria-hidden="true" />
         <div class="preview-header">
           <div>
             <div class="preview-title">{{ session.title }}</div>
@@ -285,6 +286,7 @@ function handleKeydown(event: KeyboardEvent) {
 }
 
 .preview-shell {
+  position: relative;
   width: 100vw;
   height: 100vh;
   display: grid;
@@ -295,6 +297,17 @@ function handleKeydown(event: KeyboardEvent) {
   border: none;
   box-shadow: none;
   backdrop-filter: none;
+}
+
+.preview-window-drag-strip {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 52px;
+  z-index: 3;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0));
+  -webkit-app-region: drag;
 }
 
 .preview-loading {
@@ -338,11 +351,14 @@ function handleKeydown(event: KeyboardEvent) {
 }
 
 .preview-header {
+  position: relative;
+  z-index: 4;
   display: flex;
   justify-content: space-between;
   align-items: center;
   gap: 16px;
   padding: 34px 24px 14px;
+  -webkit-app-region: drag;
 }
 
 .preview-title {
@@ -364,6 +380,7 @@ function handleKeydown(event: KeyboardEvent) {
   color: rgba(255, 255, 255, 0.82);
   font-size: 13px;
   font-weight: 700;
+  -webkit-app-region: no-drag;
 }
 
 .preview-stage-shell {
@@ -400,6 +417,7 @@ function handleKeydown(event: KeyboardEvent) {
   text-align: left;
   cursor: pointer;
   transition: background 120ms ease, color 120ms ease, transform 120ms ease;
+  -webkit-app-region: no-drag;
 }
 
 .preview-thumb:last-child {
@@ -484,6 +502,7 @@ function handleKeydown(event: KeyboardEvent) {
   color: #fff;
   transform: translateY(-50%);
   cursor: pointer;
+  -webkit-app-region: no-drag;
 }
 
 .preview-nav svg {
@@ -523,6 +542,7 @@ function handleKeydown(event: KeyboardEvent) {
   color: #fff;
   cursor: pointer;
   transition: background 120ms ease, transform 120ms ease;
+  -webkit-app-region: no-drag;
 }
 
 .toolbar-icon-button:hover,
@@ -564,6 +584,10 @@ function handleKeydown(event: KeyboardEvent) {
   height: 28px;
   margin: 0 4px;
   background: rgba(255, 255, 255, 0.12);
+}
+
+html.platform-macos .preview-header {
+  padding-left: 92px;
 }
 
 @media (max-width: 980px) {
