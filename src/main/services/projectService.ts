@@ -94,12 +94,28 @@ async function writeProjectManifest(project: ProjectMeta): Promise<void> {
     {
       id: project.id,
       name: project.name,
+      referenceAnswerVersion: project.referenceAnswerVersion,
       createdAt: project.createdAt,
       updatedAt: project.updatedAt,
       settings: project.settings,
     },
     { spaces: 2 },
   );
+}
+
+function toProjectMeta(
+  row: typeof projectsTable.$inferSelect,
+): ProjectMeta {
+  return {
+    id: row.id,
+    name: row.name,
+    rootPath: row.rootPath,
+    referenceAnswerVersion: row.referenceAnswerVersion ?? 1,
+    stats: parseJson<ProjectStats>(row.statsJson),
+    settings: parseJson<ProjectSettings>(row.settingsJson),
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  };
 }
 
 function isSupportedImage(filePath: string): boolean {
@@ -134,6 +150,7 @@ async function listSortedSubDirectories(targetDir: string): Promise<string[]> {
 function normalizeResultPayload(payload: unknown): {
   modelResult: ModelResult;
   finalResult: FinalResult;
+  referenceAnswerVersion: number;
 } | null {
   if (!payload || typeof payload !== 'object') {
     return null;
@@ -141,9 +158,16 @@ function normalizeResultPayload(payload: unknown): {
 
   const candidate = payload as Record<string, unknown>;
   if (candidate.modelResult && candidate.finalResult) {
+    const referenceAnswerVersion =
+      typeof candidate.referenceAnswerVersion === 'number' &&
+      Number.isFinite(candidate.referenceAnswerVersion) &&
+      candidate.referenceAnswerVersion > 0
+        ? Math.trunc(candidate.referenceAnswerVersion)
+        : 1;
     return {
       modelResult: candidate.modelResult as ModelResult,
       finalResult: candidate.finalResult as FinalResult,
+      referenceAnswerVersion,
     };
   }
 
@@ -188,6 +212,7 @@ function normalizeResultPayload(payload: unknown): {
       finalResult: {
         ...modelResult,
       },
+      referenceAnswerVersion: 1,
     };
   }
 
@@ -257,15 +282,7 @@ export class ProjectService {
       .from(projectsTable)
       .orderBy(desc(projectsTable.updatedAt))
       .all()
-      .map((row) => ({
-        id: row.id,
-        name: row.name,
-        rootPath: row.rootPath,
-        stats: parseJson<ProjectStats>(row.statsJson),
-        settings: parseJson<ProjectSettings>(row.settingsJson),
-        createdAt: row.createdAt,
-        updatedAt: row.updatedAt,
-      }));
+      .map(toProjectMeta);
   }
 
   async getProjectById(projectId: string): Promise<ProjectMeta> {
@@ -280,15 +297,7 @@ export class ProjectService {
       throw new Error('未找到项目。');
     }
 
-    return {
-      id: row.id,
-      name: row.name,
-      rootPath: row.rootPath,
-      stats: parseJson<ProjectStats>(row.statsJson),
-      settings: parseJson<ProjectSettings>(row.settingsJson),
-      createdAt: row.createdAt,
-      updatedAt: row.updatedAt,
-    };
+    return toProjectMeta(row);
   }
 
   async createProject(input: CreateProjectInput): Promise<ProjectMeta> {
@@ -321,6 +330,7 @@ export class ProjectService {
       id: projectId,
       name: input.name.trim(),
       rootPath: targetRootPath,
+      referenceAnswerVersion: 1,
       createdAt: now,
       updatedAt: now,
       stats: createEmptyStats(),
@@ -332,6 +342,7 @@ export class ProjectService {
         id: project.id,
         name: project.name,
         rootPath: project.rootPath,
+        referenceAnswerVersion: project.referenceAnswerVersion,
         statsJson: JSON.stringify(project.stats),
         settingsJson: JSON.stringify(project.settings),
         createdAt: project.createdAt,
@@ -362,6 +373,43 @@ export class ProjectService {
     const updated: ProjectMeta = {
       ...current,
       settings,
+      updatedAt,
+    };
+    await writeProjectManifest(updated);
+    return updated;
+  }
+
+  async updateReferenceAnswer(
+    projectId: string,
+    markdown: string,
+  ): Promise<ProjectMeta> {
+    const db = getDatabase();
+    const current = await this.getProjectById(projectId);
+    const structure = getProjectStructure(current.rootPath);
+    const nextMarkdown = markdown.trim();
+    const currentMarkdown = (await fs.pathExists(structure.referenceAnswerPath))
+      ? (await fs.readFile(structure.referenceAnswerPath, 'utf-8')).trim()
+      : '';
+
+    if (currentMarkdown === nextMarkdown) {
+      return current;
+    }
+
+    await fs.writeFile(structure.referenceAnswerPath, `${nextMarkdown}\n`, 'utf-8');
+
+    const updatedAt = new Date().toISOString();
+    const referenceAnswerVersion = current.referenceAnswerVersion + 1;
+    db.update(projectsTable)
+      .set({
+        referenceAnswerVersion,
+        updatedAt,
+      })
+      .where(eq(projectsTable.id, projectId))
+      .run();
+
+    const updated: ProjectMeta = {
+      ...current,
+      referenceAnswerVersion,
       updatedAt,
     };
     await writeProjectManifest(updated);
@@ -601,6 +649,7 @@ export class ProjectService {
           projectId,
           paperId,
           filePath,
+          referenceAnswerVersion: normalized.referenceAnswerVersion,
           modelResult: normalized.modelResult,
           finalResult: normalized.finalResult,
           updatedAt: stat.mtime.toISOString(),
@@ -635,6 +684,7 @@ export class ProjectService {
     await fs.writeJson(
       filePath,
       {
+        referenceAnswerVersion: current.referenceAnswerVersion,
         modelResult: current.modelResult,
         finalResult,
       },
@@ -658,6 +708,7 @@ export class ProjectService {
       outputPath,
       results.map((item) => ({
         paperId: item.paperId,
+        referenceAnswerVersion: item.referenceAnswerVersion,
         finalResult: item.finalResult,
       })),
       { spaces: 2 },
@@ -761,6 +812,7 @@ export class ProjectService {
       await fs.writeJson(
         filePath,
         {
+          referenceAnswerVersion: project.referenceAnswerVersion,
           modelResult,
           finalResult,
         },

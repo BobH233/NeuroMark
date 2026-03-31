@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
+import { MdEditor } from 'md-editor-v3';
 import {
+  NAlert,
   NButton,
   NCard,
   NEmpty,
@@ -13,6 +15,7 @@ import {
   NSpace,
   NSwitch,
   NTabPane,
+  NTag,
   NTabs,
 } from 'naive-ui';
 import type { FinalResult, PreviewImageItem, ResultRecord } from '@preload/contracts';
@@ -32,6 +35,10 @@ const activeTab = ref('overview');
 const selectedResultId = ref('');
 const previewMode = ref<'original' | 'scanned'>('scanned');
 const editableResult = ref<FinalResult | null>(null);
+const referenceAnswerDraft = ref('');
+const referenceAnswerSaving = ref(false);
+const referenceAnswerDraftProjectId = ref('');
+const referenceAnswerDraftVersion = ref(0);
 
 const projectId = computed(() => String(route.params.projectId ?? ''));
 const detail = computed(() =>
@@ -40,6 +47,16 @@ const detail = computed(() =>
 const selectedProject = computed(() => detail.value?.project ?? null);
 const results = computed(() => detail.value?.results ?? []);
 const papers = computed(() => detail.value?.originals ?? []);
+const latestReferenceAnswerVersion = computed(() => selectedProject.value?.referenceAnswerVersion ?? 1);
+const referenceAnswerDirty = computed(() =>
+  detail.value ? referenceAnswerDraft.value !== detail.value.referenceAnswerMarkdown : false,
+);
+const selectedResultUsesLatestReference = computed(() => {
+  if (!selectedResult.value) {
+    return true;
+  }
+  return selectedResult.value.referenceAnswerVersion === latestReferenceAnswerVersion.value;
+});
 
 const selectedResult = computed<ResultRecord | null>(() => {
   return results.value.find((item) => item.id === selectedResultId.value) ?? results.value[0] ?? null;
@@ -70,6 +87,28 @@ const resultPreviewImages = computed<PreviewImageItem[]>(() => {
     regions: currentResult.modelResult.questionRegions?.filter((region) => region.pageIndex === index) ?? [],
   }));
 });
+
+watch(
+  () => [detail.value?.project.id, detail.value?.project.referenceAnswerVersion] as const,
+  ([nextProjectId, nextVersion]) => {
+    if (!nextProjectId) {
+      referenceAnswerDraft.value = '';
+      referenceAnswerDraftProjectId.value = '';
+      referenceAnswerDraftVersion.value = 0;
+      return;
+    }
+
+    if (
+      referenceAnswerDraftProjectId.value !== nextProjectId ||
+      referenceAnswerDraftVersion.value !== (nextVersion ?? 0)
+    ) {
+      referenceAnswerDraft.value = detail.value?.referenceAnswerMarkdown ?? '';
+      referenceAnswerDraftProjectId.value = nextProjectId;
+      referenceAnswerDraftVersion.value = nextVersion ?? 0;
+    }
+  },
+  { immediate: true },
+);
 
 watch(
   () => results.value,
@@ -161,11 +200,38 @@ async function saveProjectSettings() {
   await projectsStore.updateProjectSettings(selectedProject.value.id, selectedProject.value.settings);
 }
 
+async function saveReferenceAnswer() {
+  if (!selectedProject.value || !referenceAnswerDirty.value || referenceAnswerSaving.value) {
+    return;
+  }
+
+  const nextMarkdown = referenceAnswerDraft.value.trim();
+  if (!nextMarkdown) {
+    window.alert('参考答案不能为空。');
+    return;
+  }
+
+  referenceAnswerSaving.value = true;
+  try {
+    await projectsStore.updateReferenceAnswer(selectedProject.value.id, nextMarkdown);
+  } finally {
+    referenceAnswerSaving.value = false;
+  }
+}
+
+function handleReferenceAnswerChange(value: string) {
+  referenceAnswerDraft.value = value;
+}
+
 async function openStagePreview() {
   if (resultPreviewImages.value.length === 0) {
     return;
   }
   await window.neuromark.preview.open(resultPreviewImages.value, 0, '答卷图片预览');
+}
+
+function isResultOutdated(result: ResultRecord) {
+  return result.referenceAnswerVersion !== latestReferenceAnswerVersion.value;
 }
 
 function goBack() {
@@ -210,7 +276,7 @@ function goBack() {
             <section class="project-overview-section">
               <div class="project-section-head">
                 <div class="project-section-title">项目概览</div>
-                <div class="project-section-copy">先看关键指标，再继续往下看参考答案和后台任务。</div>
+                <div class="project-section-copy">可以先快速浏览关键指标，再继续查看参考答案预览和最近任务。</div>
               </div>
               <div class="metrics-grid project-overview-metrics">
                 <MetricCard label="导入答卷" :value="selectedProject.stats.importedPaperCount" hint="按试卷套数统计" />
@@ -218,13 +284,14 @@ function goBack() {
                 <MetricCard label="已扫描" :value="selectedProject.stats.scannedPaperCount" hint="已生成扫描件" />
                 <MetricCard label="已批改" :value="selectedProject.stats.gradedPaperCount" hint="可进入结果复核" />
                 <MetricCard label="平均分" :value="selectedProject.stats.averageScore" hint="按当前最终成绩计算" />
-                <MetricCard label="最近任务" :value="selectedProject.stats.lastTaskSummary" />
+                <MetricCard label="最近任务" :value="selectedProject.stats.lastTaskSummary" value-mode="text" />
               </div>
             </section>
 
             <section class="project-overview-section">
               <div class="project-section-head">
                 <div class="project-section-title">参考答案预览</div>
+                <div class="project-section-copy">当前项目参考答案版本：v{{ latestReferenceAnswerVersion }}</div>
               </div>
               <n-card class="surface-card flat-card">
                 <MarkdownRenderer :source="detail.referenceAnswerMarkdown" />
@@ -329,11 +396,23 @@ function goBack() {
                 :class="{ active: item.id === selectedResult?.id }"
                 @click="selectedResultId = item.id"
               >
-                <div>
+                <div class="result-row-meta">
                   <div class="result-row-title">
                     {{ papers.find((paper) => paper.id === item.paperId)?.paperCode || '未命名答卷' }}
                   </div>
                   <div class="result-row-subtitle">{{ item.finalResult.studentInfo.name || '未识别姓名' }}</div>
+                  <div class="result-version-tags">
+                    <n-tag size="small" round :bordered="false">参考答案 v{{ item.referenceAnswerVersion }}</n-tag>
+                    <n-tag
+                      v-if="isResultOutdated(item)"
+                      size="small"
+                      round
+                      type="warning"
+                      :bordered="false"
+                    >
+                      不是最新版本
+                    </n-tag>
+                  </div>
                 </div>
                 <div class="result-row-score">{{ computeDisplayedTotal(item.finalResult) }}</div>
               </button>
@@ -343,6 +422,21 @@ function goBack() {
               <div class="result-detail-head">
                 <div class="result-section-title">评分明细与人工修订</div>
                 <n-button type="primary" @click="saveResult">保存修改</n-button>
+              </div>
+
+              <n-alert
+                v-if="selectedResult && !selectedResultUsesLatestReference"
+                type="warning"
+                class="result-version-alert"
+                :show-icon="false"
+              >
+                当前结果基于参考答案 v{{ selectedResult.referenceAnswerVersion }} 批阅，项目最新版本为
+                v{{ latestReferenceAnswerVersion }}。如需和最新标准保持一致，建议重新批阅。
+              </n-alert>
+
+              <div v-else-if="selectedResult" class="result-version-row">
+                <n-tag size="small" round :bordered="false">参考答案 v{{ selectedResult.referenceAnswerVersion }}</n-tag>
+                <span class="detail-subtitle">当前结果已使用最新参考答案版本。</span>
               </div>
 
               <n-form v-if="editableResult" label-placement="top">
@@ -447,32 +541,65 @@ function goBack() {
         </n-tab-pane>
 
         <n-tab-pane name="project-settings" tab="项目设置">
-          <n-card class="surface-card" title="项目级批阅设置">
-            <n-form v-if="selectedProject" label-placement="top">
-              <div class="two-col">
-                <n-form-item label="批阅并行数">
-                  <n-input-number
-                    v-model:value="selectedProject.settings.gradingConcurrency"
-                    :min="1"
-                  />
+          <div class="project-settings-stack">
+            <n-card class="surface-card" title="项目级批阅设置">
+              <n-form v-if="selectedProject" label-placement="top">
+                <div class="two-col">
+                  <n-form-item label="批阅并行数">
+                    <n-input-number
+                      v-model:value="selectedProject.settings.gradingConcurrency"
+                      :min="1"
+                    />
+                  </n-form-item>
+                  <n-form-item label="图像细节">
+                    <n-select
+                      v-model:value="selectedProject.settings.defaultImageDetail"
+                      :options="[
+                        { label: '高', value: 'high' },
+                        { label: '自动', value: 'auto' },
+                        { label: '低', value: 'low' }
+                      ]"
+                    />
+                  </n-form-item>
+                </div>
+                <n-form-item label="绘制批阅区域">
+                  <n-switch v-model:value="selectedProject.settings.drawRegions" />
                 </n-form-item>
-                <n-form-item label="图像细节">
-                  <n-select
-                    v-model:value="selectedProject.settings.defaultImageDetail"
-                    :options="[
-                      { label: '高', value: 'high' },
-                      { label: '自动', value: 'auto' },
-                      { label: '低', value: 'low' }
-                    ]"
-                  />
-                </n-form-item>
+                <n-button type="primary" @click="saveProjectSettings">保存项目设置</n-button>
+              </n-form>
+            </n-card>
+
+            <n-card class="surface-card" title="参考答案与评分标准">
+              <div class="reference-editor-head">
+                <div class="project-section-copy">
+                  在这里维护当前项目使用的参考答案。点击保存后才会生效，并自动升级到下一版。
+                </div>
+                <div class="reference-editor-actions">
+                  <n-tag round :bordered="false">当前版本 v{{ latestReferenceAnswerVersion }}</n-tag>
+                  <n-tag v-if="referenceAnswerDirty" round type="warning" :bordered="false">有未保存修改</n-tag>
+                  <n-button
+                    type="primary"
+                    :disabled="!referenceAnswerDirty"
+                    :loading="referenceAnswerSaving"
+                    @click="saveReferenceAnswer"
+                  >
+                    保存参考答案
+                  </n-button>
+                </div>
               </div>
-              <n-form-item label="绘制批阅区域">
-                <n-switch v-model:value="selectedProject.settings.drawRegions" />
-              </n-form-item>
-              <n-button type="primary" @click="saveProjectSettings">保存项目设置</n-button>
-            </n-form>
-          </n-card>
+              <div class="editor-card-resizer reference-editor-card">
+                <MdEditor
+                  class="editor-card-editor"
+                  :model-value="referenceAnswerDraft"
+                  language="zh-CN"
+                  preview-theme="github"
+                  code-theme="github"
+                  :toolbars-exclude="['pageFullscreen', 'fullscreen', 'github']"
+                  @update:model-value="handleReferenceAnswerChange"
+                />
+              </div>
+            </n-card>
+          </div>
         </n-tab-pane>
       </n-tabs>
     </section>

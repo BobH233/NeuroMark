@@ -17,6 +17,8 @@ const projectSettingsSchema = z.object({
   defaultImageDetail: z.enum(['low', 'high', 'auto']),
 });
 
+const referenceAnswerSchema = z.string().trim().min(1);
+
 export function registerProjectIpc(services: ServiceBundle): void {
   ipcMain.handle('projects:list', () => services.projects.listProjects());
   ipcMain.handle('projects:get-detail', (_event, projectId: string) =>
@@ -38,5 +40,12 @@ export function registerProjectIpc(services: ServiceBundle): void {
         projectSettingsSchema.parse(settings),
       ),
   );
+  ipcMain.handle(
+    'projects:update-reference-answer',
+    (_event, projectId: string, markdown: string) =>
+      services.projects.updateReferenceAnswer(
+        projectId,
+        referenceAnswerSchema.parse(markdown),
+      ),
+  );
 }
-

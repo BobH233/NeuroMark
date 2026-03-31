@@ -63,6 +63,11 @@ export const useProjectsStore = defineStore('projects', {
       await this.loadProjects();
       await this.loadProjectDetail(projectId);
     },
+    async updateReferenceAnswer(projectId: string, markdown: string) {
+      await window.neuromark.projects.updateReferenceAnswer(projectId, markdown);
+      await this.loadProjects();
+      await this.loadProjectDetail(projectId);
+    },
     async saveFinalResult(projectId: string, paperId: string, finalResult: FinalResult) {
       const updated = await window.neuromark.results.saveFinal(projectId, paperId, finalResult);
       await this.loadProjects();

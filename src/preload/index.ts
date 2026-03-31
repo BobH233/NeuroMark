@@ -21,6 +21,8 @@ const api: NeuromarkApi = {
       ipcRenderer.invoke('projects:import-original-images', projectId, filePaths),
     updateSettings: (projectId, settings) =>
       ipcRenderer.invoke('projects:update-settings', projectId, settings),
+    updateReferenceAnswer: (projectId, markdown) =>
+      ipcRenderer.invoke('projects:update-reference-answer', projectId, markdown),
   },
   scan: {
     start: (projectId, options) => ipcRenderer.invoke('scan:start', projectId, options),
@@ -83,6 +85,8 @@ const api: NeuromarkApi = {
   preview: {
     open: (images, initialIndex, title) =>
       ipcRenderer.invoke('preview:open', images, initialIndex, title),
+    saveImage: (source, suggestedName) =>
+      ipcRenderer.invoke('preview:save-image', source, suggestedName),
   },
 };
 

@@ -40,6 +40,7 @@ export interface ProjectMeta {
   id: string;
   name: string;
   rootPath: string;
+  referenceAnswerVersion: number;
   createdAt: string;
   updatedAt: string;
   stats: ProjectStats;
@@ -110,6 +111,7 @@ export interface ResultRecord {
   projectId: string;
   paperId: string;
   filePath: string;
+  referenceAnswerVersion: number;
   modelResult: ModelResult;
   finalResult: FinalResult;
   updatedAt: string;
@@ -282,6 +284,10 @@ export interface NeuromarkApi {
       projectId: string,
       settings: ProjectSettings,
     ) => Promise<ProjectMeta>;
+    updateReferenceAnswer: (
+      projectId: string,
+      markdown: string,
+    ) => Promise<ProjectMeta>;
   };
   scan: {
     start: (projectId: string, options?: StartJobOptions) => Promise<BackgroundJob>;
@@ -334,5 +340,6 @@ export interface NeuromarkApi {
       initialIndex?: number,
       title?: string,
     ) => Promise<void>;
+    saveImage: (source: string, suggestedName?: string) => Promise<string | null>;
   };
 }

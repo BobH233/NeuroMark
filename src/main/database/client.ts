@@ -30,6 +30,7 @@ function ensureSchema(connection: Database.Database): void {
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
       root_path TEXT NOT NULL UNIQUE,
+      reference_answer_version INTEGER NOT NULL DEFAULT 1,
       stats_json TEXT NOT NULL,
       settings_json TEXT NOT NULL,
       created_at TEXT NOT NULL,
@@ -117,6 +118,12 @@ function ensureSchema(connection: Database.Database): void {
     );
   `);
 
+  ensureColumn(
+    connection,
+    'projects',
+    'reference_answer_version',
+    'reference_answer_version INTEGER NOT NULL DEFAULT 1',
+  );
   ensureColumn(
     connection,
     'tasks',

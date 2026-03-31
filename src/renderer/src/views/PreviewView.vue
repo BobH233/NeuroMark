@@ -15,6 +15,7 @@ const translate = ref({ x: 0, y: 0 });
 const dragging = ref(false);
 const dragOrigin = ref({ x: 0, y: 0 });
 const suppressTransformTransition = ref(false);
+const saving = ref(false);
 
 const activeImage = computed(() => {
   if (!session.value) {
@@ -44,12 +45,6 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', handleKeydown);
 });
-
-function resetView() {
-  zoom.value = 1;
-  rotations.value[activeIndex.value] = 0;
-  translate.value = { x: 0, y: 0 };
-}
 
 function fitView() {
   zoom.value = 1;
@@ -147,6 +142,26 @@ function handleKeydown(event: KeyboardEvent) {
     rotateLeft();
   } else if (event.key === ']') {
     rotateRight();
+  }
+}
+
+async function saveCurrentImage() {
+  if (!activeImage.value || saving.value) {
+    return;
+  }
+
+  saving.value = true;
+  try {
+    await window.neuromark.preview.saveImage(
+      activeImage.value.src,
+      activeImage.value.caption || activeImage.value.title,
+    );
+  } catch (error) {
+    window.alert(
+      `保存图片失败：${error instanceof Error ? error.message : String(error)}`,
+    );
+  } finally {
+    saving.value = false;
   }
 }
 </script>
@@ -259,6 +274,21 @@ function handleKeydown(event: KeyboardEvent) {
             <svg viewBox="0 0 24 24" aria-hidden="true">
               <path class="rotate-icon-primary" d="M17 17.29A8 8 0 1 1 18.94 11" />
               <polyline class="rotate-icon-accent" points="21 6 19 11 14 9" />
+            </svg>
+          </button>
+
+          <span class="toolbar-divider" />
+
+          <button
+            class="toolbar-icon-button"
+            :disabled="saving"
+            aria-label="保存图片到本地"
+            @click="saveCurrentImage"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M8 7h2" />
+              <path d="M8 15h8v6H8z" />
+              <path d="M20 7V20a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h11Z" />
             </svg>
           </button>
         </footer>
@@ -549,6 +579,12 @@ function handleKeydown(event: KeyboardEvent) {
 .toolbar-icon-button:hover {
   background: rgba(255, 255, 255, 0.12);
   transform: translateY(-1px);
+}
+
+.toolbar-icon-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
 }
 
 .toolbar-icon-button svg {
