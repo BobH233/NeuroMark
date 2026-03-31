@@ -296,6 +296,13 @@ cv::Mat enhanceForScan(const cv::Mat& warpedColor) {
     gray.convertTo(grayFloat, CV_32F);
     background.convertTo(backgroundFloat, CV_32F);
 
+    cv::Mat darknessFloat = backgroundFloat - grayFloat;
+    cv::max(darknessFloat, 0.0f, darknessFloat);
+
+    cv::Mat darkness;
+    darknessFloat.convertTo(darkness, CV_8U);
+    cv::GaussianBlur(darkness, darkness, cv::Size(3, 3), 0.0, 0.0, cv::BORDER_REPLICATE);
+
     cv::Mat normalizedFloat;
     cv::divide(grayFloat, backgroundFloat + 1.0f, normalizedFloat, 255.0);
 
@@ -318,7 +325,49 @@ cv::Mat enhanceForScan(const cv::Mat& warpedColor) {
         cv::THRESH_BINARY,
         blockSize,
         10);
-    cv::medianBlur(scanned, scanned, 3);
+
+    cv::Mat gradientX;
+    cv::Mat gradientY;
+    cv::Sobel(normalized, gradientX, CV_16S, 1, 0, 3);
+    cv::Sobel(normalized, gradientY, CV_16S, 0, 1, 3);
+
+    cv::Mat absGradientX;
+    cv::Mat absGradientY;
+    cv::convertScaleAbs(gradientX, absGradientX);
+    cv::convertScaleAbs(gradientY, absGradientY);
+
+    cv::Mat edgeStrength;
+    cv::addWeighted(absGradientX, 0.5, absGradientY, 0.5, 0.0, edgeStrength);
+    cv::GaussianBlur(edgeStrength, edgeStrength, cv::Size(3, 3), 0.0, 0.0, cv::BORDER_REPLICATE);
+
+    cv::Mat strongInkMask;
+    const double darknessOtsu =
+        cv::threshold(darkness, strongInkMask, 0.0, 255.0, cv::THRESH_BINARY | cv::THRESH_OTSU);
+    const double strongInkThreshold = std::min(255.0, std::max(14.0, darknessOtsu * 1.15 + 2.0));
+    cv::threshold(darkness, strongInkMask, strongInkThreshold, 255.0, cv::THRESH_BINARY);
+
+    cv::Mat edgeMask;
+    const double edgeOtsu =
+        cv::threshold(edgeStrength, edgeMask, 0.0, 255.0, cv::THRESH_BINARY | cv::THRESH_OTSU);
+    const double weakInkThreshold = std::min(255.0, std::max(7.0, darknessOtsu * 0.55));
+    const double edgeThreshold = std::min(255.0, std::max(12.0, edgeOtsu * 0.75));
+
+    cv::Mat weakInkMask;
+    cv::threshold(darkness, weakInkMask, weakInkThreshold, 255.0, cv::THRESH_BINARY);
+    cv::threshold(edgeStrength, edgeMask, edgeThreshold, 255.0, cv::THRESH_BINARY);
+
+    cv::Mat preservedForegroundMask;
+    cv::bitwise_and(weakInkMask, edgeMask, preservedForegroundMask);
+    cv::bitwise_or(strongInkMask, preservedForegroundMask, preservedForegroundMask);
+
+    const cv::Mat inkKernel = cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(3, 3));
+    cv::dilate(preservedForegroundMask, preservedForegroundMask, inkKernel, cv::Point(-1, -1), 1);
+
+    cv::Mat foreground;
+    cv::bitwise_not(scanned, foreground);
+    cv::bitwise_and(foreground, preservedForegroundMask, foreground);
+    cv::medianBlur(foreground, foreground, 3);
+    cv::bitwise_not(foreground, scanned);
     return scanned;
 }
 
