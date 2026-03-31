@@ -21,6 +21,7 @@ models/*.onnx
 models/*.pth
 
 # Demo outputs
+example_input/
 example_output/
 benchmark/
 debug/

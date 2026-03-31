@@ -6,6 +6,15 @@ files:
   - dist/**
   - dist-electron/**
 asar: true
+extraResources:
+  - from: build/native
+    to: native
+    filter:
+      - '**/*'
+  - from: src-native/scancpp/models
+    to: models
+    filter:
+      - '*.onnx'
 mac:
   category: public.app-category.education
 win:
@@ -16,4 +25,3 @@ linux:
     - AppImage
     - deb
   category: Education
-

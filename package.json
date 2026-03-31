@@ -5,8 +5,9 @@
   "type": "module",
   "main": "dist-electron/main/index.js",
   "scripts": {
-    "dev": "node ./node_modules/electron-vite/bin/electron-vite.js dev",
-    "build": "vue-tsc --noEmit && node ./node_modules/electron-vite/bin/electron-vite.js build",
+    "build:native": "node ./scripts/build-native.mjs",
+    "dev": "npm run build:native && node ./node_modules/electron-vite/bin/electron-vite.js dev",
+    "build": "npm run build:native && vue-tsc --noEmit && node ./node_modules/electron-vite/bin/electron-vite.js build",
     "typecheck": "vue-tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.node.json",
     "lint": "eslint .",
     "format": "prettier --write .",
@@ -24,7 +25,6 @@
   "author": "Codex",
   "license": "MIT",
   "dependencies": {
-    "@techstark/opencv-js": "^4.12.0-release.1",
     "@vueuse/core": "^14.2.1",
     "better-sqlite3": "^12.8.0",
     "dayjs": "^1.11.20",
@@ -61,6 +61,7 @@
     "eslint": "^10.1.0",
     "eslint-plugin-vue": "^10.8.0",
     "globals": "^17.4.0",
+    "node-addon-api": "^8.7.0",
     "playwright": "^1.58.2",
     "prettier": "^3.8.1",
     "typescript": "^5.9.3",

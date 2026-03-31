@@ -12,6 +12,10 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+option(SCANCPP_BUILD_CLI "Build the scancpp CLI executable" ON)
+option(SCANCPP_BUILD_NODE_ADDON "Build the scancpp Node-API addon" ON)
+set(NODEJS_EXECUTABLE "node" CACHE STRING "Node.js executable used to resolve Node-API include directories")
+
 set(SCANCPP_DEFAULT_OPENCV_PROVIDER "system")
 if(EXISTS "${CMAKE_SOURCE_DIR}/third_party/opencv/CMakeLists.txt")
     set(SCANCPP_DEFAULT_OPENCV_PROVIDER "bundled-static")
@@ -122,15 +126,87 @@ if(DEFINED OpenCV_VERSION AND OpenCV_VERSION VERSION_LESS 4.0.0)
     message(FATAL_ERROR "OpenCV 4.x or newer is required.")
 endif()
 
-add_executable(scancpp
-    src/main.cpp
+add_library(scancpp_core STATIC
+    src/scanner.cpp
 )
 
-target_link_libraries(scancpp PRIVATE ${SCANCPP_OPENCV_TARGETS})
-target_include_directories(scancpp PRIVATE ${SCANCPP_OPENCV_INCLUDE_DIRS})
+target_link_libraries(scancpp_core PRIVATE ${SCANCPP_OPENCV_TARGETS})
+target_include_directories(scancpp_core
+    PUBLIC
+        "${CMAKE_CURRENT_SOURCE_DIR}/src"
+    PRIVATE
+        ${SCANCPP_OPENCV_INCLUDE_DIRS}
+)
 
 if(MSVC)
-    target_compile_options(scancpp PRIVATE /W4 /permissive-)
+    target_compile_options(scancpp_core PRIVATE /W4 /permissive-)
 else()
-    target_compile_options(scancpp PRIVATE -Wall -Wextra -Wpedantic)
+    target_compile_options(scancpp_core PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
+if(SCANCPP_BUILD_CLI)
+    add_executable(scancpp
+        src/main.cpp
+    )
+
+    target_link_libraries(scancpp PRIVATE scancpp_core ${SCANCPP_OPENCV_TARGETS})
+    target_include_directories(scancpp PRIVATE ${SCANCPP_OPENCV_INCLUDE_DIRS})
+
+    if(MSVC)
+        target_compile_options(scancpp PRIVATE /W4 /permissive-)
+    else()
+        target_compile_options(scancpp PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+endif()
+
+if(SCANCPP_BUILD_NODE_ADDON)
+    execute_process(
+        COMMAND "${NODEJS_EXECUTABLE}" -p "require('node-addon-api').include"
+        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+        OUTPUT_VARIABLE NODE_ADDON_API_INCLUDE_RAW
+        RESULT_VARIABLE NODE_ADDON_API_RESULT
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+    )
+    if(NODE_ADDON_API_RESULT)
+        message(FATAL_ERROR "Failed to resolve node-addon-api include path with ${NODEJS_EXECUTABLE}.")
+    endif()
+    string(REPLACE "\"" "" NODE_ADDON_API_INCLUDE_DIR "${NODE_ADDON_API_INCLUDE_RAW}")
+
+    find_path(
+        NODE_API_INCLUDE_DIR
+        node_api.h
+        HINTS
+            "$ENV{npm_config_nodedir}/include/node"
+            "$ENV{npm_config_nodedir}"
+            "/opt/homebrew/include/node"
+            "/usr/local/include/node"
+            "${CMAKE_CURRENT_SOURCE_DIR}/../../node_modules/node/include/node"
+    )
+    if(NOT NODE_API_INCLUDE_DIR)
+        message(FATAL_ERROR "Could not find node_api.h. Set npm_config_nodedir or install Node headers.")
+    endif()
+
+    add_library(scancpp_node MODULE
+        src/node_addon.cpp
+    )
+
+    target_link_libraries(scancpp_node PRIVATE scancpp_core ${SCANCPP_OPENCV_TARGETS})
+    target_include_directories(scancpp_node
+        PRIVATE
+            ${SCANCPP_OPENCV_INCLUDE_DIRS}
+            "${NODE_ADDON_API_INCLUDE_DIR}"
+            "${NODE_API_INCLUDE_DIR}"
+    )
+    target_compile_definitions(scancpp_node PRIVATE NAPI_VERSION=8)
+    set_target_properties(scancpp_node PROPERTIES PREFIX "" SUFFIX ".node")
+
+    if(APPLE)
+        set_target_properties(scancpp_node PROPERTIES LINK_FLAGS "-undefined dynamic_lookup")
+    endif()
+
+    if(MSVC)
+        target_compile_options(scancpp_node PRIVATE /W4 /permissive- /EHsc)
+    else()
+        target_compile_options(scancpp_node PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
 endif()

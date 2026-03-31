@@ -3,6 +3,8 @@ node_modules/
 dist/
 dist-electron/
 release/
+build/native/
+src-native/scancpp/build/
 playwright-report/
 test-results/
 coverage/
@@ -11,4 +13,3 @@ coverage/
 *.tmp
 .idea/
 .vscode/
-
