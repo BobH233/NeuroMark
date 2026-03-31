@@ -85,6 +85,42 @@ function getTaskArchivedAtLabel(task: BackgroundJob) {
   return formatTaskTime(task.archivedAt, '未归档');
 }
 
+function isTaskActive(task: BackgroundJob) {
+  return task.status === 'queued' || task.status === 'running' || task.status === 'paused';
+}
+
+function getTaskSpeedLabel(task: BackgroundJob) {
+  if (task.kind === 'answer-generation') {
+    return '按需请求';
+  }
+
+  if (task.speed <= 0) {
+    return task.status === 'queued' ? '排队中' : '等待首套完成';
+  }
+
+  return `${task.speed.toFixed(task.speed >= 10 ? 1 : 2)} 秒/套`;
+}
+
+function getTaskEtaLabel(task: BackgroundJob) {
+  if (task.kind === 'answer-generation') {
+    return task.eta || '等待模型返回';
+  }
+
+  if (task.status === 'completed') {
+    return '已完成';
+  }
+
+  if (task.status === 'failed' || task.status === 'cancelled') {
+    return '已结束';
+  }
+
+  if (task.eta) {
+    return task.eta;
+  }
+
+  return task.status === 'queued' ? '排队中' : '等待首套完成';
+}
+
 function isTaskExpanded(taskId: string) {
   return expandedTaskIds.value.has(taskId);
 }
@@ -193,7 +229,7 @@ async function archiveVisibleTasks() {
                   处理速度
                 </div>
                 <div class="task-list-meta-value">
-                  {{ task.kind === 'answer-generation' ? '按需请求' : `${task.speed.toFixed(2)} 套/分钟` }}
+                  {{ getTaskSpeedLabel(task) }}
                 </div>
               </div>
               <div class="task-list-meta-item">
@@ -201,7 +237,7 @@ async function archiveVisibleTasks() {
                   预计完成
                 </div>
                 <div class="task-list-meta-value">
-                  {{ task.kind === 'answer-generation' ? (task.eta || '等待模型返回') : (task.eta || '计算中') }}
+                  {{ getTaskEtaLabel(task) }}
                 </div>
               </div>
               <div class="task-list-meta-item">
@@ -244,6 +280,18 @@ async function archiveVisibleTasks() {
                 :show-indicator="false"
                 :color="getTaskProgressColor(task)"
               />
+            </div>
+
+            <div
+              v-if="isTaskActive(task)"
+              class="task-summary-panel"
+            >
+              <div class="task-list-meta-label">
+                实时状态
+              </div>
+              <p class="task-summary">
+                处理速度 {{ getTaskSpeedLabel(task) }} · 预计完成 {{ getTaskEtaLabel(task) }}
+              </p>
             </div>
 
             <div class="task-summary-panel">

@@ -18,6 +18,7 @@ __pycache__/
 
 # Model assets and generated artifacts
 models/*.onnx
+!models/u2netp.onnx
 models/*.pth
 
 # Demo outputs

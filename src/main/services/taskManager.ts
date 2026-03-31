@@ -35,12 +35,25 @@ export function estimateEta(progress: number, speed: number): string | null {
     return null;
   }
 
-  const remaining = (1 - progress) / speed;
-  if (remaining <= 0) {
+  const remainingSeconds = (1 - progress) * speed;
+  if (remainingSeconds <= 0) {
     return null;
   }
 
-  return dayjs().add(Math.ceil(remaining * 60), 'second').format('HH:mm:ss');
+  return dayjs().add(Math.ceil(remainingSeconds), 'second').format('HH:mm:ss');
+}
+
+function getSecondsPerPaper(progress: number, elapsedSeconds: number, totalPaperCount: number): number {
+  if (progress <= 0 || elapsedSeconds <= 0 || totalPaperCount <= 0) {
+    return 0;
+  }
+
+  const completedPaperEquivalent = progress * totalPaperCount;
+  if (completedPaperEquivalent <= 0) {
+    return 0;
+  }
+
+  return Number((elapsedSeconds / completedPaperEquivalent).toFixed(2));
 }
 
 export class TaskManager {
@@ -297,6 +310,11 @@ export class TaskManager {
   ): Promise<BackgroundJob> {
     const project = await this.projects.getProjectById(projectId);
     const papers = await this.projects.listProjectPapers(projectId);
+    const pendingPaperCount = papers.filter((paper) =>
+      paper.originalPages.some(
+        (page) => !(options?.skipCompleted ?? true) || !page.scannedPath || !page.debugPreviewPath,
+      ),
+    ).length;
     const db = getDatabase();
     const now = new Date().toISOString();
     const jobId = nanoid();
@@ -326,7 +344,7 @@ export class TaskManager {
 
     this.scanControllers.set(jobId, controller);
     await this.emit();
-    void this.runScanJob(jobId, projectId, controller, options);
+    void this.runScanJob(jobId, projectId, controller, Math.max(pendingPaperCount, 0), options);
 
     const row = db.select().from(tasksTable).where(eq(tasksTable.id, jobId)).get();
     return toJob(row!);
@@ -343,6 +361,8 @@ export class TaskManager {
     const now = new Date().toISOString();
     const jobId = nanoid();
     const baseSpeed = kind === 'scan' ? 0.12 : 0.08;
+    const totalPaperCount = Math.max(papers.length, 0);
+    const startedAtMs = Date.now();
     db.insert(tasksTable)
       .values({
         id: jobId,
@@ -352,8 +372,8 @@ export class TaskManager {
         referenceAnswerVersion: kind === 'grading' ? project.referenceAnswerVersion : null,
         status: 'running',
         progress: 0,
-        speed: baseSpeed,
-        eta: estimateEta(0.01, baseSpeed),
+        speed: 0,
+        eta: null,
         startedAt: now,
         finishedAt: null,
         archivedAt: null,
@@ -386,7 +406,8 @@ export class TaskManager {
         1,
         Number((current.progress + 0.09 + Math.random() * 0.11).toFixed(3)),
       );
-      const speed = Number((baseSpeed + Math.random() * 0.05).toFixed(3));
+      const elapsedSeconds = Math.max((Date.now() - startedAtMs) / 1000, 1);
+      const speed = getSecondsPerPaper(nextProgress, elapsedSeconds, totalPaperCount);
       const currentPaper = papers[Math.min(papers.length - 1, tick % Math.max(1, papers.length))];
       const summary = kind === 'scan'
         ? `正在识别纸张边界与扫描效果，已完成 ${(nextProgress * 100).toFixed(0)}%`
@@ -396,7 +417,7 @@ export class TaskManager {
         .set({
           progress: nextProgress,
           speed,
-          eta: estimateEta(nextProgress, speed),
+          eta: estimateEta(nextProgress, speed * totalPaperCount),
           currentPaperLabel: currentPaper?.paperCode ?? current.currentPaperLabel,
           summary,
           updatedAt: new Date().toISOString(),
@@ -419,6 +440,7 @@ export class TaskManager {
           .set({
             status: 'completed',
             progress: 1,
+            speed: getSecondsPerPaper(1, Math.max((Date.now() - startedAtMs) / 1000, 1), totalPaperCount),
             eta: null,
             finishedAt: new Date().toISOString(),
             summary: kind === 'scan' ? '扫描任务已完成' : '批阅任务已完成',
@@ -440,6 +462,7 @@ export class TaskManager {
     jobId: string,
     projectId: string,
     controller: AbortController,
+    totalPaperCount: number,
     options?: StartJobOptions,
   ): Promise<void> {
     const db = getDatabase();
@@ -454,14 +477,14 @@ export class TaskManager {
             totalPageCount > 0
               ? Number((completedPageCount / totalPageCount).toFixed(3))
               : 1;
-          const elapsedMinutes = Math.max((Date.now() - startedAt) / 60000, 1 / 60);
-          const speed = progress > 0 ? Number((progress / elapsedMinutes).toFixed(3)) : 0;
+          const elapsedSeconds = Math.max((Date.now() - startedAt) / 1000, 1);
+          const speed = getSecondsPerPaper(progress, elapsedSeconds, totalPaperCount);
 
           db.update(tasksTable)
             .set({
               progress,
               speed,
-              eta: estimateEta(progress, speed),
+              eta: estimateEta(progress, speed * totalPaperCount),
               currentPaperLabel,
               summary: `正在识别纸张边界与扫描效果，已完成 ${completedPageCount}/${Math.max(totalPageCount, 1)} 页`,
               updatedAt: new Date().toISOString(),
@@ -485,10 +508,11 @@ export class TaskManager {
         .set({
           status: 'completed',
           progress: 1,
-          speed:
-            result.totalPageCount > 0
-              ? Number((1 / Math.max((Date.now() - startedAt) / 60000, 1 / 60)).toFixed(3))
-              : 0,
+          speed: getSecondsPerPaper(
+            1,
+            Math.max((Date.now() - startedAt) / 1000, 1),
+            totalPaperCount,
+          ),
           eta: null,
           finishedAt: new Date().toISOString(),
           summary:
