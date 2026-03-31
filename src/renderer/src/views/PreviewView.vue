@@ -156,10 +156,15 @@ function handleKeydown(event: KeyboardEvent) {
     return;
   }
 
-  if (event.key === 'ArrowLeft') {
+  if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
+    event.preventDefault();
     showPrevious();
-  } else if (event.key === 'ArrowRight') {
+  } else if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
+    event.preventDefault();
     showNext();
+  } else if (event.key === ' ' || event.code === 'Space') {
+    event.preventDefault();
+    window.close();
   } else if (event.key === '+' || event.key === '=') {
     zoomIn();
   } else if (event.key === '-') {
