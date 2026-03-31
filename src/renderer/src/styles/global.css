@@ -570,8 +570,15 @@ textarea {
   color: var(--muted);
 }
 
-.project-overview-metrics {
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+.metrics-grid.project-overview-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+}
+
+.project-overview-metrics .metric-card {
+  flex: 1 1 220px;
+  max-width: 260px;
 }
 
 .flat-card {
@@ -590,6 +597,7 @@ textarea {
   border-radius: 22px;
   background: rgba(255, 255, 255, 0.82);
   border: 1px solid var(--line);
+  min-width: 0;
 }
 
 .metric-label {
@@ -600,12 +608,20 @@ textarea {
 .metric-value {
   font-size: 28px;
   font-weight: 800;
+  min-width: 0;
 }
 
 .metric-value-text {
   font-size: 20px;
   line-height: 1.35;
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.project-overview-metrics .metric-card.metric-card-wide {
+  flex-basis: 420px;
+  max-width: 520px;
 }
 
 .two-pane,
@@ -796,6 +812,20 @@ textarea {
 .reference-editor-card {
   height: 680px;
   max-height: calc(100vh - 220px);
+}
+
+.project-danger-card {
+  border-color: rgba(208, 58, 82, 0.18);
+}
+
+.project-danger-card .n-card__content {
+  display: grid;
+  gap: 18px;
+}
+
+.project-danger-copy {
+  color: var(--muted);
+  line-height: 1.7;
 }
 
 .question-card,
@@ -1159,6 +1189,48 @@ textarea {
   align-items: center;
 }
 
+.create-project-form {
+  gap: 12px;
+}
+
+.create-project-path-row {
+  width: 100%;
+  display: flex;
+  align-items: stretch;
+  gap: 12px;
+}
+
+.create-project-path-input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.create-project-half-input,
+.create-project-half-input.n-input-number,
+.create-project-half-input.n-base-selection {
+  width: 100%;
+}
+
+.create-project-settings-grid {
+  align-items: end;
+}
+
+.create-project-toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 16px;
+  border-radius: 18px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.7);
+}
+
+.create-project-toggle-copy {
+  display: grid;
+  gap: 4px;
+}
+
 .settings-foot,
 .detail-panel-head,
 .generator-layout {
@@ -1445,7 +1517,7 @@ textarea {
 }
 
 .project-modal {
-  width: min(720px, calc(100vw - 40px));
+  width: min(860px, calc(100vw - 40px));
 }
 
 .editor-card-resizer {
@@ -1521,6 +1593,11 @@ textarea {
 
   .task-list-card-actions {
     justify-content: flex-start;
+  }
+
+  .create-project-toggle-row {
+    flex-direction: column;
+    align-items: stretch;
   }
 }
 

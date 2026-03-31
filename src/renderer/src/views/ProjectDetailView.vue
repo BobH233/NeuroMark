@@ -11,6 +11,7 @@ import {
   NFormItem,
   NInput,
   NInputNumber,
+  NPopconfirm,
   NSelect,
   NSpace,
   NSwitch,
@@ -18,7 +19,7 @@ import {
   NTag,
   NTabs,
 } from 'naive-ui';
-import type { FinalResult, PreviewImageItem, ResultRecord } from '@preload/contracts';
+import type { FinalResult, PaperRecord, PreviewImageItem, ResultRecord } from '@preload/contracts';
 import ImagePreviewTile from '@/components/ImagePreviewTile.vue';
 import MarkdownRenderer from '@/components/MarkdownRenderer.vue';
 import MetricCard from '@/components/MetricCard.vue';
@@ -39,6 +40,7 @@ const referenceAnswerDraft = ref('');
 const referenceAnswerSaving = ref(false);
 const referenceAnswerDraftProjectId = ref('');
 const referenceAnswerDraftVersion = ref(0);
+const deletingProject = ref(false);
 
 const projectId = computed(() => String(route.params.projectId ?? ''));
 const detail = computed(() =>
@@ -219,6 +221,21 @@ async function saveReferenceAnswer() {
   }
 }
 
+async function deleteProject() {
+  if (!selectedProject.value || deletingProject.value) {
+    return;
+  }
+
+  deletingProject.value = true;
+  try {
+    const projectIdToDelete = selectedProject.value.id;
+    await projectsStore.deleteProject(projectIdToDelete);
+    router.replace('/projects');
+  } finally {
+    deletingProject.value = false;
+  }
+}
+
 function handleReferenceAnswerChange(value: string) {
   referenceAnswerDraft.value = value;
 }
@@ -228,6 +245,30 @@ async function openStagePreview() {
     return;
   }
   await window.neuromark.preview.open(resultPreviewImages.value, 0, '答卷图片预览');
+}
+
+function getOriginalPreviewImages(paper: PaperRecord): PreviewImageItem[] {
+  return paper.originalPages.map((page, index) => ({
+    src: page.originalPath,
+    title: `${paper.paperCode} · 原始图 ${index + 1}`,
+    caption: '点击单独预览窗口放大查看',
+  }));
+}
+
+function getScannedPreviewImages(paper: PaperRecord): PreviewImageItem[] {
+  return paper.originalPages.map((page, index) => ({
+    src: page.scannedPath || page.originalPath,
+    title: `${paper.paperCode} · 扫描图 ${index + 1}`,
+    caption: page.scannedPath ? '已生成扫描件' : '等待扫描',
+  }));
+}
+
+function getDebugPreviewImages(paper: PaperRecord): PreviewImageItem[] {
+  return paper.originalPages.map((page, index) => ({
+    src: page.debugPreviewPath || page.originalPath,
+    title: `${paper.paperCode} · 边界图 ${index + 1}`,
+    caption: page.debugPreviewPath ? '已生成边界预览' : '等待扫描',
+  }));
 }
 
 function isResultOutdated(result: ResultRecord) {
@@ -333,7 +374,12 @@ function goBack() {
                 <MetricCard label="已扫描" :value="selectedProject.stats.scannedPaperCount" hint="已生成扫描件" />
                 <MetricCard label="已批改" :value="selectedProject.stats.gradedPaperCount" hint="可进入结果复核" />
                 <MetricCard label="平均分" :value="selectedProject.stats.averageScore" hint="按当前最终成绩计算" />
-                <MetricCard label="最近任务" :value="selectedProject.stats.lastTaskSummary" value-mode="text" />
+                <MetricCard
+                  label="最近任务"
+                  :value="selectedProject.stats.lastTaskSummary"
+                  value-mode="text"
+                  card-class="metric-card-wide"
+                />
               </div>
             </section>
 
@@ -420,13 +466,16 @@ function goBack() {
               </div>
               <div class="image-grid">
                 <ImagePreviewTile
-                  v-for="page in paper.originalPages"
+                  v-for="(page, pageIndex) in paper.originalPages"
                   :key="`${paper.id}-${page.pageIndex}`"
                   :image="{
                     src: page.originalPath,
                     title: `${paper.paperCode} · 原始图 ${page.pageIndex + 1}`,
                     caption: '点击单独预览窗口放大查看'
                   }"
+                  :preview-images="getOriginalPreviewImages(paper)"
+                  :initial-index="pageIndex"
+                  :preview-title="`${paper.paperCode} · 原始答卷预览`"
                 />
               </div>
             </n-card>
@@ -445,13 +494,16 @@ function goBack() {
                   <div class="scan-column-title">扫描结果</div>
                   <div class="image-grid">
                     <ImagePreviewTile
-                      v-for="page in paper.originalPages"
+                      v-for="(page, pageIndex) in paper.originalPages"
                       :key="`${paper.id}-${page.pageIndex}-scan`"
                       :image="{
                         src: page.scannedPath || page.originalPath,
                         title: `${paper.paperCode} · 扫描图 ${page.pageIndex + 1}`,
                         caption: page.scannedPath ? '已生成扫描件' : '等待扫描'
                       }"
+                      :preview-images="getScannedPreviewImages(paper)"
+                      :initial-index="pageIndex"
+                      :preview-title="`${paper.paperCode} · 扫描答卷预览`"
                     />
                   </div>
                 </div>
@@ -459,13 +511,16 @@ function goBack() {
                   <div class="scan-column-title">边界标注</div>
                   <div class="image-grid">
                     <ImagePreviewTile
-                      v-for="page in paper.originalPages"
+                      v-for="(page, pageIndex) in paper.originalPages"
                       :key="`${paper.id}-${page.pageIndex}-debug`"
                       :image="{
                         src: page.debugPreviewPath || page.originalPath,
                         title: `${paper.paperCode} · 边界图 ${page.pageIndex + 1}`,
                         caption: page.debugPreviewPath ? '已生成边界预览' : '等待扫描'
                       }"
+                      :preview-images="getDebugPreviewImages(paper)"
+                      :initial-index="pageIndex"
+                      :preview-title="`${paper.paperCode} · 边界标注预览`"
                     />
                   </div>
                 </div>
@@ -688,6 +743,24 @@ function goBack() {
                   @update:model-value="handleReferenceAnswerChange"
                 />
               </div>
+            </n-card>
+
+            <n-card class="surface-card project-danger-card" title="危险操作">
+              <div class="project-danger-copy" style="margin-bottom: 10px;">
+                删除项目后，会同时删除这个项目的目录，以及数据库里和该项目相关的任务与结果记录，无法恢复。
+              </div>
+              <n-popconfirm
+                positive-text="确认删除"
+                negative-text="取消"
+                @positive-click="deleteProject"
+              >
+                <template #trigger>
+                  <n-button type="error" :loading="deletingProject">
+                    删除当前项目
+                  </n-button>
+                </template>
+                确认彻底删除当前项目吗？这会清空项目目录和数据库中的相关数据。
+              </n-popconfirm>
             </n-card>
           </div>
         </n-tab-pane>
