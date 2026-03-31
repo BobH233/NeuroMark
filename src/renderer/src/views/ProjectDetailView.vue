@@ -234,6 +234,55 @@ function isResultOutdated(result: ResultRecord) {
   return result.referenceAnswerVersion !== latestReferenceAnswerVersion.value;
 }
 
+function formatTaskTime(value: string | null | undefined, fallback: string) {
+  if (!value) {
+    return fallback;
+  }
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return value;
+  }
+
+  return parsed.toLocaleString('zh-CN', {
+    year: 'numeric',
+    month: 'numeric',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  });
+}
+
+function getTaskStartedAtLabel(value: string | null | undefined) {
+  return formatTaskTime(value, '未开始');
+}
+
+function getTaskFinishedAtLabel(value: string | null | undefined, status: string) {
+  if (value) {
+    return formatTaskTime(value, '未结束');
+  }
+
+  if (status === 'queued') {
+    return '等待开始';
+  }
+
+  if (status === 'running' || status === 'paused') {
+    return '进行中';
+  }
+
+  return '未结束';
+}
+
+function getTaskProgressLabel(progress: number, status: string) {
+  if (status === 'completed' || status === 'failed' || status === 'cancelled') {
+    return '100%';
+  }
+
+  return `${Math.round(progress * 100)}%`;
+}
+
 function goBack() {
   router.push('/projects');
 }
@@ -305,9 +354,50 @@ function goBack() {
               <n-card class="surface-card flat-card">
                 <div v-if="detail.recentJobs.length" class="task-preview-list">
                   <div v-for="task in detail.recentJobs" :key="task.id" class="task-preview-row">
-                    <div>
-                      <div class="task-preview-title">{{ task.kind === 'scan' ? '扫描任务' : '批阅任务' }}</div>
+                    <div class="task-preview-main">
+                      <div class="task-preview-topline">
+                        <div class="task-preview-title">
+                          {{
+                            task.kind === 'scan'
+                              ? '扫描任务'
+                              : task.kind === 'grading'
+                                ? '批阅任务'
+                                : '参考答案生成任务'
+                          }}
+                        </div>
+                        <div class="task-preview-inline-tags">
+                          <n-tag
+                            v-if="task.kind === 'grading' && task.referenceAnswerVersion"
+                            size="small"
+                            round
+                            :bordered="false"
+                          >
+                            参考答案 v{{ task.referenceAnswerVersion }}
+                          </n-tag>
+                          <n-tag size="small" round :bordered="false">
+                            进度 {{ getTaskProgressLabel(task.progress, task.status) }}
+                          </n-tag>
+                        </div>
+                      </div>
                       <div class="task-preview-meta">{{ task.summary }}</div>
+                      <div class="task-preview-grid">
+                        <div class="task-preview-item">
+                          <span>开始时间</span>
+                          <strong>{{ getTaskStartedAtLabel(task.startedAt) }}</strong>
+                        </div>
+                        <div class="task-preview-item">
+                          <span>结束时间</span>
+                          <strong>{{ getTaskFinishedAtLabel(task.finishedAt, task.status) }}</strong>
+                        </div>
+                        <div class="task-preview-item">
+                          <span>当前答卷</span>
+                          <strong>{{ task.currentPaperLabel || '暂未分配' }}</strong>
+                        </div>
+                        <div class="task-preview-item">
+                          <span>预计完成</span>
+                          <strong>{{ task.eta || (task.status === 'completed' ? '已完成' : '暂无') }}</strong>
+                        </div>
+                      </div>
                     </div>
                     <StatusPill :value="task.status" />
                   </div>

@@ -64,6 +64,7 @@ function ensureSchema(connection: Database.Database): void {
       project_id TEXT NOT NULL,
       project_name TEXT NOT NULL,
       kind TEXT NOT NULL,
+      reference_answer_version INTEGER,
       status TEXT NOT NULL,
       progress REAL NOT NULL,
       speed REAL NOT NULL,
@@ -118,6 +119,12 @@ function ensureSchema(connection: Database.Database): void {
     );
   `);
 
+  ensureColumn(
+    connection,
+    'tasks',
+    'reference_answer_version',
+    'reference_answer_version INTEGER',
+  );
   ensureColumn(
     connection,
     'projects',

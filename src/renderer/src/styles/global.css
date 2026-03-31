@@ -468,6 +468,51 @@ textarea {
   font-size: 13px;
 }
 
+.task-preview-row {
+  align-items: flex-start;
+  padding: 14px 0;
+}
+
+.task-preview-row + .task-preview-row {
+  border-top: 1px solid rgba(120, 145, 173, 0.16);
+}
+
+.task-preview-main,
+.task-preview-grid {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.task-preview-topline,
+.task-preview-inline-tags {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.task-preview-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.task-preview-item {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.task-preview-item span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.task-preview-item strong {
+  font-size: 13px;
+  word-break: break-word;
+}
+
 .project-card-metrics {
   margin: 18px 0 14px;
   color: var(--muted);
@@ -1461,12 +1506,17 @@ textarea {
   }
 
   .task-list-card-body,
-  .task-list-meta-grid {
+  .task-list-meta-grid,
+  .task-preview-grid {
     grid-template-columns: 1fr;
   }
 
   .task-list-meta-item--wide {
     grid-column: auto;
+  }
+
+  .task-preview-row {
+    flex-direction: column;
   }
 
   .task-list-card-actions {
@@ -1475,7 +1525,8 @@ textarea {
 }
 
 @media (max-width: 1600px) {
-  .task-list-meta-grid {
+  .task-list-meta-grid,
+  .task-preview-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }

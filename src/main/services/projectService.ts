@@ -439,6 +439,7 @@ export class ProjectService {
         kind: row.kind as 'scan' | 'grading' | 'answer-generation',
         projectId: row.projectId,
         projectName: row.projectName,
+        referenceAnswerVersion: row.referenceAnswerVersion ?? undefined,
         status: row.status as any,
         progress: row.progress,
         speed: row.speed,

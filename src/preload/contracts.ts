@@ -122,6 +122,7 @@ export interface BackgroundJob {
   kind: JobKind;
   projectId: string;
   projectName: string;
+  referenceAnswerVersion?: number;
   status: JobStatus;
   progress: number;
   speed: number;

@@ -14,6 +14,7 @@ function toJob(row: typeof tasksTable.$inferSelect): BackgroundJob {
     kind: row.kind as JobKind,
     projectId: row.projectId,
     projectName: row.projectName,
+    referenceAnswerVersion: row.referenceAnswerVersion ?? undefined,
     status: row.status as JobStatus,
     progress: row.progress,
     speed: row.speed,
@@ -94,6 +95,7 @@ export class TaskManager {
     kind: JobKind;
     projectId: string;
     projectName: string;
+    referenceAnswerVersion?: number;
     status?: JobStatus;
     progress?: number;
     speed?: number;
@@ -115,6 +117,7 @@ export class TaskManager {
         projectId: input.projectId,
         projectName: input.projectName,
         kind: input.kind,
+        referenceAnswerVersion: input.referenceAnswerVersion ?? null,
         status: initialStatus,
         progress:
           input.progress ?? (this.isTerminalStatus(initialStatus) ? 1 : 0),
@@ -267,6 +270,7 @@ export class TaskManager {
         projectId,
         projectName: project.name,
         kind: 'scan',
+        referenceAnswerVersion: null,
         status: 'running',
         progress: 0,
         speed: 0,
@@ -307,6 +311,7 @@ export class TaskManager {
         projectId,
         projectName: project.name,
         kind,
+        referenceAnswerVersion: kind === 'grading' ? project.referenceAnswerVersion : null,
         status: 'running',
         progress: 0,
         speed: baseSpeed,

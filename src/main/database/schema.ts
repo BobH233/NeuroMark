@@ -38,6 +38,7 @@ export const tasksTable = sqliteTable('tasks', {
   projectId: text('project_id').notNull(),
   projectName: text('project_name').notNull(),
   kind: text('kind').notNull(),
+  referenceAnswerVersion: integer('reference_answer_version'),
   status: text('status').notNull(),
   progress: real('progress').notNull(),
   speed: real('speed').notNull(),
