@@ -1,0 +1,31 @@
+# CMake / native build outputs
+build/
+cmake-build-*/
+CMakeCache.txt
+CMakeFiles/
+Makefile
+compile_commands.json
+*.cmake.user
+
+# Python environments and caches
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+
+# Model assets and generated artifacts
+models/*.onnx
+models/*.pth
+
+# Demo outputs
+example_output/
+benchmark/
+debug/
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
