@@ -268,6 +268,7 @@ export type AnswerGeneratorUpdateHandler = (
 export interface NeuromarkApi {
   app: {
     getVersion: () => Promise<string>;
+    getDefaultProjectBasePath: () => Promise<string>;
     selectDirectory: () => Promise<string | null>;
     selectImages: () => Promise<string[]>;
     openPath: (targetPath: string) => Promise<void>;
@@ -277,6 +278,7 @@ export interface NeuromarkApi {
     create: (input: CreateProjectInput) => Promise<ProjectMeta>;
     list: () => Promise<ProjectMeta[]>;
     getDetail: (projectId: string) => Promise<ProjectDetail>;
+    delete: (projectId: string) => Promise<void>;
     importOriginalImages: (
       projectId: string,
       filePaths: string[],

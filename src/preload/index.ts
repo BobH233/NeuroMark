@@ -8,6 +8,7 @@ import type {
 const api: NeuromarkApi = {
   app: {
     getVersion: () => ipcRenderer.invoke('app:get-version'),
+    getDefaultProjectBasePath: () => ipcRenderer.invoke('app:get-default-project-base-path'),
     selectDirectory: () => ipcRenderer.invoke('app:select-directory'),
     selectImages: () => ipcRenderer.invoke('app:select-images'),
     openPath: (targetPath) => ipcRenderer.invoke('app:open-path', targetPath),
@@ -17,6 +18,7 @@ const api: NeuromarkApi = {
     create: (input) => ipcRenderer.invoke('projects:create', input),
     list: () => ipcRenderer.invoke('projects:list'),
     getDetail: (projectId) => ipcRenderer.invoke('projects:get-detail', projectId),
+    delete: (projectId) => ipcRenderer.invoke('projects:delete', projectId),
     importOriginalImages: (projectId, filePaths) =>
       ipcRenderer.invoke('projects:import-original-images', projectId, filePaths),
     updateSettings: (projectId, settings) =>

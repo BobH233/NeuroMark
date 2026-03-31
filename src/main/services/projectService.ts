@@ -14,10 +14,14 @@ import type {
   ResultRecord,
 } from '@preload/contracts';
 import { getDatabase } from '@main/database/client';
-import { projectsTable, tasksTable } from '@main/database/schema';
+import {
+  paperRecordsTable,
+  projectsTable,
+  resultRecordsTable,
+  tasksTable,
+} from '@main/database/schema';
 import { processDocumentImage } from './documentScanService';
 
-const PAGE_SUFFIX_PATTERN = /^(?<base>.+)_(?<page>[1-9]\d?)$/;
 const SUPPORTED_IMAGE_EXTENSIONS = new Set([
   '.jpg',
   '.jpeg',
@@ -237,12 +241,29 @@ function getPaperPageAssetPaths(
   };
 }
 
+function extractPaperCode(stem: string): string {
+  const patterns = [
+    /^(?<base>.+?)[\s_-]+(?<page>[1-9]\d{0,2})$/i,
+    /^(?<base>.+?)[\s_-]+p(?:age)?[\s_-]*(?<page>[1-9]\d{0,2})$/i,
+    /^(?<base>.+?)第(?<page>[1-9]\d{0,2})[页面张]?$/i,
+  ];
+
+  for (const pattern of patterns) {
+    const matched = stem.match(pattern);
+    const base = matched?.groups?.base?.trim().replace(/[\s_-]+$/, '');
+    if (base) {
+      return base;
+    }
+  }
+
+  return stem.trim();
+}
+
 function buildGroupedImportMap(filePaths: string[]): Map<string, string[]> {
   const groups = new Map<string, string[]>();
   for (const filePath of filePaths) {
     const stem = getFileNameWithoutExtension(filePath);
-    const matched = stem.match(PAGE_SUFFIX_PATTERN);
-    const paperCode = matched?.groups?.base ?? stem;
+    const paperCode = extractPaperCode(stem);
     const list = groups.get(paperCode) ?? [];
     list.push(filePath);
     groups.set(paperCode, list);
@@ -414,6 +435,23 @@ export class ProjectService {
     };
     await writeProjectManifest(updated);
     return updated;
+  }
+
+  async deleteProject(projectId: string): Promise<void> {
+    const db = getDatabase();
+    const project = await this.getProjectById(projectId);
+
+    await fs.remove(project.rootPath);
+
+    db.delete(resultRecordsTable)
+      .where(eq(resultRecordsTable.projectId, projectId))
+      .run();
+    db.delete(paperRecordsTable)
+      .where(eq(paperRecordsTable.projectId, projectId))
+      .run();
+    db.delete(projectsTable)
+      .where(eq(projectsTable.id, projectId))
+      .run();
   }
 
   async getProjectDetail(projectId: string): Promise<ProjectDetail> {

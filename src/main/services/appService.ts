@@ -1,6 +1,6 @@
 import { copyFile, writeFile } from 'node:fs/promises';
-import { basename, extname } from 'node:path';
-import { dialog, shell, type BrowserWindow, type OpenDialogOptions } from 'electron';
+import { basename, extname, join } from 'node:path';
+import { app, dialog, shell, type BrowserWindow, type OpenDialogOptions } from 'electron';
 import { nanoid } from 'nanoid';
 import type { PreviewImageItem, PreviewSession } from '@preload/contracts';
 
@@ -11,6 +11,10 @@ export class AppService {
     private readonly getParentWindow: () => BrowserWindow | null,
     private readonly openPreviewWindow: (token: string) => Promise<void>,
   ) {}
+
+  getDefaultProjectBasePath(): string {
+    return join(app.getPath('documents'), 'NeuroMark Projects');
+  }
 
   async selectDirectory(): Promise<string | null> {
     const options: OpenDialogOptions = {

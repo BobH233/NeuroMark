@@ -53,6 +53,13 @@ export const useProjectsStore = defineStore('projects', {
       await this.selectProject(project.id);
       return project;
     },
+    async deleteProject(projectId: string) {
+      await window.neuromark.projects.delete(projectId);
+      await this.loadProjects();
+      if (this.selectedProjectId === projectId) {
+        this.clearSelection();
+      }
+    },
     async importOriginalImages(projectId: string, filePaths: string[]) {
       await window.neuromark.projects.importOriginalImages(projectId, filePaths);
       await this.loadProjects();

@@ -47,6 +47,7 @@ export class TaskManager {
   private listeners = new Set<TaskListener>();
   private timers = new Map<string, NodeJS.Timeout>();
   private scanControllers = new Map<string, AbortController>();
+  private deletingProjects = new Set<string>();
 
   constructor(private readonly projects: ProjectService) {}
 
@@ -253,6 +254,43 @@ export class TaskManager {
     await this.emit();
   }
 
+  async deleteProject(projectId: string): Promise<void> {
+    const db = getDatabase();
+    this.deletingProjects.add(projectId);
+
+    try {
+      const jobs = db
+        .select()
+        .from(tasksTable)
+        .where(eq(tasksTable.projectId, projectId))
+        .all();
+
+      for (const job of jobs) {
+        const timer = this.timers.get(job.id);
+        if (timer) {
+          clearInterval(timer);
+          this.timers.delete(job.id);
+        }
+
+        const controller = this.scanControllers.get(job.id);
+        if (controller) {
+          controller.abort();
+          this.scanControllers.delete(job.id);
+        }
+      }
+
+      await this.projects.deleteProject(projectId);
+
+      db.delete(tasksTable)
+        .where(eq(tasksTable.projectId, projectId))
+        .run();
+
+      await this.emit();
+    } finally {
+      this.deletingProjects.delete(projectId);
+    }
+  }
+
   private async startScanJob(
     projectId: string,
     options?: StartJobOptions,
@@ -330,6 +368,12 @@ export class TaskManager {
 
     let tick = 0;
     const timer = setInterval(async () => {
+      if (this.deletingProjects.has(projectId)) {
+        clearInterval(timer);
+        this.timers.delete(jobId);
+        return;
+      }
+
       tick += 1;
       const current = db.select().from(tasksTable).where(eq(tasksTable.id, jobId)).get();
       if (!current || current.status !== 'running') {
@@ -363,6 +407,9 @@ export class TaskManager {
       if (nextProgress >= 1) {
         clearInterval(timer);
         this.timers.delete(jobId);
+        if (this.deletingProjects.has(projectId)) {
+          return;
+        }
         if (kind === 'scan') {
           await this.projects.completeMockScan(projectId);
         } else if (kind === 'grading') {
@@ -427,6 +474,10 @@ export class TaskManager {
       });
 
       if (controller.signal.aborted) {
+        return;
+      }
+
+      if (this.deletingProjects.has(projectId)) {
         return;
       }
 
