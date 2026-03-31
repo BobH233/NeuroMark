@@ -83,31 +83,59 @@ const currentScanTask = computed(() =>
 const hasActiveScanTask = computed(() => Boolean(currentScanTask.value));
 const results = computed(() => detail.value?.results ?? []);
 const papers = computed(() => detail.value?.originals ?? []);
+
+function buildOriginalPreviewImage(
+  paper: PaperRecord,
+  page: PaperRecord['originalPages'][number],
+  index: number,
+): PreviewImageItem {
+  return {
+    src: page.originalPath,
+    cacheKey: page.originalVersion,
+    title: `${paper.paperCode} · 原始图 ${index + 1}`,
+    caption: '点击单独预览窗口放大查看',
+  };
+}
+
+function buildScannedPreviewImage(
+  paper: PaperRecord,
+  page: PaperRecord['originalPages'][number],
+  index: number,
+): PreviewImageItem {
+  return {
+    src: page.scannedPath || page.originalPath,
+    cacheKey: page.scannedPath ? page.scannedVersion : page.originalVersion,
+    title: `${paper.paperCode} · 扫描图 ${index + 1}`,
+    caption: page.scannedPath ? '已生成扫描件' : '等待扫描',
+  };
+}
+
+function buildDebugPreviewImage(
+  paper: PaperRecord,
+  page: PaperRecord['originalPages'][number],
+  index: number,
+): PreviewImageItem {
+  return {
+    src: page.debugPreviewPath || page.originalPath,
+    cacheKey: page.debugPreviewPath ? page.debugPreviewVersion : page.originalVersion,
+    title: `${paper.paperCode} · 边界图 ${index + 1}`,
+    caption: page.debugPreviewPath ? '已生成边界预览' : '等待扫描',
+  };
+}
+
 const allOriginalPreviewImages = computed<PreviewImageItem[]>(() =>
   papers.value.flatMap((paper) =>
-    paper.originalPages.map((page, index) => ({
-      src: page.originalPath,
-      title: `${paper.paperCode} · 原始图 ${index + 1}`,
-      caption: '点击单独预览窗口放大查看',
-    })),
+    paper.originalPages.map((page, index) => buildOriginalPreviewImage(paper, page, index)),
   ),
 );
 const allScannedPreviewImages = computed<PreviewImageItem[]>(() =>
   papers.value.flatMap((paper) =>
-    paper.originalPages.map((page, index) => ({
-      src: page.scannedPath || page.originalPath,
-      title: `${paper.paperCode} · 扫描图 ${index + 1}`,
-      caption: page.scannedPath ? '已生成扫描件' : '等待扫描',
-    })),
+    paper.originalPages.map((page, index) => buildScannedPreviewImage(paper, page, index)),
   ),
 );
 const allDebugPreviewImages = computed<PreviewImageItem[]>(() =>
   papers.value.flatMap((paper) =>
-    paper.originalPages.map((page, index) => ({
-      src: page.debugPreviewPath || page.originalPath,
-      title: `${paper.paperCode} · 边界图 ${index + 1}`,
-      caption: page.debugPreviewPath ? '已生成边界预览' : '等待扫描',
-    })),
+    paper.originalPages.map((page, index) => buildDebugPreviewImage(paper, page, index)),
   ),
 );
 const latestReferenceAnswerVersion = computed(() => selectedProject.value?.referenceAnswerVersion ?? 1);
@@ -145,6 +173,10 @@ const resultPreviewImages = computed<PreviewImageItem[]>(() => {
       previewMode.value === 'scanned'
         ? page.scannedPath || page.originalPath
         : page.originalPath,
+    cacheKey:
+      previewMode.value === 'scanned'
+        ? (page.scannedPath ? page.scannedVersion : page.originalVersion)
+        : page.originalVersion,
     title: `${paper.paperCode} · 第 ${index + 1} 页`,
     caption: previewMode.value === 'scanned' ? '扫描答卷视图' : '原始答卷视图',
     regions: currentResult.modelResult.questionRegions?.filter((region) => region.pageIndex === index) ?? [],
@@ -631,11 +663,7 @@ function goBack() {
                 <ImagePreviewTile
                   v-for="(page, pageIndex) in paper.originalPages"
                   :key="`${paper.id}-${page.pageIndex}`"
-                  :image="{
-                    src: page.originalPath,
-                    title: `${paper.paperCode} · 原始图 ${page.pageIndex + 1}`,
-                    caption: '点击单独预览窗口放大查看'
-                  }"
+                  :image="buildOriginalPreviewImage(paper, page, pageIndex)"
                   :preview-images="allOriginalPreviewImages"
                   :initial-index="getPaperPagePreviewIndex(paper.id, pageIndex)"
                   preview-title="原始答卷总览"
@@ -659,11 +687,7 @@ function goBack() {
                     <ImagePreviewTile
                       v-for="(page, pageIndex) in paper.originalPages"
                       :key="`${paper.id}-${page.pageIndex}-scan`"
-                      :image="{
-                        src: page.scannedPath || page.originalPath,
-                        title: `${paper.paperCode} · 扫描图 ${page.pageIndex + 1}`,
-                        caption: page.scannedPath ? '已生成扫描件' : '等待扫描'
-                      }"
+                      :image="buildScannedPreviewImage(paper, page, pageIndex)"
                       :preview-images="allScannedPreviewImages"
                       :initial-index="getPaperPagePreviewIndex(paper.id, pageIndex)"
                       preview-title="扫描结果总览"
@@ -676,11 +700,7 @@ function goBack() {
                     <ImagePreviewTile
                       v-for="(page, pageIndex) in paper.originalPages"
                       :key="`${paper.id}-${page.pageIndex}-debug`"
-                      :image="{
-                        src: page.debugPreviewPath || page.originalPath,
-                        title: `${paper.paperCode} · 边界图 ${page.pageIndex + 1}`,
-                        caption: page.debugPreviewPath ? '已生成边界预览' : '等待扫描'
-                      }"
+                      :image="buildDebugPreviewImage(paper, page, pageIndex)"
                       :preview-images="allDebugPreviewImages"
                       :initial-index="getPaperPagePreviewIndex(paper.id, pageIndex)"
                       preview-title="边界标注总览"
@@ -826,7 +846,11 @@ function goBack() {
                 <div v-for="image in resultPreviewImages" :key="image.title" class="stage-card">
                   <div class="stage-card-title">{{ image.title }}</div>
                   <div class="paper-stage" @click="openStagePreview">
-                    <img class="paper-stage-image" :src="toImageSrc(image.src)" :alt="image.title" />
+                    <img
+                      class="paper-stage-image"
+                      :src="toImageSrc(image.src, image.cacheKey)"
+                      :alt="image.title"
+                    />
                     <div
                       v-for="region in image.regions"
                       :key="`${image.title}-${region.questionId}`"
@@ -851,17 +875,19 @@ function goBack() {
         <n-tab-pane name="project-settings" tab="项目设置">
           <div class="project-settings-stack">
             <n-card class="surface-card" title="项目级批阅设置">
-              <n-form v-if="selectedProject" label-placement="top">
-                <div class="two-col">
+              <n-form v-if="selectedProject" label-placement="top" class="stack-form">
+                <div class="two-col create-project-settings-grid">
                   <n-form-item label="批阅并行数">
                     <n-input-number
                       v-model:value="selectedProject.settings.gradingConcurrency"
                       :min="1"
+                      class="create-project-half-input"
                     />
                   </n-form-item>
                   <n-form-item label="图像细节">
                     <n-select
                       v-model:value="selectedProject.settings.defaultImageDetail"
+                      class="create-project-half-input"
                       :options="[
                         { label: '高', value: 'high' },
                         { label: '自动', value: 'auto' },
@@ -870,9 +896,20 @@ function goBack() {
                     />
                   </n-form-item>
                 </div>
-                <n-form-item label="绘制批阅区域">
+                <div class="create-project-toggle-row">
+                  <div class="create-project-toggle-copy">
+                    <div class="field-label">扫描后处理</div>
+                    <div class="field-hint">关闭后只做边界识别、透视拉平与裁剪，不做增强和二值化。</div>
+                  </div>
+                  <n-switch v-model:value="selectedProject.settings.enableScanPostProcess" />
+                </div>
+                <div class="create-project-toggle-row">
+                  <div class="create-project-toggle-copy">
+                    <div class="field-label">绘制批阅区域</div>
+                    <div class="field-hint">开启后会在批阅视图中显示题目边界框，便于复核。</div>
+                  </div>
                   <n-switch v-model:value="selectedProject.settings.drawRegions" />
-                </n-form-item>
+                </div>
                 <n-button type="primary" @click="saveProjectSettings">保存项目设置</n-button>
               </n-form>
             </n-card>

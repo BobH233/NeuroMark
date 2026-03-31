@@ -1,17 +1,31 @@
-export function toImageSrc(source: string): string {
+export function toImageSrc(source: string, cacheKey?: string | number): string {
+  const encodedCacheKey =
+    cacheKey === undefined || cacheKey === null || cacheKey === ''
+      ? ''
+      : encodeURIComponent(String(cacheKey));
+
   if (
     source.startsWith('data:') ||
     source.startsWith('http://') ||
     source.startsWith('https://') ||
     source.startsWith('local-file://')
   ) {
-    return source;
+    if (!encodedCacheKey) {
+      return source;
+    }
+    return `${source}${source.includes('?') ? '&' : '?'}v=${encodedCacheKey}`;
   }
 
   if (source.startsWith('file://')) {
     const fileUrl = new URL(source);
-    return `local-file://image?path=${encodeURIComponent(decodeURIComponent(fileUrl.pathname))}`;
+    const encodedPath = encodeURIComponent(decodeURIComponent(fileUrl.pathname));
+    return encodedCacheKey
+      ? `local-file://image?path=${encodedPath}&v=${encodedCacheKey}`
+      : `local-file://image?path=${encodedPath}`;
   }
 
-  return `local-file://image?path=${encodeURIComponent(source)}`;
+  const encodedPath = encodeURIComponent(source);
+  return encodedCacheKey
+    ? `local-file://image?path=${encodedPath}&v=${encodedCacheKey}`
+    : `local-file://image?path=${encodedPath}`;
 }

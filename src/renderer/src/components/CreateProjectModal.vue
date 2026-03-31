@@ -27,6 +27,7 @@ const model = reactive<CreateProjectInput>({
   gradingConcurrency: 1,
   drawRegions: false,
   defaultImageDetail: 'high',
+  enableScanPostProcess: true,
 });
 
 async function fillDefaultBasePath(force = false) {
@@ -45,6 +46,7 @@ watch(
       model.gradingConcurrency = 1;
       model.drawRegions = false;
       model.defaultImageDetail = 'high';
+      model.enableScanPostProcess = true;
       return;
     }
 
@@ -95,6 +97,13 @@ function submit() {
             ]"
           />
         </n-form-item>
+      </div>
+      <div class="create-project-toggle-row">
+        <div class="create-project-toggle-copy">
+          <div class="field-label">启用扫描后处理</div>
+          <div class="field-hint">关闭后仅按识别到的纸张边界进行裁剪与拉平，不做增强和二值化。</div>
+        </div>
+        <n-switch v-model:value="model.enableScanPostProcess" />
       </div>
       <div class="create-project-toggle-row">
         <div class="create-project-toggle-copy">

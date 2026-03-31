@@ -25,6 +25,7 @@ interface NativeScannerInstance {
     overlayOutputPath?: string;
     debugOutputPrefix?: string;
     writeDebugImages?: boolean;
+    applyPostProcess?: boolean;
   }) => Promise<NativeScanResult>;
 }
 
@@ -41,6 +42,7 @@ export interface ScanDocumentResult {
 
 interface ProcessDocumentImageOptions {
   writeDebugArtifacts?: boolean;
+  applyPostProcess?: boolean;
 }
 
 let scannerPromise: Promise<NativeScannerInstance> | null = null;
@@ -162,6 +164,7 @@ export async function processDocumentImage(
     overlayOutputPath: debugPreviewPath,
     debugOutputPrefix,
     writeDebugImages: writeDebugArtifacts,
+    applyPostProcess: options?.applyPostProcess ?? true,
   });
 
   const corners = toCornerPoints(nativeResult.corners);
@@ -177,6 +180,7 @@ export async function processDocumentImage(
       sourceHeight: nativeResult.sourceHeight,
       scannedWidth: nativeResult.scannedWidth,
       scannedHeight: nativeResult.scannedHeight,
+      applyPostProcess: options?.applyPostProcess ?? true,
       debugOutputPaths: nativeResult.debugOutputPaths,
       generatedAt: new Date().toISOString(),
     },

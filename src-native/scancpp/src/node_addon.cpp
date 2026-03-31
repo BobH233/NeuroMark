@@ -40,6 +40,7 @@ class ScannerWrap final : public Napi::ObjectWrap<ScannerWrap> {
         std::string overlayOutputPath;
         std::string debugOutputPrefix;
         bool writeDebugImages = false;
+        bool applyPostProcess = true;
     };
 
     class ScanWorker final : public Napi::AsyncWorker {
@@ -61,6 +62,7 @@ class ScannerWrap final : public Napi::ObjectWrap<ScannerWrap> {
             request.debugOutputPrefix = request_.debugOutputPrefix;
             request.writeOverlay = !request_.overlayOutputPath.empty();
             request.writeDebugImages = request_.writeDebugImages;
+            request.applyPostProcess = request_.applyPostProcess;
             result_ = scanner_->scanFile(request);
         }
 
@@ -135,6 +137,7 @@ class ScannerWrap final : public Napi::ObjectWrap<ScannerWrap> {
         request.overlayOutputPath = getOptionalString(options, "overlayOutputPath").value_or("");
         request.debugOutputPrefix = getOptionalString(options, "debugOutputPrefix").value_or("");
         request.writeDebugImages = getOptionalBool(options, "writeDebugImages").value_or(false);
+        request.applyPostProcess = getOptionalBool(options, "applyPostProcess").value_or(true);
 
         auto* worker = new ScanWorker(env, scanner_, std::move(request));
         Napi::Promise promise = worker->Promise();

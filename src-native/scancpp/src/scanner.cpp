@@ -423,7 +423,7 @@ DocumentScanner::DocumentScanner(const std::string& modelPath)
     net_.setPreferableTarget(cv::dnn::DNN_TARGET_CPU);
 }
 
-ScanArtifacts DocumentScanner::scan(const cv::Mat& image) {
+ScanArtifacts DocumentScanner::scan(const cv::Mat& image, bool applyPostProcess) {
     std::lock_guard<std::mutex> lock(mutex_);
 
     ScanArtifacts artifacts;
@@ -433,7 +433,7 @@ ScanArtifacts DocumentScanner::scan(const cv::Mat& image) {
     const std::vector<cv::Point> contour = largestContour(artifacts.binaryMask);
     artifacts.corners = orderCorners(approximateDocumentQuad(contour));
     artifacts.warpedColor = warpDocument(image, artifacts.corners);
-    artifacts.scanned = enhanceForScan(artifacts.warpedColor);
+    artifacts.scanned = applyPostProcess ? enhanceForScan(artifacts.warpedColor) : artifacts.warpedColor.clone();
     return artifacts;
 }
 
@@ -443,7 +443,7 @@ ScanResult DocumentScanner::scanFile(const ScanRequest& request) {
         throw std::runtime_error("Failed to read the input image.");
     }
 
-    const ScanArtifacts artifacts = scan(input);
+    const ScanArtifacts artifacts = scan(input, request.applyPostProcess);
 
     if (!request.scannedOutputPath.empty()) {
         if (!request.scannedOutputPath.parent_path().empty()) {

@@ -9,12 +9,14 @@ const createProjectSchema = z.object({
   gradingConcurrency: z.number().int().min(1).optional(),
   drawRegions: z.boolean().optional(),
   defaultImageDetail: z.enum(['low', 'high', 'auto']).optional(),
+  enableScanPostProcess: z.boolean().optional(),
 });
 
 const projectSettingsSchema = z.object({
   gradingConcurrency: z.number().int().min(1),
   drawRegions: z.boolean(),
   defaultImageDetail: z.enum(['low', 'high', 'auto']),
+  enableScanPostProcess: z.boolean(),
 });
 
 const referenceAnswerSchema = z.string().trim().min(1);

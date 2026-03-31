@@ -37,6 +37,7 @@ const DEFAULT_PROJECT_SETTINGS: ProjectSettings = {
   gradingConcurrency: 1,
   drawRegions: false,
   defaultImageDetail: 'high',
+  enableScanPostProcess: true,
 };
 
 function createEmptyStats(): ProjectStats {
@@ -61,6 +62,20 @@ function parseJson<T>(value: string): T {
   return JSON.parse(value) as T;
 }
 
+function normalizeProjectSettings(
+  settings?: Partial<ProjectSettings> | null,
+): ProjectSettings {
+  return {
+    gradingConcurrency:
+      settings?.gradingConcurrency ?? DEFAULT_PROJECT_SETTINGS.gradingConcurrency,
+    drawRegions: settings?.drawRegions ?? DEFAULT_PROJECT_SETTINGS.drawRegions,
+    defaultImageDetail:
+      settings?.defaultImageDetail ?? DEFAULT_PROJECT_SETTINGS.defaultImageDetail,
+    enableScanPostProcess:
+      settings?.enableScanPostProcess ?? DEFAULT_PROJECT_SETTINGS.enableScanPostProcess,
+  };
+}
+
 function getProjectStructure(rootPath: string) {
   return {
     rootPath,
@@ -77,6 +92,15 @@ function getProjectStructure(rootPath: string) {
       'answer_and_score_rule.md',
     ),
   };
+}
+
+async function getFileVersion(filePath: string): Promise<number | undefined> {
+  if (!(await fs.pathExists(filePath))) {
+    return undefined;
+  }
+
+  const stats = await fs.stat(filePath);
+  return Math.trunc(stats.mtimeMs);
 }
 
 async function ensureProjectDirectories(rootPath: string): Promise<void> {
@@ -116,7 +140,7 @@ function toProjectMeta(
     rootPath: row.rootPath,
     referenceAnswerVersion: row.referenceAnswerVersion ?? 1,
     stats: parseJson<ProjectStats>(row.statsJson),
-    settings: parseJson<ProjectSettings>(row.settingsJson),
+    settings: normalizeProjectSettings(parseJson<Partial<ProjectSettings>>(row.settingsJson)),
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
@@ -327,10 +351,7 @@ export class ProjectService {
     const projectId = input.name.trim() ? `${Date.now()}-${toSafeFolderName(input.name)}` : `${Date.now()}`;
     const targetRootPath = path.join(input.basePath, toSafeFolderName(input.name));
     const settings: ProjectSettings = {
-      gradingConcurrency: input.gradingConcurrency ?? DEFAULT_PROJECT_SETTINGS.gradingConcurrency,
-      drawRegions: input.drawRegions ?? DEFAULT_PROJECT_SETTINGS.drawRegions,
-      defaultImageDetail:
-        input.defaultImageDetail ?? DEFAULT_PROJECT_SETTINGS.defaultImageDetail,
+      ...normalizeProjectSettings(input),
     };
 
     if (await fs.pathExists(path.join(targetRootPath, 'project.json'))) {
@@ -382,10 +403,11 @@ export class ProjectService {
     const db = getDatabase();
     const current = await this.getProjectById(projectId);
     const updatedAt = new Date().toISOString();
+    const normalizedSettings = normalizeProjectSettings(settings);
 
     db.update(projectsTable)
       .set({
-        settingsJson: JSON.stringify(settings),
+        settingsJson: JSON.stringify(normalizedSettings),
         updatedAt,
       })
       .where(eq(projectsTable.id, projectId))
@@ -393,7 +415,7 @@ export class ProjectService {
 
     const updated: ProjectMeta = {
       ...current,
-      settings,
+      settings: normalizedSettings,
       updatedAt,
     };
     await writeProjectManifest(updated);
@@ -563,6 +585,11 @@ export class ProjectService {
       const pages: PaperPage[] = [];
       for (const [index, originalPath] of originalPaths.entries()) {
         const assets = getPaperPageAssetPaths(project.rootPath, paperCode, originalPath);
+        const [originalVersion, scannedVersion, debugPreviewVersion] = await Promise.all([
+          getFileVersion(originalPath),
+          getFileVersion(assets.scannedPath),
+          getFileVersion(assets.debugPreviewPath),
+        ]);
         const corners =
           (await fs.pathExists(assets.cornersPath))
             ? ((await fs.readJson(assets.cornersPath)) as { corners?: PaperPage['corners'] }).corners
@@ -571,9 +598,11 @@ export class ProjectService {
         pages.push({
           pageIndex: index,
           originalPath,
-          scannedPath: (await fs.pathExists(assets.scannedPath)) ? assets.scannedPath : undefined,
-          debugPreviewPath:
-            (await fs.pathExists(assets.debugPreviewPath)) ? assets.debugPreviewPath : undefined,
+          originalVersion,
+          scannedPath: scannedVersion ? assets.scannedPath : undefined,
+          scannedVersion,
+          debugPreviewPath: debugPreviewVersion ? assets.debugPreviewPath : undefined,
+          debugPreviewVersion,
           corners,
         });
       }
@@ -644,6 +673,9 @@ export class ProjectService {
           assets.scannedPath,
           assets.debugPreviewPath,
           assets.cornersPath,
+          {
+            applyPostProcess: project.settings.enableScanPostProcess,
+          },
         );
         processedPageCount += 1;
       }

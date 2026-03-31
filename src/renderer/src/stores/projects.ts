@@ -71,7 +71,12 @@ export const useProjectsStore = defineStore('projects', {
       await this.loadProjectDetail(projectId);
     },
     async updateProjectSettings(projectId: string, settings: ProjectSettings) {
-      await window.neuromark.projects.updateSettings(projectId, settings);
+      await window.neuromark.projects.updateSettings(projectId, {
+        gradingConcurrency: settings.gradingConcurrency,
+        drawRegions: settings.drawRegions,
+        defaultImageDetail: settings.defaultImageDetail,
+        enableScanPostProcess: settings.enableScanPostProcess,
+      });
       await this.loadProjects();
       await this.loadProjectDetail(projectId);
     },

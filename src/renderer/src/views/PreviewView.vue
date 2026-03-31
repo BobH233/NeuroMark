@@ -226,7 +226,7 @@ async function saveCurrentImage() {
               :class="{ active: index === activeIndex }"
               @click="selectImage(index)"
             >
-              <img :src="toImageSrc(image.src)" :alt="image.title" />
+              <img :src="toImageSrc(image.src, image.cacheKey)" :alt="image.title" />
               <span>{{ image.title }}</span>
             </button>
           </aside>
@@ -248,7 +248,7 @@ async function saveCurrentImage() {
             >
               <img
                 class="preview-image"
-                :src="toImageSrc(activeImage.src)"
+                :src="toImageSrc(activeImage.src, activeImage.cacheKey)"
                 :alt="activeImage.title"
                 draggable="false"
               />

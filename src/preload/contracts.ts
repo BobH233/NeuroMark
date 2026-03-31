@@ -25,6 +25,7 @@ export interface ProjectSettings {
   gradingConcurrency: number;
   drawRegions: boolean;
   defaultImageDetail: ImageDetailLevel;
+  enableScanPostProcess: boolean;
 }
 
 export interface ProjectStats {
@@ -55,8 +56,11 @@ export interface CornerPoint {
 export interface PaperPage {
   pageIndex: number;
   originalPath: string;
+  originalVersion?: number;
   scannedPath?: string;
+  scannedVersion?: number;
   debugPreviewPath?: string;
+  debugPreviewVersion?: number;
   corners?: CornerPoint[];
 }
 
@@ -227,6 +231,7 @@ export interface CreateProjectInput {
   gradingConcurrency?: number;
   drawRegions?: boolean;
   defaultImageDetail?: ImageDetailLevel;
+  enableScanPostProcess?: boolean;
 }
 
 export interface ImportOriginalImagesResult {
@@ -237,6 +242,7 @@ export interface ImportOriginalImagesResult {
 
 export interface PreviewImageItem {
   src: string;
+  cacheKey?: string | number;
   title: string;
   caption?: string;
   regions?: QuestionRegion[];

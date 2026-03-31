@@ -31,7 +31,7 @@ async function openPreview() {
   >
     <img
       class="image-tile-media"
-      :src="toImageSrc(image.src)"
+      :src="toImageSrc(image.src, image.cacheKey)"
       :alt="image.title"
     >
     <div class="image-tile-footer">

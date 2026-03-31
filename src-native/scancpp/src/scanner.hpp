@@ -49,6 +49,7 @@ struct ScanRequest {
     std::string debugOutputPrefix;
     bool writeOverlay = true;
     bool writeDebugImages = false;
+    bool applyPostProcess = true;
 };
 
 struct ScanResult {
@@ -66,7 +67,7 @@ class DocumentScanner {
   public:
     explicit DocumentScanner(const std::string& modelPath);
 
-    ScanArtifacts scan(const cv::Mat& image);
+    ScanArtifacts scan(const cv::Mat& image, bool applyPostProcess = true);
     ScanResult scanFile(const ScanRequest& request);
 
   private:
