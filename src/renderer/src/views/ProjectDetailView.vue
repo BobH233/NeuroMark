@@ -18,6 +18,7 @@ import {
   NTabPane,
   NTag,
   NTabs,
+  useMessage,
 } from 'naive-ui';
 import type { FinalResult, PaperRecord, PreviewImageItem, ResultRecord } from '@preload/contracts';
 import ImagePreviewTile from '@/components/ImagePreviewTile.vue';
@@ -25,12 +26,15 @@ import MarkdownRenderer from '@/components/MarkdownRenderer.vue';
 import MetricCard from '@/components/MetricCard.vue';
 import StatusPill from '@/components/StatusPill.vue';
 import { useProjectsStore } from '@/stores/projects';
+import { useTasksStore } from '@/stores/tasks';
 import { toImageSrc } from '@/utils/file';
 import { cloneFinalResult, computeDisplayedTotal } from '@/utils/result';
 
 const route = useRoute();
 const router = useRouter();
+const message = useMessage();
 const projectsStore = useProjectsStore();
+const tasksStore = useTasksStore();
 
 const activeTab = ref('overview');
 const selectedResultId = ref('');
@@ -41,14 +45,52 @@ const referenceAnswerSaving = ref(false);
 const referenceAnswerDraftProjectId = ref('');
 const referenceAnswerDraftVersion = ref(0);
 const deletingProject = ref(false);
+const scanActionLoading = ref(false);
 
 const projectId = computed(() => String(route.params.projectId ?? ''));
 const detail = computed(() =>
   projectsStore.detail?.project.id === projectId.value ? projectsStore.detail : null,
 );
 const selectedProject = computed(() => detail.value?.project ?? null);
+const liveProjectTasks = computed(() =>
+  [...tasksStore.tasks, ...tasksStore.archivedTasks].filter((task) => task.projectId === projectId.value),
+);
+const recentJobs = computed(() => {
+  const snapshotJobs = detail.value?.recentJobs ?? [];
+  const liveJobMap = new Map(liveProjectTasks.value.map((task) => [task.id, task]));
+
+  const mergedJobs = snapshotJobs.map((task) => liveJobMap.get(task.id) ?? task);
+  const knownJobIds = new Set(mergedJobs.map((task) => task.id));
+  const appendedLiveJobs = liveProjectTasks.value.filter((task) => !knownJobIds.has(task.id));
+
+  return [...mergedJobs, ...appendedLiveJobs].sort(
+    (left, right) =>
+      new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime(),
+  );
+});
+const recentTaskSummary = computed(
+  () => recentJobs.value[0]?.summary ?? selectedProject.value?.stats.lastTaskSummary ?? '尚未启动任务',
+);
+const currentScanTask = computed(() =>
+  tasksStore.tasks.find(
+    (task) =>
+      task.projectId === projectId.value &&
+      task.kind === 'scan' &&
+      ['queued', 'running', 'paused'].includes(task.status),
+  ) ?? null,
+);
+const hasActiveScanTask = computed(() => Boolean(currentScanTask.value));
 const results = computed(() => detail.value?.results ?? []);
 const papers = computed(() => detail.value?.originals ?? []);
+const allOriginalPreviewImages = computed<PreviewImageItem[]>(() =>
+  papers.value.flatMap((paper) =>
+    paper.originalPages.map((page, index) => ({
+      src: page.originalPath,
+      title: `${paper.paperCode} · 原始图 ${index + 1}`,
+      caption: '点击单独预览窗口放大查看',
+    })),
+  ),
+);
 const latestReferenceAnswerVersion = computed(() => selectedProject.value?.referenceAnswerVersion ?? 1);
 const referenceAnswerDirty = computed(() =>
   detail.value ? referenceAnswerDraft.value !== detail.value.referenceAnswerMarkdown : false,
@@ -157,17 +199,61 @@ async function importImages() {
 }
 
 async function startScan() {
-  if (!selectedProject.value) {
+  if (!selectedProject.value || scanActionLoading.value || hasActiveScanTask.value) {
     return;
   }
-  await window.neuromark.scan.start(selectedProject.value.id, { skipCompleted: true });
+  scanActionLoading.value = true;
+  try {
+    await window.neuromark.scan.start(selectedProject.value.id, { skipCompleted: true });
+    await Promise.all([
+      tasksStore.refresh(),
+      projectsStore.loadProjectDetail(selectedProject.value.id),
+    ]);
+    message.success('扫描任务已开始。');
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : '启动扫描任务失败。');
+  } finally {
+    scanActionLoading.value = false;
+  }
 }
 
 async function forceRescan() {
-  if (!selectedProject.value) {
+  if (!selectedProject.value || scanActionLoading.value || hasActiveScanTask.value) {
     return;
   }
-  await window.neuromark.scan.start(selectedProject.value.id, { skipCompleted: false });
+  scanActionLoading.value = true;
+  try {
+    await window.neuromark.scan.start(selectedProject.value.id, { skipCompleted: false });
+    await Promise.all([
+      tasksStore.refresh(),
+      projectsStore.loadProjectDetail(selectedProject.value.id),
+    ]);
+    message.success('重新扫描任务已开始。');
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : '启动重新扫描任务失败。');
+  } finally {
+    scanActionLoading.value = false;
+  }
+}
+
+async function stopScan() {
+  if (!selectedProject.value || scanActionLoading.value || !currentScanTask.value) {
+    return;
+  }
+
+  scanActionLoading.value = true;
+  try {
+    await window.neuromark.scan.cancel(currentScanTask.value.id);
+    await Promise.all([
+      tasksStore.refresh(),
+      projectsStore.loadProjectDetail(selectedProject.value.id),
+    ]);
+    message.success('当前扫描任务已停止。');
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : '停止扫描任务失败。');
+  } finally {
+    scanActionLoading.value = false;
+  }
 }
 
 async function startGrading() {
@@ -254,12 +340,17 @@ async function openStagePreview() {
   await window.neuromark.preview.open(resultPreviewImages.value, 0, '答卷图片预览');
 }
 
-function getOriginalPreviewImages(paper: PaperRecord): PreviewImageItem[] {
-  return paper.originalPages.map((page, index) => ({
-    src: page.originalPath,
-    title: `${paper.paperCode} · 原始图 ${index + 1}`,
-    caption: '点击单独预览窗口放大查看',
-  }));
+function getOriginalPreviewIndex(paperId: string, pageIndex: number) {
+  let indexOffset = 0;
+
+  for (const paper of papers.value) {
+    if (paper.id === paperId) {
+      return indexOffset + pageIndex;
+    }
+    indexOffset += paper.originalPages.length;
+  }
+
+  return 0;
 }
 
 function getScannedPreviewImages(paper: PaperRecord): PreviewImageItem[] {
@@ -347,8 +438,33 @@ function goBack() {
         </p>
         <div v-if="selectedProject" class="hero-actions hero-actions-primary">
           <n-button secondary type="primary" @click="importImages">导入图片</n-button>
-          <n-button secondary type="primary" @click="startScan">开始扫描识别</n-button>
-          <n-button secondary type="warning" @click="forceRescan">强制重新扫描</n-button>
+          <n-button
+            v-if="hasActiveScanTask"
+            secondary
+            type="error"
+            :loading="scanActionLoading"
+            @click="stopScan"
+          >
+            停止当前扫描任务
+          </n-button>
+          <template v-else>
+            <n-button
+              secondary
+              type="primary"
+              :loading="scanActionLoading"
+              @click="startScan"
+            >
+              开始扫描识别
+            </n-button>
+            <n-button
+              secondary
+              type="warning"
+              :loading="scanActionLoading"
+              @click="forceRescan"
+            >
+              强制重新扫描
+            </n-button>
+          </template>
           <n-button secondary type="primary" @click="startGrading">开始批阅</n-button>
           <n-button tertiary type="primary" @click="resumeGrading">断点续批</n-button>
           <n-button tertiary @click="exportResults">导出 JSON</n-button>
@@ -384,7 +500,7 @@ function goBack() {
                 <MetricCard label="平均分" :value="selectedProject.stats.averageScore" hint="按当前最终成绩计算" />
                 <MetricCard
                   label="最近任务"
-                  :value="selectedProject.stats.lastTaskSummary"
+                  :value="recentTaskSummary"
                   value-mode="text"
                   card-class="metric-card-wide"
                 />
@@ -406,8 +522,8 @@ function goBack() {
                 <div class="project-section-title">最近后台任务</div>
               </div>
               <n-card class="surface-card flat-card">
-                <div v-if="detail.recentJobs.length" class="task-preview-list">
-                  <div v-for="task in detail.recentJobs" :key="task.id" class="task-preview-row">
+                <div v-if="recentJobs.length" class="task-preview-list">
+                  <div v-for="task in recentJobs" :key="task.id" class="task-preview-row">
                     <div class="task-preview-main">
                       <div class="task-preview-topline">
                         <div class="task-preview-title">
@@ -481,9 +597,9 @@ function goBack() {
                     title: `${paper.paperCode} · 原始图 ${page.pageIndex + 1}`,
                     caption: '点击单独预览窗口放大查看'
                   }"
-                  :preview-images="getOriginalPreviewImages(paper)"
-                  :initial-index="pageIndex"
-                  :preview-title="`${paper.paperCode} · 原始答卷预览`"
+                  :preview-images="allOriginalPreviewImages"
+                  :initial-index="getOriginalPreviewIndex(paper.id, pageIndex)"
+                  preview-title="原始答卷总览"
                 />
               </div>
             </n-card>

@@ -282,19 +282,16 @@ async function archiveVisibleTasks() {
               />
             </div>
 
-            <div
-              v-if="isTaskActive(task)"
-              class="task-summary-panel"
-            >
-              <div class="task-list-meta-label">
-                实时状态
-              </div>
-              <p class="task-summary">
-                处理速度 {{ getTaskSpeedLabel(task) }} · 预计完成 {{ getTaskEtaLabel(task) }}
-              </p>
-            </div>
-
             <div class="task-summary-panel">
+              <div
+                v-if="isTaskActive(task)"
+                class="task-summary-meta"
+              >
+                <span class="task-list-meta-label">实时状态</span>
+                <span class="task-summary-meta-text">
+                  处理速度 {{ getTaskSpeedLabel(task) }} · 预计完成 {{ getTaskEtaLabel(task) }}
+                </span>
+              </div>
               <div class="task-list-meta-label">
                 任务摘要
               </div>

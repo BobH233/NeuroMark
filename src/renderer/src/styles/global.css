@@ -1015,6 +1015,18 @@ textarea {
   border: 1px solid rgba(15, 139, 141, 0.12);
 }
 
+.task-summary-meta {
+  display: grid;
+  gap: 4px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid rgba(15, 139, 141, 0.1);
+}
+
+.task-summary-meta-text {
+  color: var(--accent-deep);
+  line-height: 1.7;
+}
+
 .task-summary,
 .preset-copy {
   margin: 0;

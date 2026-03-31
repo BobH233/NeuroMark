@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import { NEmpty } from 'naive-ui';
+import type { ComponentPublicInstance } from 'vue';
 import type { PreviewSession } from '@preload/contracts';
 import { toImageSrc } from '@/utils/file';
 
@@ -16,6 +17,7 @@ const dragging = ref(false);
 const dragOrigin = ref({ x: 0, y: 0 });
 const suppressTransformTransition = ref(false);
 const saving = ref(false);
+const thumbnailRefs = ref<HTMLElement[]>([]);
 
 const activeImage = computed(() => {
   if (!session.value) {
@@ -45,6 +47,32 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', handleKeydown);
 });
+
+watch(
+  activeIndex,
+  async (index) => {
+    await nextTick();
+    thumbnailRefs.value[index]?.scrollIntoView({
+      block: 'nearest',
+      inline: 'nearest',
+      behavior: 'smooth',
+    });
+  },
+  { flush: 'post' },
+);
+
+function setThumbnailRef(
+  el: Element | ComponentPublicInstance | null,
+  index: number,
+) {
+  if (!el) {
+    return;
+  }
+
+  thumbnailRefs.value[index] = (
+    '$el' in el ? el.$el : el
+  ) as HTMLElement;
+}
 
 function fitView() {
   zoom.value = 1;
@@ -188,6 +216,7 @@ async function saveCurrentImage() {
             <button
               v-for="(image, index) in session.images"
               :key="`${image.title}-${index}`"
+              :ref="(el) => setThumbnailRef(el, index)"
               class="preview-thumb"
               :class="{ active: index === activeIndex }"
               @click="selectImage(index)"
