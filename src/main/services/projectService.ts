@@ -774,7 +774,7 @@ export class ProjectService {
     const latestJob = db
       .select()
       .from(tasksTable)
-      .where(eq(tasksTable.projectId, projectId))
+      .where(and(eq(tasksTable.projectId, projectId), isNull(tasksTable.archivedAt)))
       .orderBy(desc(tasksTable.updatedAt))
       .limit(1)
       .get();

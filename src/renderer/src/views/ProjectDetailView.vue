@@ -53,7 +53,7 @@ const detail = computed(() =>
 );
 const selectedProject = computed(() => detail.value?.project ?? null);
 const liveProjectTasks = computed(() =>
-  [...tasksStore.tasks, ...tasksStore.archivedTasks].filter((task) => task.projectId === projectId.value),
+  tasksStore.tasks.filter((task) => task.projectId === projectId.value),
 );
 const recentJobs = computed(() => {
   const snapshotJobs = detail.value?.recentJobs ?? [];
@@ -88,6 +88,24 @@ const allOriginalPreviewImages = computed<PreviewImageItem[]>(() =>
       src: page.originalPath,
       title: `${paper.paperCode} · 原始图 ${index + 1}`,
       caption: '点击单独预览窗口放大查看',
+    })),
+  ),
+);
+const allScannedPreviewImages = computed<PreviewImageItem[]>(() =>
+  papers.value.flatMap((paper) =>
+    paper.originalPages.map((page, index) => ({
+      src: page.scannedPath || page.originalPath,
+      title: `${paper.paperCode} · 扫描图 ${index + 1}`,
+      caption: page.scannedPath ? '已生成扫描件' : '等待扫描',
+    })),
+  ),
+);
+const allDebugPreviewImages = computed<PreviewImageItem[]>(() =>
+  papers.value.flatMap((paper) =>
+    paper.originalPages.map((page, index) => ({
+      src: page.debugPreviewPath || page.originalPath,
+      title: `${paper.paperCode} · 边界图 ${index + 1}`,
+      caption: page.debugPreviewPath ? '已生成边界预览' : '等待扫描',
     })),
   ),
 );
@@ -340,7 +358,7 @@ async function openStagePreview() {
   await window.neuromark.preview.open(resultPreviewImages.value, 0, '答卷图片预览');
 }
 
-function getOriginalPreviewIndex(paperId: string, pageIndex: number) {
+function getPaperPagePreviewIndex(paperId: string, pageIndex: number) {
   let indexOffset = 0;
 
   for (const paper of papers.value) {
@@ -351,22 +369,6 @@ function getOriginalPreviewIndex(paperId: string, pageIndex: number) {
   }
 
   return 0;
-}
-
-function getScannedPreviewImages(paper: PaperRecord): PreviewImageItem[] {
-  return paper.originalPages.map((page, index) => ({
-    src: page.scannedPath || page.originalPath,
-    title: `${paper.paperCode} · 扫描图 ${index + 1}`,
-    caption: page.scannedPath ? '已生成扫描件' : '等待扫描',
-  }));
-}
-
-function getDebugPreviewImages(paper: PaperRecord): PreviewImageItem[] {
-  return paper.originalPages.map((page, index) => ({
-    src: page.debugPreviewPath || page.originalPath,
-    title: `${paper.paperCode} · 边界图 ${index + 1}`,
-    caption: page.debugPreviewPath ? '已生成边界预览' : '等待扫描',
-  }));
 }
 
 function isResultOutdated(result: ResultRecord) {
@@ -598,7 +600,7 @@ function goBack() {
                     caption: '点击单独预览窗口放大查看'
                   }"
                   :preview-images="allOriginalPreviewImages"
-                  :initial-index="getOriginalPreviewIndex(paper.id, pageIndex)"
+                  :initial-index="getPaperPagePreviewIndex(paper.id, pageIndex)"
                   preview-title="原始答卷总览"
                 />
               </div>
@@ -625,9 +627,9 @@ function goBack() {
                         title: `${paper.paperCode} · 扫描图 ${page.pageIndex + 1}`,
                         caption: page.scannedPath ? '已生成扫描件' : '等待扫描'
                       }"
-                      :preview-images="getScannedPreviewImages(paper)"
-                      :initial-index="pageIndex"
-                      :preview-title="`${paper.paperCode} · 扫描答卷预览`"
+                      :preview-images="allScannedPreviewImages"
+                      :initial-index="getPaperPagePreviewIndex(paper.id, pageIndex)"
+                      preview-title="扫描结果总览"
                     />
                   </div>
                 </div>
@@ -642,9 +644,9 @@ function goBack() {
                         title: `${paper.paperCode} · 边界图 ${page.pageIndex + 1}`,
                         caption: page.debugPreviewPath ? '已生成边界预览' : '等待扫描'
                       }"
-                      :preview-images="getDebugPreviewImages(paper)"
-                      :initial-index="pageIndex"
-                      :preview-title="`${paper.paperCode} · 边界标注预览`"
+                      :preview-images="allDebugPreviewImages"
+                      :initial-index="getPaperPagePreviewIndex(paper.id, pageIndex)"
+                      preview-title="边界标注总览"
                     />
                   </div>
                 </div>
