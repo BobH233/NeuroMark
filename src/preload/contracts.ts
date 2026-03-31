@@ -279,6 +279,7 @@ export interface NeuromarkApi {
     list: () => Promise<ProjectMeta[]>;
     getDetail: (projectId: string) => Promise<ProjectDetail>;
     delete: (projectId: string) => Promise<void>;
+    removePaper: (projectId: string, paperId: string) => Promise<ProjectDetail>;
     importOriginalImages: (
       projectId: string,
       filePaths: string[],

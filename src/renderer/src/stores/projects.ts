@@ -60,6 +60,11 @@ export const useProjectsStore = defineStore('projects', {
         this.clearSelection();
       }
     },
+    async removePaper(projectId: string, paperId: string) {
+      this.detail = await window.neuromark.projects.removePaper(projectId, paperId);
+      await this.loadProjects();
+      return this.detail;
+    },
     async importOriginalImages(projectId: string, filePaths: string[]) {
       await window.neuromark.projects.importOriginalImages(projectId, filePaths);
       await this.loadProjects();

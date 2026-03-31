@@ -46,6 +46,7 @@ const referenceAnswerDraftProjectId = ref('');
 const referenceAnswerDraftVersion = ref(0);
 const deletingProject = ref(false);
 const scanActionLoading = ref(false);
+const removingPaperId = ref('');
 
 const projectId = computed(() => String(route.params.projectId ?? ''));
 const detail = computed(() =>
@@ -214,6 +215,23 @@ async function importImages() {
     return;
   }
   await projectsStore.importOriginalImages(selectedProject.value.id, files);
+}
+
+async function removePaper(paperId: string) {
+  if (!selectedProject.value || removingPaperId.value) {
+    return;
+  }
+
+  removingPaperId.value = paperId;
+  try {
+    await projectsStore.removePaper(selectedProject.value.id, paperId);
+    await tasksStore.refresh();
+    message.success('试卷已移除，相关扫描结果和批阅结果已同步清理。');
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : '移除试卷失败。');
+  } finally {
+    removingPaperId.value = '';
+  }
 }
 
 async function startScan() {
@@ -584,7 +602,26 @@ function goBack() {
           <div v-if="papers.length" class="paper-grid">
             <n-card v-for="paper in papers" :key="paper.id" class="surface-card" :title="paper.paperCode">
               <template #header-extra>
-                <StatusPill :value="paper.scanStatus" />
+                <div class="task-preview-inline-tags">
+                  <StatusPill :value="paper.scanStatus" />
+                  <n-popconfirm
+                    positive-text="确认移除"
+                    negative-text="取消"
+                    @positive-click="removePaper(paper.id)"
+                  >
+                    <template #trigger>
+                      <n-button
+                        tertiary
+                        type="error"
+                        size="small"
+                        :loading="removingPaperId === paper.id"
+                      >
+                        移除试卷
+                      </n-button>
+                    </template>
+                    移除后会同时删除该试卷的原始图片、扫描结果、边界标注和批阅结果。确认继续吗？
+                  </n-popconfirm>
+                </div>
               </template>
               <div class="paper-meta">
                 <span>{{ paper.pageCount }} 页</span>

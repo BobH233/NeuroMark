@@ -27,6 +27,9 @@ export function registerProjectIpc(services: ServiceBundle): void {
   ipcMain.handle('projects:delete', (_event, projectId: string) =>
     services.tasks.deleteProject(projectId),
   );
+  ipcMain.handle('projects:remove-paper', (_event, projectId: string, paperId: string) =>
+    services.projects.removePaper(projectId, paperId),
+  );
   ipcMain.handle('projects:create', (_event, payload: CreateProjectInput) =>
     services.projects.createProject(createProjectSchema.parse(payload)),
   );

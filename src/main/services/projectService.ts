@@ -454,6 +454,50 @@ export class ProjectService {
       .run();
   }
 
+  async removePaper(projectId: string, paperId: string): Promise<ProjectDetail> {
+    const db = getDatabase();
+    const project = await this.getProjectById(projectId);
+    const structure = getProjectStructure(project.rootPath);
+    const papers = await this.listProjectPapers(projectId);
+    const targetPaper = papers.find((paper) => paper.id === paperId || paper.paperCode === paperId);
+
+    if (!targetPaper) {
+      throw new Error('未找到要移除的试卷。');
+    }
+
+    const activeTask = db
+      .select()
+      .from(tasksTable)
+      .where(
+        and(
+          eq(tasksTable.projectId, projectId),
+          isNull(tasksTable.archivedAt),
+        ),
+      )
+      .all()
+      .find((task) => ['queued', 'running', 'paused'].includes(task.status));
+
+    if (activeTask) {
+      throw new Error('当前项目还有进行中的后台任务，请先停止或等待任务完成后再移除试卷。');
+    }
+
+    await Promise.all([
+      fs.remove(path.join(structure.originalsDir, targetPaper.paperCode)),
+      fs.remove(path.join(structure.scannedDir, targetPaper.paperCode)),
+      fs.remove(path.join(structure.scanDebugDir, targetPaper.paperCode)),
+      fs.remove(path.join(structure.resultsDir, `${targetPaper.paperCode}.json`)),
+    ]);
+
+    db.delete(resultRecordsTable)
+      .where(and(eq(resultRecordsTable.projectId, projectId), eq(resultRecordsTable.paperId, targetPaper.paperCode)))
+      .run();
+    db.delete(paperRecordsTable)
+      .where(and(eq(paperRecordsTable.projectId, projectId), eq(paperRecordsTable.paperCode, targetPaper.paperCode)))
+      .run();
+
+    return this.getProjectDetail(projectId);
+  }
+
   async getProjectDetail(projectId: string): Promise<ProjectDetail> {
     const project = await this.recomputeStats(projectId);
     const structure = getProjectStructure(project.rootPath);
