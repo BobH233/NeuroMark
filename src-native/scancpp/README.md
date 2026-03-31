@@ -78,7 +78,12 @@ python tools/export_onnx.py \
 - 支持 C++17 的编译器
 - OpenCV 4.x，且包含 `dnn` 模块
 
-项目的 `CMakeLists.txt` 使用 `find_package(OpenCV REQUIRED)` 动态查找依赖，没有写死任何平台路径。如果 CMake 没有自动找到 OpenCV，请通过你自己的安装方式传入 `CMAKE_PREFIX_PATH`、`OpenCV_DIR` 或工具链文件。
+项目现在支持两种 OpenCV 提供方式：
+
+- `system`：默认模式，使用系统里已经安装好的 OpenCV
+- `bundled-static`：构建时拉取或使用本地 OpenCV 源码，以静态库方式编进最终产物，更适合后续封装成 Node native / Electron addon，避免额外分发 `libopencv_*.dylib/.so/.dll`
+
+如果你继续用系统 OpenCV，仍然可以通过 `CMAKE_PREFIX_PATH`、`OpenCV_DIR` 或工具链文件告诉 CMake 去哪里找它。
 
 ### macOS
 
@@ -90,6 +95,32 @@ cmake -S . -B build -DCMAKE_PREFIX_PATH="$(brew --prefix opencv)"
 cmake --build build -j
 ```
 
+如果你准备把它封装成 Electron 原生模块，更推荐直接构建内嵌静态版 OpenCV：
+
+```bash
+cmake -S . -B build-static -DSCANCPP_OPENCV_PROVIDER=bundled-static
+cmake --build build-static -j
+```
+
+如果你已经自己克隆了 OpenCV 源码，也可以直接复用本地目录，而不是让 CMake 下载：
+
+```bash
+git clone --depth=1 --branch 4.13.0 https://github.com/opencv/opencv.git third_party/opencv
+cmake -S . -B build-static \
+  -DSCANCPP_OPENCV_PROVIDER=bundled-static \
+  -DSCANCPP_OPENCV_SOURCE_DIR="$PWD/third_party/opencv"
+cmake --build build-static -j
+```
+
+如果源码就放在仓库内的 `third_party/opencv`，项目会自动优先使用这份源码；因此通常也可以直接写成：
+
+```bash
+cmake -S . -B build-static -DSCANCPP_OPENCV_PROVIDER=bundled-static
+cmake --build build-static -j
+```
+
+`bundled-static` 模式会只编译本项目需要的 `core / imgproc / imgcodecs / dnn`，并关闭一批会引入额外运行时依赖的可选组件，因此最终产物不会再依赖 OpenCV 的动态库。
+
 ### Linux
 
 以 Ubuntu / Debian 为例：
@@ -99,6 +130,13 @@ sudo apt update
 sudo apt install -y cmake g++ libopencv-dev
 cmake -S . -B build
 cmake --build build -j
+```
+
+如果你也想在 Linux 上生成不依赖系统 OpenCV 动态库的产物，同样可以使用：
+
+```bash
+cmake -S . -B build-static -DSCANCPP_OPENCV_PROVIDER=bundled-static
+cmake --build build-static -j
 ```
 
 ### Windows
@@ -113,6 +151,8 @@ cmake --build build --config Release
 ```
 
 如果你的目标是 Windows ARM64，请把生成架构改成 `ARM64`，并安装对应架构的 OpenCV 包。
+
+如果是给 Electron 打包，Windows 也建议优先用 `bundled-static`，这样最终 `.node` 更容易做到只依赖系统运行库，而不再额外携带 OpenCV DLL。
 
 ## 4. 运行单张图片 Demo
 

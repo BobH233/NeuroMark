@@ -163,6 +163,13 @@ async function startScan() {
   await window.neuromark.scan.start(selectedProject.value.id, { skipCompleted: true });
 }
 
+async function forceRescan() {
+  if (!selectedProject.value) {
+    return;
+  }
+  await window.neuromark.scan.start(selectedProject.value.id, { skipCompleted: false });
+}
+
 async function startGrading() {
   if (!selectedProject.value) {
     return;
@@ -341,6 +348,7 @@ function goBack() {
         <div v-if="selectedProject" class="hero-actions hero-actions-primary">
           <n-button secondary type="primary" @click="importImages">导入图片</n-button>
           <n-button secondary type="primary" @click="startScan">开始扫描识别</n-button>
+          <n-button secondary type="warning" @click="forceRescan">强制重新扫描</n-button>
           <n-button secondary type="primary" @click="startGrading">开始批阅</n-button>
           <n-button tertiary type="primary" @click="resumeGrading">断点续批</n-button>
           <n-button tertiary @click="exportResults">导出 JSON</n-button>
