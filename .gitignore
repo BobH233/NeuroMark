@@ -13,3 +13,5 @@ coverage/
 *.tmp
 .idea/
 .vscode/
+
+artifacts/
