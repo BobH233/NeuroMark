@@ -22,17 +22,25 @@ jobs:
           - name: Ubuntu
             runs_on: ubuntu-24.04
             artifact_name: neuromark-electron-ubuntu
+            cmake_parallel_level: '4'
           - name: Windows
             runs_on: windows-2022
             artifact_name: neuromark-electron-windows
-          - name: macOS
+            cmake_parallel_level: '3'
+          - name: macOS Intel
             runs_on: macos-15-intel
-            artifact_name: neuromark-electron-macos
+            artifact_name: neuromark-electron-macos-x64
+            cmake_parallel_level: '3'
+          - name: macOS Apple Silicon
+            runs_on: macos-15
+            artifact_name: neuromark-electron-macos-arm64
+            cmake_parallel_level: '3'
 
     env:
       CSC_IDENTITY_AUTO_DISCOVERY: 'false'
       ELECTRON_CACHE: ${{ github.workspace }}/.cache/electron
       ELECTRON_BUILDER_CACHE: ${{ github.workspace }}/.cache/electron-builder
+      CMAKE_BUILD_PARALLEL_LEVEL: ${{ matrix.cmake_parallel_level }}
 
     steps:
       - name: Checkout repository
@@ -48,6 +56,15 @@ jobs:
         uses: actions/setup-python@v6
         with:
           python-version: '3.12'
+
+      - name: Restore Electron and native build caches
+        uses: actions/cache@v4
+        with:
+          path: |
+            .cache/electron
+            .cache/electron-builder
+            build/native
+          key: ${{ runner.os }}-${{ runner.arch }}-node22-native-${{ hashFiles('package-lock.json', 'package.json', 'scripts/build-native.mjs', 'src-native/scancpp/CMakeLists.txt', 'src-native/scancpp/src/**', 'src-native/scancpp/third_party/opencv/cmake/**', 'src-native/scancpp/third_party/opencv/CMakeLists.txt') }}
 
       - name: Install Linux native build dependencies
         if: runner.os == 'Linux'
