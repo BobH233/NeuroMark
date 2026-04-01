@@ -60,6 +60,9 @@ function createMinimalMacosMenu(): Menu {
       ],
     },
     {
+      role: 'editMenu',
+    },
+    {
       role: 'windowMenu',
       submenu: [{ role: 'minimize' }, { role: 'zoom' }, { type: 'separator' }, { role: 'front' }],
     },
