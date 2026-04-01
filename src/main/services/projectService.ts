@@ -325,7 +325,7 @@ export class ProjectService {
     return db
       .select()
       .from(projectsTable)
-      .orderBy(desc(projectsTable.updatedAt))
+      .orderBy(desc(projectsTable.createdAt))
       .all()
       .map(toProjectMeta);
   }

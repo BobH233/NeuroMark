@@ -19,11 +19,14 @@ const suppressTransformTransition = ref(false);
 const copying = ref(false);
 const saving = ref(false);
 const thumbnailRefs = ref<HTMLElement[]>([]);
+const railRef = ref<HTMLElement | null>(null);
+const loadedThumbnailIndexes = ref<Record<number, true>>({});
 const contextMenu = ref({
   visible: false,
   x: 0,
   y: 0,
 });
+let thumbnailObserver: IntersectionObserver | null = null;
 
 const activeImage = computed(() => {
   if (!session.value) {
@@ -51,6 +54,7 @@ onMounted(async () => {
   window.addEventListener('click', hideContextMenu);
   window.addEventListener('blur', hideContextMenu);
   window.addEventListener('resize', hideContextMenu);
+  initializeThumbnailObserver();
 });
 
 onBeforeUnmount(() => {
@@ -58,17 +62,39 @@ onBeforeUnmount(() => {
   window.removeEventListener('click', hideContextMenu);
   window.removeEventListener('blur', hideContextMenu);
   window.removeEventListener('resize', hideContextMenu);
+  thumbnailObserver?.disconnect();
+  thumbnailObserver = null;
 });
 
 watch(
   activeIndex,
   async (index) => {
+    markThumbnailRangeLoaded(index);
     await nextTick();
     thumbnailRefs.value[index]?.scrollIntoView({
       block: 'nearest',
       inline: 'nearest',
       behavior: 'smooth',
     });
+    observeThumbnail(index);
+  },
+  { flush: 'post' },
+);
+
+watch(
+  session,
+  async (nextSession) => {
+    loadedThumbnailIndexes.value = {};
+    thumbnailObserver?.disconnect();
+    thumbnailObserver = null;
+
+    if (!nextSession?.images.length) {
+      return;
+    }
+
+    markThumbnailRangeLoaded(nextSession.initialIndex ?? 0);
+    await nextTick();
+    initializeThumbnailObserver();
   },
   { flush: 'post' },
 );
@@ -84,6 +110,80 @@ function setThumbnailRef(
   thumbnailRefs.value[index] = (
     '$el' in el ? el.$el : el
   ) as HTMLElement;
+  observeThumbnail(index);
+}
+
+function initializeThumbnailObserver() {
+  if (!hasMultipleImages.value) {
+    return;
+  }
+
+  if (!('IntersectionObserver' in window)) {
+    markAllThumbnailsLoaded();
+    return;
+  }
+
+  thumbnailObserver = new IntersectionObserver(
+    (entries) => {
+      entries.forEach((entry) => {
+        if (!entry.isIntersecting) {
+          return;
+        }
+
+        const index = Number((entry.target as HTMLElement).dataset.thumbIndex ?? '-1');
+        if (index < 0) {
+          return;
+        }
+
+        loadedThumbnailIndexes.value[index] = true;
+        thumbnailObserver?.unobserve(entry.target);
+      });
+    },
+    {
+      root: railRef.value,
+      rootMargin: '240px 0px',
+    },
+  );
+
+  thumbnailRefs.value.forEach((_, index) => {
+    observeThumbnail(index);
+  });
+}
+
+function observeThumbnail(index: number) {
+  if (loadedThumbnailIndexes.value[index]) {
+    return;
+  }
+
+  const target = thumbnailRefs.value[index];
+  if (!target) {
+    return;
+  }
+
+  target.dataset.thumbIndex = String(index);
+  thumbnailObserver?.observe(target);
+}
+
+function markThumbnailRangeLoaded(centerIndex: number) {
+  const sessionImages = session.value?.images.length ?? 0;
+  for (let index = Math.max(0, centerIndex - 2); index <= Math.min(sessionImages - 1, centerIndex + 2); index += 1) {
+    loadedThumbnailIndexes.value[index] = true;
+  }
+}
+
+function markAllThumbnailsLoaded() {
+  const loaded: Record<number, true> = {};
+  const sessionImages = session.value?.images.length ?? 0;
+  for (let index = 0; index < sessionImages; index += 1) {
+    loaded[index] = true;
+  }
+  loadedThumbnailIndexes.value = loaded;
+}
+
+function getThumbnailSrc(index: number, source: string, cacheKey?: string | number) {
+  return loadedThumbnailIndexes.value[index]
+    ? toImageSrc(source, cacheKey == null ? undefined : String(cacheKey))
+    : undefined;
 }
 
 function fitView() {
@@ -294,6 +394,7 @@ async function saveCurrentImage() {
         >
           <aside
             v-if="hasMultipleImages"
+            ref="railRef"
             class="preview-rail"
           >
             <button
@@ -304,10 +405,20 @@ async function saveCurrentImage() {
               :class="{ active: index === activeIndex }"
               @click="selectImage(index)"
             >
-              <img
-                :src="toImageSrc(image.src, image.cacheKey)"
-                :alt="image.title"
-              >
+              <div class="preview-thumb-media-shell">
+                <img
+                  v-if="getThumbnailSrc(index, image.src, image.cacheKey)"
+                  :src="getThumbnailSrc(index, image.src, image.cacheKey)"
+                  :alt="image.title"
+                  loading="lazy"
+                  decoding="async"
+                >
+                <div
+                  v-else
+                  class="preview-thumb-placeholder"
+                  aria-hidden="true"
+                />
+              </div>
               <span>{{ image.title }}</span>
             </button>
           </aside>
@@ -682,6 +793,34 @@ async function saveCurrentImage() {
   aspect-ratio: 1 / 1;
   object-fit: cover;
   border-radius: 12px;
+}
+
+.preview-thumb-media-shell {
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  overflow: hidden;
+  border-radius: 12px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.04));
+}
+
+.preview-thumb-placeholder {
+  width: 100%;
+  height: 100%;
+  background:
+    linear-gradient(110deg, rgba(255, 255, 255, 0.08) 8%, rgba(255, 255, 255, 0.2) 18%, rgba(255, 255, 255, 0.08) 33%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.04));
+  background-size: 200% 100%, 100% 100%;
+  animation: preview-thumb-placeholder-shimmer 1.2s linear infinite;
+}
+
+@keyframes preview-thumb-placeholder-shimmer {
+  from {
+    background-position: 200% 0, 0 0;
+  }
+
+  to {
+    background-position: -200% 0, 0 0;
+  }
 }
 
 .preview-thumb span {

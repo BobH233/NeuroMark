@@ -692,6 +692,12 @@ textarea {
   cursor: pointer;
 }
 
+.image-tile-media-shell {
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(180deg, #f8fbff, #edf5ff);
+}
+
 .image-tile-media {
   display: block;
   width: 100%;
@@ -699,6 +705,24 @@ textarea {
   object-fit: contain;
   object-position: center;
   background: linear-gradient(180deg, #f8fbff, #edf5ff);
+}
+
+.image-tile-media-placeholder {
+  background:
+    linear-gradient(110deg, rgba(255, 255, 255, 0.16) 8%, rgba(255, 255, 255, 0.52) 18%, rgba(255, 255, 255, 0.16) 33%),
+    linear-gradient(180deg, #f8fbff, #edf5ff);
+  background-size: 200% 100%, 100% 100%;
+  animation: image-tile-placeholder-shimmer 1.2s linear infinite;
+}
+
+@keyframes image-tile-placeholder-shimmer {
+  from {
+    background-position: 200% 0, 0 0;
+  }
+
+  to {
+    background-position: -200% 0, 0 0;
+  }
 }
 
 .image-tile-footer {
