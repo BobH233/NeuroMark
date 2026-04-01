@@ -11,6 +11,7 @@ endif()
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 option(SCANCPP_BUILD_CLI "Build the scancpp CLI executable" ON)
 option(SCANCPP_BUILD_NODE_ADDON "Build the scancpp Node-API addon" ON)

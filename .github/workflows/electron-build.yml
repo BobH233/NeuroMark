@@ -25,9 +25,12 @@ jobs:
           - name: Windows
             runs_on: windows-2022
             artifact_name: neuromark-electron-windows
-          - name: macOS
+          - name: macOS Intel
             runs_on: macos-15-intel
-            artifact_name: neuromark-electron-macos
+            artifact_name: neuromark-electron-macos-x64
+          - name: macOS Apple Silicon
+            runs_on: macos-15
+            artifact_name: neuromark-electron-macos-arm64
 
     env:
       CSC_IDENTITY_AUTO_DISCOVERY: 'false'
@@ -48,6 +51,15 @@ jobs:
         uses: actions/setup-python@v6
         with:
           python-version: '3.12'
+
+      - name: Restore Electron and native build caches
+        uses: actions/cache@v4
+        with:
+          path: |
+            .cache/electron
+            .cache/electron-builder
+            build/native
+          key: ${{ runner.os }}-${{ runner.arch }}-node22-native-${{ hashFiles('package-lock.json', 'package.json', 'scripts/build-native.mjs', 'src-native/scancpp/CMakeLists.txt', 'src-native/scancpp/src/**', 'src-native/scancpp/third_party/opencv/cmake/**', 'src-native/scancpp/third_party/opencv/CMakeLists.txt') }}
 
       - name: Install Linux native build dependencies
         if: runner.os == 'Linux'
