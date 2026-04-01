@@ -60,7 +60,7 @@ jobs:
             .cache/electron
             .cache/electron-builder
             build/native
-          key: ${{ runner.os }}-${{ runner.arch }}-node22-native-${{ hashFiles('package-lock.json', 'package.json', 'scripts/build-native.mjs', 'src-native/scancpp/CMakeLists.txt', 'src-native/scancpp/src/**', 'src-native/scancpp/third_party/opencv/cmake/**', 'src-native/scancpp/third_party/opencv/CMakeLists.txt') }}
+          key: ${{ runner.os }}-${{ runner.arch }}-node22-native-v2-${{ hashFiles('package-lock.json', 'package.json', 'scripts/build-native.mjs', 'src-native/scancpp/CMakeLists.txt', 'src-native/scancpp/src/**', 'src-native/scancpp/third_party/opencv/cmake/**', 'src-native/scancpp/third_party/opencv/CMakeLists.txt') }}
 
       - name: Install npm dependencies
         run: npm ci
