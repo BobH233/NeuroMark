@@ -735,6 +735,14 @@ export class ProjectService {
         abortable: row.abortable,
         currentPaperLabel: row.currentPaperLabel ?? undefined,
         summary: row.summary,
+        runtimeLogs: (() => {
+          try {
+            const parsed = JSON.parse(row.runtimeLogsJson ?? '[]') as unknown;
+            return Array.isArray(parsed) ? parsed.map((item) => String(item ?? '')) : [];
+          } catch {
+            return [];
+          }
+        })(),
       }));
 
     return {

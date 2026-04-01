@@ -698,6 +698,10 @@ function getTaskProgressLabel(progress: number, status: string) {
   return `${Math.round(progress * 100)}%`;
 }
 
+function getTaskRuntimeLogs(task: { runtimeLogs?: string[] }, maxCount = 3) {
+  return (task.runtimeLogs ?? []).slice(-maxCount).reverse();
+}
+
 function goBack() {
   router.push('/projects');
 }
@@ -842,6 +846,15 @@ function goBack() {
                         </div>
                       </div>
                       <div class="task-preview-meta">{{ task.summary }}</div>
+                      <div v-if="getTaskRuntimeLogs(task).length" class="task-log-list task-log-list--compact">
+                        <div
+                          v-for="line in getTaskRuntimeLogs(task)"
+                          :key="`${task.id}-${line}`"
+                          class="task-log-line"
+                        >
+                          {{ line }}
+                        </div>
+                      </div>
                       <div class="task-preview-grid">
                         <div class="task-preview-item">
                           <span>开始时间</span>

@@ -1519,6 +1519,28 @@ textarea {
   line-height: 1.8;
 }
 
+.task-log-list {
+  display: grid;
+  gap: 8px;
+}
+
+.task-log-list--compact {
+  margin-top: 10px;
+}
+
+.task-log-line {
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(15, 139, 141, 0.12);
+  background: rgba(255, 255, 255, 0.7);
+  color: #20576a;
+  font-family: 'SF Mono', 'JetBrains Mono', monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .history-item {
   padding: 14px;
   border-radius: 16px;

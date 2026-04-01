@@ -18,7 +18,16 @@ import type {
   QuestionScore,
   ScoreBreakdownItem,
 } from '@preload/contracts';
-import { logLlmRequest, logLlmResult } from './llmRequestLogger';
+import { logLlmProgress, logLlmRequest, logLlmResult } from './llmRequestLogger';
+import {
+  compactErrorMessage,
+  extractReasoningText,
+  extractStreamingDeltaText,
+  formatStreamPreview,
+  isStreamingFallbackCandidate,
+  readAssistantText,
+  shortenText,
+} from './llmStreamUtils';
 import { ProjectService } from './projectService';
 import { SettingsService } from './settingsService';
 import type {
@@ -27,7 +36,6 @@ import type {
 } from './gradingTypes';
 
 const FENCED_JSON_PATTERN = /```(?:json)?\s*(\{[\s\S]*\})\s*```/i;
-const STREAM_PREVIEW_LIMIT = 200;
 
 function ensureAbort(signal?: AbortSignal): void {
   if (signal?.aborted) {
@@ -102,105 +110,6 @@ function parseJsonObject(rawOutput: string): Record<string, unknown> {
   }
 
   throw new Error('模型返回的内容不是合法 JSON 对象。');
-}
-
-function shortenText(value: string, maxLength = 2400): string {
-  if (value.length <= maxLength) {
-    return value;
-  }
-  return `${value.slice(0, maxLength)}\n... [truncated ${value.length - maxLength} chars]`;
-}
-
-function extractCompletionText(content: unknown): string {
-  if (typeof content === 'string') {
-    return content;
-  }
-
-  if (Array.isArray(content)) {
-    return content
-      .map((part) => {
-        if (part && typeof part === 'object' && 'text' in part) {
-          return String(part.text ?? '');
-        }
-        return '';
-      })
-      .join('\n');
-  }
-
-  return '';
-}
-
-function extractStreamingDeltaText(content: unknown): string {
-  if (typeof content === 'string') {
-    return content;
-  }
-
-  if (Array.isArray(content)) {
-    return content
-      .map((part) => {
-        if (part && typeof part === 'object' && 'text' in part) {
-          return String(part.text ?? '');
-        }
-        return '';
-      })
-      .join('');
-  }
-
-  return '';
-}
-
-function extractReasoningText(value: unknown): string {
-  if (typeof value === 'string') {
-    return value;
-  }
-
-  if (Array.isArray(value)) {
-    return value.map((item) => extractReasoningText(item)).join('');
-  }
-
-  if (!value || typeof value !== 'object') {
-    return '';
-  }
-
-  const candidate = value as Record<string, unknown>;
-  const directKeys = [
-    'reasoning',
-    'reasoning_content',
-    'reasoningContent',
-    'thinking',
-    'thinking_content',
-    'thinkingContent',
-  ];
-
-  for (const key of directKeys) {
-    const text = extractReasoningText(candidate[key]);
-    if (text) {
-      return text;
-    }
-  }
-
-  if ('text' in candidate && typeof candidate.text === 'string') {
-    return candidate.text;
-  }
-
-  if ('content' in candidate) {
-    return extractReasoningText(candidate.content);
-  }
-
-  return '';
-}
-
-function formatStreamPreview(text: string): string {
-  const normalized = text.replace(/\s+/g, ' ').trim();
-  if (!normalized) {
-    return '(empty)';
-  }
-
-  if (normalized.length <= STREAM_PREVIEW_LIMIT) {
-    return normalized;
-  }
-
-  return `${normalized.slice(-STREAM_PREVIEW_LIMIT)}...`;
 }
 
 export function getReferenceAnswerFingerprint(markdown: string): string {
@@ -415,7 +324,31 @@ function validateScoreBreakdown(
   return breakdown;
 }
 
-function validateModelResult(
+function resolveQuestionScore(
+  rawScore: number,
+  scoreBreakdown: ScoreBreakdownItem[],
+  question: CompiledRubric['questions'][number],
+): number {
+  const breakdownScore = Number(scoreBreakdown.reduce((sum, point) => sum + point.score, 0).toFixed(2));
+  if (Math.abs(rawScore - breakdownScore) > 0.01) {
+    console.warn(
+      `[grading] corrected question score for ${question.questionId}: raw=${rawScore}, breakdown=${breakdownScore}`,
+    );
+  }
+  return breakdownScore;
+}
+
+function resolveTotalScore(rawTotalScore: number, questionScores: QuestionScore[]): number {
+  const computedTotal = Number(questionScores.reduce((sum, question) => sum + question.score, 0).toFixed(2));
+  if (Math.abs(rawTotalScore - computedTotal) > 0.01) {
+    console.warn(
+      `[grading] corrected total score: raw=${rawTotalScore}, computed=${computedTotal}`,
+    );
+  }
+  return computedTotal;
+}
+
+export function validateModelResult(
   payload: Record<string, unknown>,
   rubric: CompiledRubric,
   drawRegions: boolean,
@@ -447,16 +380,9 @@ function validateModelResult(
       throw new Error(`${questionId} 的满分必须与 rubric 一致。`);
     }
 
-    const score = asNumber(rawQuestion.score, `questionScores[${index}].score`);
-    if (score < 0 || score > maxScore) {
-      throw new Error(`${questionId} 的得分超出允许范围。`);
-    }
-
+    const rawScore = asNumber(rawQuestion.score, `questionScores[${index}].score`);
     const scoreBreakdown = validateScoreBreakdown(rawQuestion.scoreBreakdown, rubricQuestion);
-    const breakdownScore = Number(scoreBreakdown.reduce((sum, point) => sum + point.score, 0).toFixed(2));
-    if (Math.abs(breakdownScore - score) > 0.01) {
-      throw new Error(`${questionId} 的 score 必须等于各采分点得分之和。`);
-    }
+    const score = resolveQuestionScore(rawScore, scoreBreakdown, rubricQuestion);
 
     return {
       questionId,
@@ -469,11 +395,8 @@ function validateModelResult(
     };
   });
 
-  const totalScore = asNumber(payload.totalScore, 'totalScore');
-  const computedTotal = Number(questionScores.reduce((sum, question) => sum + question.score, 0).toFixed(2));
-  if (Math.abs(totalScore - computedTotal) > 0.01) {
-    throw new Error('totalScore 必须严格等于所有小题 score 之和。');
-  }
+  const rawTotalScore = asNumber(payload.totalScore, 'totalScore');
+  const totalScore = resolveTotalScore(rawTotalScore, questionScores);
 
   const overallAdvice = asObject(payload.overallAdvice, 'overallAdvice');
 
@@ -546,20 +469,6 @@ async function encodeImageAsDataUrl(imagePath: string): Promise<string> {
   return `data:image/jpeg;base64,${buffer.toString('base64')}`;
 }
 
-async function readChatText(response: any) {
-  const message = response.choices[0]?.message;
-  if (!message) {
-    throw new Error('模型没有返回可用消息。');
-  }
-
-  const extracted = extractCompletionText(message.content).trim();
-  if (extracted) {
-    return extracted;
-  }
-
-  throw new Error('模型返回内容为空。');
-}
-
 export class GradingService {
   constructor(
     private readonly projects: ProjectService,
@@ -587,6 +496,7 @@ export class GradingService {
     referenceAnswerMarkdown: string;
     settings: GradingServiceSettings;
     signal?: AbortSignal;
+    onLog?: (message: string) => void | Promise<void>;
   }): Promise<CompiledRubric> {
     const rubricPath = path.join(
       input.projectRootPath,
@@ -603,6 +513,7 @@ export class GradingService {
           referenceAnswerMarkdown: input.referenceAnswerMarkdown,
         })
       ) {
+        await input.onLog?.('检测到可复用的 rubric 缓存，跳过重新生成');
         return validateCompiledRubric(existing, input.projectName);
       }
     }
@@ -647,10 +558,21 @@ export class GradingService {
     const startedAt = Date.now();
     let rawOutput = '';
     let parsedCandidate: Record<string, unknown> | null = null;
+    let reasoningText = '';
+    let mode: 'stream' | 'non-stream' = 'stream';
     try {
-      const response = await client.chat.completions.create(requestPayload);
+      await input.onLog?.('已发起 rubric 编译请求，准备接收流式输出');
+      const response = await this.collectRubricResponseText({
+        client,
+        requestPayload,
+        signal: input.signal,
+        startedAtMs: startedAt,
+        onLog: input.onLog,
+      });
       ensureAbort(input.signal);
-      rawOutput = await readChatText(response);
+      rawOutput = response.rawText;
+      reasoningText = response.reasoningText;
+      mode = response.mode;
       parsedCandidate = parseJsonObject(rawOutput);
       const parsed = validateCompiledRubric(parsedCandidate, input.projectName);
       await fs.writeJson(
@@ -666,8 +588,10 @@ export class GradingService {
         status: 'success',
         detail: {
           latencyMs: Date.now() - startedAt,
+          mode,
           rubricPath,
           questionCount: parsed.questions.length,
+          reasoningTextLength: reasoningText.length,
           rawOutput: shortenText(rawOutput),
         },
       });
@@ -698,6 +622,7 @@ export class GradingService {
     drawRegions: boolean;
     settings: GradingServiceSettings;
     signal?: AbortSignal;
+    onLog?: (message: string) => void | Promise<void>;
   }): Promise<{
     modelResult: ModelResult;
     finalResult: FinalResult;
@@ -781,6 +706,7 @@ export class GradingService {
           paperCode: input.paper.paperCode,
           startedAtMs: startedAt,
           attempt,
+          onLog: input.onLog,
         });
         lastParsedCandidate = parseJsonObject(lastRawOutput);
         const modelResult = validateModelResult(lastParsedCandidate, input.rubric, input.drawRegions);
@@ -826,18 +752,28 @@ export class GradingService {
     paperCode: string;
     startedAtMs: number;
     attempt: number;
+    onLog?: (message: string) => void | Promise<void>;
   }): Promise<string> {
     try {
-      console.info(`[grading-stream:${input.paperCode}] attempt=${input.attempt} mode=stream status=start`);
+      logLlmProgress(`grading-paper:${input.paperCode}`, {
+        attempt: input.attempt,
+        mode: 'stream',
+        status: 'start',
+      });
+      await input.onLog?.(`第 ${input.attempt} 次尝试，准备以流式模式接收批阅结果`);
       return await this.collectStreamingPaperResponseText(input);
     } catch (error) {
-      if (!this.isStreamingFallbackCandidate(error)) {
+      if (!isStreamingFallbackCandidate(error)) {
         throw error;
       }
 
-      console.warn(
-        `[grading-stream:${input.paperCode}] attempt=${input.attempt} mode=stream status=fallback reason=${this.toErrorMessage(error)}`,
-      );
+      logLlmProgress(`grading-paper:${input.paperCode}`, {
+        attempt: input.attempt,
+        mode: 'stream',
+        status: 'fallback',
+        reason: compactErrorMessage(error),
+      });
+      await input.onLog?.(`流式模式不可用，已回退普通请求：${compactErrorMessage(error)}`);
       return this.collectNonStreamingPaperResponseText(input);
     }
   }
@@ -849,6 +785,7 @@ export class GradingService {
     paperCode: string;
     startedAtMs: number;
     attempt: number;
+    onLog?: (message: string) => void | Promise<void>;
   }): Promise<string> {
     const stream = await input.client.chat.completions.create(
       {
@@ -891,21 +828,23 @@ export class GradingService {
         lastFlushedLength = rawText.length;
         lastReasoningFlushedLength = reasoningText.length;
         lastFlushAt = now;
-        this.logPaperStreamProgress(input.paperCode, {
+        await this.logPaperStreamProgress(input.paperCode, {
           attempt: input.attempt,
           rawText,
           reasoningText,
           elapsedMs: now - input.startedAtMs,
+          onLog: input.onLog,
         });
       }
     }
 
-    this.logPaperStreamProgress(input.paperCode, {
+    await this.logPaperStreamProgress(input.paperCode, {
       attempt: input.attempt,
       rawText,
       reasoningText,
       elapsedMs: Date.now() - input.startedAtMs,
       done: true,
+      onLog: input.onLog,
     });
 
     return rawText;
@@ -918,25 +857,27 @@ export class GradingService {
     paperCode: string;
     startedAtMs: number;
     attempt: number;
+    onLog?: (message: string) => void | Promise<void>;
   }): Promise<string> {
     const response = await input.client.chat.completions.create(input.requestPayload, {
       signal: input.signal,
     });
     ensureAbort(input.signal);
-    const rawText = await readChatText(response);
+    const rawText = readAssistantText(response);
     const reasoningText = extractReasoningText(response.choices[0]?.message);
-    this.logPaperStreamProgress(input.paperCode, {
+    await this.logPaperStreamProgress(input.paperCode, {
       attempt: input.attempt,
       rawText,
       reasoningText,
       elapsedMs: Date.now() - input.startedAtMs,
       done: true,
       mode: 'non-stream',
+      onLog: input.onLog,
     });
     return rawText;
   }
 
-  private logPaperStreamProgress(
+  private async logPaperStreamProgress(
     paperCode: string,
     input: {
       attempt: number;
@@ -945,37 +886,219 @@ export class GradingService {
       elapsedMs: number;
       done?: boolean;
       mode?: 'stream' | 'non-stream';
+      onLog?: (message: string) => void | Promise<void>;
     },
-  ): void {
+  ): Promise<void> {
     const rawPreview = formatStreamPreview(input.rawText);
     const reasoningPreview = formatStreamPreview(input.reasoningText);
     const status = input.done ? 'done' : 'progress';
     const mode = input.mode ?? 'stream';
-    console.info(
-      `[grading-stream:${paperCode}] attempt=${input.attempt} mode=${mode} status=${status} elapsedMs=${input.elapsedMs} textChars=${input.rawText.length} reasoningChars=${input.reasoningText.length}\ntext=${rawPreview}\nreasoning=${reasoningPreview}`,
-    );
+    logLlmProgress(`grading-paper:${paperCode}`, {
+      attempt: input.attempt,
+      mode,
+      status,
+      elapsedMs: input.elapsedMs,
+      textChars: input.rawText.length,
+      reasoningChars: input.reasoningText.length,
+      textPreview: rawPreview,
+      reasoningPreview,
+    });
+    if (input.onLog) {
+      if (status === 'done') {
+        await input.onLog(
+          mode === 'non-stream'
+            ? `已通过普通请求接收完整响应，正式输出 ${input.rawText.length} 字，推理 ${input.reasoningText.length} 字`
+            : `流式接收完成，正式输出 ${input.rawText.length} 字，推理 ${input.reasoningText.length} 字`,
+        );
+      } else if (input.rawText.trim().length > 0) {
+        await input.onLog(`正在接收结构化批阅结果，已接收 ${input.rawText.length} 字`);
+      } else if (input.reasoningText.trim().length > 0) {
+        await input.onLog(`模型正在思考，已接收 ${input.reasoningText.length} 字推理内容`);
+      }
+    }
   }
 
-  private isStreamingFallbackCandidate(error: unknown): boolean {
-    if (!(error instanceof Error)) {
-      return false;
-    }
+  private async collectRubricResponseText(input: {
+    client: OpenAI;
+    requestPayload: ChatCompletionCreateParamsNonStreaming;
+    signal?: AbortSignal;
+    startedAtMs: number;
+    onLog?: (message: string) => void | Promise<void>;
+  }): Promise<{
+    rawText: string;
+    reasoningText: string;
+    mode: 'stream' | 'non-stream';
+  }> {
+    try {
+      logLlmProgress('grading-rubric', {
+        mode: 'stream',
+        status: 'start',
+      });
+      return await this.collectStreamingRubricResponseText(input);
+    } catch (error) {
+      if (!isStreamingFallbackCandidate(error)) {
+        throw error;
+      }
 
-    const message = error.message.toLowerCase();
-    return (
-      message.includes('stream') ||
-      message.includes('sse') ||
-      message.includes('not supported') ||
-      message.includes('unexpected') ||
-      message.includes('invalid')
-    );
+      logLlmProgress('grading-rubric', {
+        mode: 'stream',
+        status: 'fallback',
+        reason: compactErrorMessage(error),
+      });
+      await input.onLog?.(`rubric 流式模式不可用，已回退普通请求：${compactErrorMessage(error)}`);
+      return this.collectNonStreamingRubricResponseText(input);
+    }
   }
 
-  private toErrorMessage(error: unknown): string {
-    if (error instanceof Error) {
-      return error.message.replace(/\s+/g, ' ').trim();
+  private async collectStreamingRubricResponseText(input: {
+    client: OpenAI;
+    requestPayload: ChatCompletionCreateParamsNonStreaming;
+    signal?: AbortSignal;
+    startedAtMs: number;
+    onLog?: (message: string) => void | Promise<void>;
+  }): Promise<{
+    rawText: string;
+    reasoningText: string;
+    mode: 'stream';
+  }> {
+    const stream = await input.client.chat.completions.create(
+      {
+        ...input.requestPayload,
+        stream: true,
+      },
+      {
+        signal: input.signal,
+      },
+    );
+
+    let rawText = '';
+    let reasoningText = '';
+    let lastFlushedLength = 0;
+    let lastReasoningFlushedLength = 0;
+    let lastFlushAt = 0;
+
+    for await (const chunk of stream) {
+      ensureAbort(input.signal);
+      const delta = chunk.choices[0]?.delta;
+      const chunkText = extractStreamingDeltaText(delta?.content);
+      const chunkReasoningText = extractReasoningText(delta);
+      if (chunkText) {
+        rawText += chunkText;
+      }
+      if (chunkReasoningText) {
+        reasoningText += chunkReasoningText;
+      }
+      if (!chunkText && !chunkReasoningText) {
+        continue;
+      }
+
+      const now = Date.now();
+      const shouldFlush =
+        rawText.length - lastFlushedLength >= 80 ||
+        reasoningText.length - lastReasoningFlushedLength >= 120 ||
+        now - lastFlushAt >= 1000;
+
+      if (shouldFlush) {
+        lastFlushedLength = rawText.length;
+        lastReasoningFlushedLength = reasoningText.length;
+        lastFlushAt = now;
+        await this.logRubricStreamProgress({
+          rawText,
+          reasoningText,
+          elapsedMs: now - input.startedAtMs,
+          onLog: input.onLog,
+        });
+      }
     }
-    return '未知错误';
+
+    await this.logRubricStreamProgress({
+      rawText,
+      reasoningText,
+      elapsedMs: Date.now() - input.startedAtMs,
+      done: true,
+      onLog: input.onLog,
+    });
+
+    return {
+      rawText,
+      reasoningText,
+      mode: 'stream',
+    };
+  }
+
+  private async collectNonStreamingRubricResponseText(input: {
+    client: OpenAI;
+    requestPayload: ChatCompletionCreateParamsNonStreaming;
+    signal?: AbortSignal;
+    startedAtMs: number;
+    onLog?: (message: string) => void | Promise<void>;
+  }): Promise<{
+    rawText: string;
+    reasoningText: string;
+    mode: 'non-stream';
+  }> {
+    const response = await input.client.chat.completions.create(input.requestPayload, {
+      signal: input.signal,
+    });
+    ensureAbort(input.signal);
+    const rawText = readAssistantText(response);
+    const reasoningText = extractReasoningText(response.choices[0]?.message);
+    await this.logRubricStreamProgress({
+      rawText,
+      reasoningText,
+      elapsedMs: Date.now() - input.startedAtMs,
+      done: true,
+      mode: 'non-stream',
+      onLog: input.onLog,
+    });
+    return {
+      rawText,
+      reasoningText,
+      mode: 'non-stream',
+    };
+  }
+
+  private async logRubricStreamProgress(input: {
+    rawText: string;
+    reasoningText: string;
+    elapsedMs: number;
+    done?: boolean;
+    mode?: 'stream' | 'non-stream';
+    onLog?: (message: string) => void | Promise<void>;
+  }): Promise<void> {
+    const mode = input.mode ?? 'stream';
+    const status = input.done ? 'done' : 'progress';
+    logLlmProgress('grading-rubric', {
+      mode,
+      status,
+      elapsedMs: input.elapsedMs,
+      textChars: input.rawText.length,
+      reasoningChars: input.reasoningText.length,
+      textPreview: formatStreamPreview(input.rawText),
+      reasoningPreview: formatStreamPreview(input.reasoningText),
+    });
+
+    if (!input.onLog) {
+      return;
+    }
+
+    if (status === 'done') {
+      await input.onLog(
+        mode === 'non-stream'
+          ? `rubric 普通请求已完成，正式输出 ${input.rawText.length} 字，推理 ${input.reasoningText.length} 字`
+          : `rubric 流式接收完成，正式输出 ${input.rawText.length} 字，推理 ${input.reasoningText.length} 字`,
+      );
+      return;
+    }
+
+    if (input.rawText.trim().length > 0) {
+      await input.onLog(`正在接收 rubric JSON，已接收 ${input.rawText.length} 字`);
+      return;
+    }
+
+    if (input.reasoningText.trim().length > 0) {
+      await input.onLog(`模型正在思考 rubric，已接收 ${input.reasoningText.length} 字推理内容`);
+    }
   }
 
   async prepareProjectGrading(projectId: string) {

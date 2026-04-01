@@ -49,6 +49,7 @@ export const tasksTable = sqliteTable('tasks', {
   abortable: integer('abortable', { mode: 'boolean' }).notNull(),
   currentPaperLabel: text('current_paper_label'),
   summary: text('summary').notNull(),
+  runtimeLogsJson: text('runtime_logs_json').notNull().default('[]'),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
 });

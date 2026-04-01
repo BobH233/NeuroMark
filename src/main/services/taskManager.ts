@@ -16,6 +16,23 @@ import { ProjectService } from './projectService';
 
 type TaskListener = (tasks: BackgroundJob[]) => void;
 
+function extractRuntimeLogs(runtimeLogsJson: string | null | undefined): string[] {
+  if (!runtimeLogsJson) {
+    return [];
+  }
+
+  try {
+    const parsed = JSON.parse(runtimeLogsJson) as unknown;
+    return Array.isArray(parsed) ? parsed.map((item) => String(item ?? '')) : [];
+  } catch {
+    return [];
+  }
+}
+
+function createRuntimeLog(message: string): string {
+  return `[${new Date().toLocaleTimeString('zh-CN', { hour12: false })}] ${message}`;
+}
+
 function toJob(row: typeof tasksTable.$inferSelect): BackgroundJob {
   return {
     id: row.id,
@@ -35,6 +52,7 @@ function toJob(row: typeof tasksTable.$inferSelect): BackgroundJob {
     abortable: row.abortable,
     currentPaperLabel: row.currentPaperLabel ?? undefined,
     summary: row.summary,
+    runtimeLogs: extractRuntimeLogs(row.runtimeLogsJson),
   };
 }
 
@@ -175,6 +193,7 @@ export class TaskManager {
         abortable: input.abortable ?? false,
         currentPaperLabel: input.currentPaperLabel ?? null,
         summary: input.summary,
+        runtimeLogsJson: JSON.stringify([]),
         createdAt: now,
         updatedAt: now,
       })
@@ -240,6 +259,74 @@ export class TaskManager {
             ? current.currentPaperLabel
             : patch.currentPaperLabel,
         summary: patch.summary ?? current.summary,
+        updatedAt: now,
+      })
+      .where(eq(tasksTable.id, jobId))
+      .run();
+
+    await this.emit();
+    const updated = db.select().from(tasksTable).where(eq(tasksTable.id, jobId)).get();
+    return toJob(updated!);
+  }
+
+  async appendJobLog(
+    jobId: string,
+    message: string,
+    patch?: Partial<
+      Pick<
+        BackgroundJob,
+        | 'status'
+        | 'progress'
+        | 'speed'
+        | 'eta'
+        | 'abortable'
+        | 'currentPaperLabel'
+        | 'summary'
+        | 'startedAt'
+        | 'finishedAt'
+      >
+    >,
+  ): Promise<BackgroundJob> {
+    const db = getDatabase();
+    const current = db.select().from(tasksTable).where(eq(tasksTable.id, jobId)).get();
+
+    if (!current) {
+      throw new Error('未找到对应的后台任务。');
+    }
+
+    const logs = [...extractRuntimeLogs(current.runtimeLogsJson), createRuntimeLog(message)].slice(-120);
+    const now = new Date().toISOString();
+    const nextStatus = patch?.status ?? (current.status as JobStatus);
+    const nextProgress =
+      patch?.progress ??
+      (this.isTerminalStatus(nextStatus) ? 1 : current.progress);
+    const nextStartedAt =
+      patch?.startedAt !== undefined
+        ? patch.startedAt
+        : current.startedAt ?? (nextStatus === 'running' ? now : null);
+    const nextFinishedAt =
+      patch?.finishedAt !== undefined
+        ? patch.finishedAt
+        : this.isTerminalStatus(nextStatus)
+          ? current.finishedAt ?? now
+          : null;
+
+    db.update(tasksTable)
+      .set({
+        status: nextStatus,
+        progress: nextProgress,
+        speed: patch?.speed ?? current.speed,
+        eta: patch?.eta === undefined ? current.eta : patch.eta,
+        startedAt: nextStartedAt,
+        finishedAt: nextFinishedAt,
+        archivedAt: current.archivedAt,
+        abortable: patch?.abortable ?? current.abortable,
+        currentPaperLabel:
+          patch?.currentPaperLabel === undefined
+            ? current.currentPaperLabel
+            : patch.currentPaperLabel,
+        summary: patch?.summary ?? current.summary,
+        runtimeLogsJson: JSON.stringify(logs),
         updatedAt: now,
       })
       .where(eq(tasksTable.id, jobId))
@@ -550,6 +637,7 @@ export class TaskManager {
           pendingPapers.length === 0
             ? '没有需要批阅的新答卷'
             : `正在批量批阅扫描答卷，共 ${pendingPapers.length} 份`,
+        runtimeLogsJson: JSON.stringify([]),
         createdAt: now,
         updatedAt: now,
       })
@@ -666,8 +754,20 @@ export class TaskManager {
     const startedAt = Date.now();
 
     try {
+      await this.appendJobLog(jobId, '开始加载项目配置与参考答案', {
+        summary: '正在加载项目配置与参考答案',
+        currentPaperLabel: '准备批阅',
+      });
       const { project, referenceAnswerMarkdown, settings } =
         await this.gradingService.prepareProjectGrading(projectId);
+      await this.appendJobLog(
+        jobId,
+        `项目配置已就绪，模型=${settings.model}，并行数=${project.settings.gradingConcurrency}`,
+        {
+          summary: '正在生成评分 rubric',
+          currentPaperLabel: '编译 rubric',
+        },
+      );
       const rubric = await this.gradingService.getCompiledRubric({
         projectId,
         projectName: project.name,
@@ -676,6 +776,13 @@ export class TaskManager {
         referenceAnswerMarkdown,
         settings,
         signal: controller.signal,
+        onLog: async (message) => {
+          await this.appendJobLog(jobId, `[rubric] ${message}`);
+        },
+      });
+      await this.appendJobLog(jobId, `评分 rubric 已就绪，共 ${rubric.questions.length} 道题`, {
+        summary: 'rubric 已就绪，开始批阅答卷',
+        currentPaperLabel: '等待分发答卷',
       });
 
       const papers = await this.projects.listProjectPapers(projectId);
@@ -736,6 +843,9 @@ export class TaskManager {
           await updateProgress();
 
           try {
+            await this.appendJobLog(jobId, `[${paper.paperCode}] 已开始请求模型批阅`, {
+              currentPaperLabel: paper.paperCode,
+            });
             const graded = await this.gradingService.gradePaper({
               projectName: project.name,
               paper,
@@ -745,6 +855,9 @@ export class TaskManager {
               drawRegions: project.settings.drawRegions,
               settings,
               signal: controller.signal,
+              onLog: async (message) => {
+                await this.appendJobLog(jobId, `[${paper.paperCode}] ${message}`);
+              },
             });
             if (controller.signal.aborted) {
               await this.projects.clearProcessingResult(projectId, paper.paperCode);
@@ -757,6 +870,7 @@ export class TaskManager {
               finalResult: graded.finalResult,
             });
             succeededCount += 1;
+            await this.appendJobLog(jobId, `[${paper.paperCode}] 批阅完成，总分 ${graded.modelResult.totalScore}`);
           } catch (error) {
             if (controller.signal.aborted) {
               await this.projects.clearProcessingResult(projectId, paper.paperCode);
@@ -770,6 +884,10 @@ export class TaskManager {
               error instanceof Error ? error.message : '模型批阅失败',
             );
             await this.projects.recomputeStats(projectId);
+            await this.appendJobLog(
+              jobId,
+              `[${paper.paperCode}] 批阅失败：${error instanceof Error ? error.message : '模型批阅失败'}`,
+            );
           } finally {
             activeLabels.delete(paper.paperCode);
             settledCount += 1;

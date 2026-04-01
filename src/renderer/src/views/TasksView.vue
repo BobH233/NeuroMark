@@ -121,6 +121,12 @@ function getTaskEtaLabel(task: BackgroundJob) {
   return task.status === 'queued' ? '排队中' : '等待首套完成';
 }
 
+function getTaskRuntimeLogs(task: BackgroundJob) {
+  return isTaskExpanded(task.id)
+    ? task.runtimeLogs
+    : task.runtimeLogs.slice(-4);
+}
+
 function isTaskExpanded(taskId: string) {
   return expandedTaskIds.value.has(taskId);
 }
@@ -298,6 +304,20 @@ async function archiveVisibleTasks() {
               <p class="task-summary">
                 {{ task.summary }}
               </p>
+              <template v-if="getTaskRuntimeLogs(task).length">
+                <div class="task-list-meta-label">
+                  最近日志
+                </div>
+                <div class="task-log-list">
+                  <div
+                    v-for="line in getTaskRuntimeLogs(task)"
+                    :key="`${task.id}-${line}`"
+                    class="task-log-line"
+                  >
+                    {{ line }}
+                  </div>
+                </div>
+              </template>
             </div>
           </div>
 

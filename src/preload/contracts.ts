@@ -164,6 +164,7 @@ export interface BackgroundJob {
   abortable: boolean;
   currentPaperLabel?: string;
   summary: string;
+  runtimeLogs: string[];
 }
 
 export interface GlobalLlmSettings {

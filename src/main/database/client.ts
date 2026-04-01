@@ -75,6 +75,7 @@ function ensureSchema(connection: Database.Database): void {
       abortable INTEGER NOT NULL,
       current_paper_label TEXT,
       summary TEXT NOT NULL,
+      runtime_logs_json TEXT NOT NULL DEFAULT '[]',
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
@@ -144,6 +145,12 @@ function ensureSchema(connection: Database.Database): void {
     'tasks',
     'finished_at',
     'finished_at TEXT',
+  );
+  ensureColumn(
+    connection,
+    'tasks',
+    'runtime_logs_json',
+    "runtime_logs_json TEXT NOT NULL DEFAULT '[]'",
   );
   ensureColumn(
     connection,

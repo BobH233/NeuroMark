@@ -21,6 +21,12 @@ import { buildAnswerGenerationUserPrompt } from '@main/prompts/answer-generator/
 import { getDatabase } from '@main/database/client';
 import { answerDraftsTable, promptPresetsTable, tasksTable } from '@main/database/schema';
 import { logLlmRequest, logLlmResult } from './llmRequestLogger';
+import {
+  readAssistantText,
+  extractReasoningText,
+  extractStreamingDeltaText,
+  isStreamingFallbackCandidate,
+} from './llmStreamUtils';
 import { SettingsService } from './settingsService';
 import { TaskManager } from './taskManager';
 
@@ -172,85 +178,6 @@ async function toModelImageUrl(source: string): Promise<string> {
   const jpegBuffer = await normalizeImageToJpegBuffer(source);
   const base64 = jpegBuffer.toString('base64');
   return `data:image/jpeg;base64,${base64}`;
-}
-
-function extractCompletionText(content: unknown): string {
-  if (typeof content === 'string') {
-    return content;
-  }
-
-  if (Array.isArray(content)) {
-    return content
-      .map((part) => {
-        if (part && typeof part === 'object' && 'text' in part) {
-          return String(part.text ?? '');
-        }
-        return '';
-      })
-      .join('\n');
-  }
-
-  return '';
-}
-
-function extractStreamingDeltaText(content: unknown): string {
-  if (typeof content === 'string') {
-    return content;
-  }
-
-  if (Array.isArray(content)) {
-    return content
-      .map((part) => {
-        if (part && typeof part === 'object' && 'text' in part) {
-          return String(part.text ?? '');
-        }
-        return '';
-      })
-      .join('');
-  }
-
-  return '';
-}
-
-function extractReasoningText(value: unknown): string {
-  if (typeof value === 'string') {
-    return value;
-  }
-
-  if (Array.isArray(value)) {
-    return value.map((item) => extractReasoningText(item)).join('');
-  }
-
-  if (!value || typeof value !== 'object') {
-    return '';
-  }
-
-  const candidate = value as Record<string, unknown>;
-  const directKeys = [
-    'reasoning',
-    'reasoning_content',
-    'reasoningContent',
-    'thinking',
-    'thinking_content',
-    'thinkingContent',
-  ];
-
-  for (const key of directKeys) {
-    const text = extractReasoningText(candidate[key]);
-    if (text) {
-      return text;
-    }
-  }
-
-  if ('text' in candidate && typeof candidate.text === 'string') {
-    return candidate.text;
-  }
-
-  if ('content' in candidate) {
-    return extractReasoningText(candidate.content);
-  }
-
-  return '';
 }
 
 function findFirstJsonObject(rawText: string): string {
@@ -1073,7 +1000,7 @@ export class AnswerGeneratorService {
       });
       return await this.collectStreamingResponseText(input);
     } catch (error) {
-      if (!this.isStreamingFallbackCandidate(error)) {
+      if (!isStreamingFallbackCandidate(error)) {
         throw error;
       }
 
@@ -1169,7 +1096,7 @@ export class AnswerGeneratorService {
     const completion = await input.client.chat.completions.create(input.requestPayload, {
       signal: input.signal,
     });
-    const rawText = extractCompletionText(completion.choices[0]?.message?.content);
+    const rawText = readAssistantText(completion);
     const reasoningText = extractReasoningText(completion.choices[0]?.message);
 
     await this.flushStreamingPreview(input.draftId, input.taskId, {
@@ -1253,21 +1180,6 @@ export class AnswerGeneratorService {
       .get();
 
     return current?.generationReasoningText ?? '';
-  }
-
-  private isStreamingFallbackCandidate(error: unknown): boolean {
-    if (!(error instanceof Error)) {
-      return false;
-    }
-
-    const message = error.message.toLowerCase();
-    return (
-      message.includes('stream') ||
-      message.includes('sse') ||
-      message.includes('not supported') ||
-      message.includes('unexpected') ||
-      message.includes('invalid')
-    );
   }
 
   private async hasDraft(draftId: string): Promise<boolean> {
