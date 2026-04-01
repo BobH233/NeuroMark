@@ -23,11 +23,40 @@ const buildStatePath = path.join(outputDir, 'build-state.json');
 const lockDirPath = path.join(outputDir, '.build-lock');
 const lockMetadataPath = path.join(lockDirPath, 'owner.json');
 
+function resolveNodeHeadersDir() {
+  const candidates = [
+    process.env.npm_config_nodedir,
+    path.dirname(process.execPath),
+    path.dirname(path.dirname(process.execPath)),
+    path.dirname(path.dirname(path.dirname(process.execPath))),
+  ].filter(Boolean);
+
+  for (const candidate of candidates) {
+    const normalizedCandidate = path.resolve(candidate);
+    const headerCandidates = [
+      path.join(normalizedCandidate, 'include', 'node', 'node_api.h'),
+      path.join(normalizedCandidate, 'node_api.h'),
+    ];
+
+    if (headerCandidates.some((headerPath) => existsSync(headerPath))) {
+      return normalizedCandidate;
+    }
+  }
+
+  return null;
+}
+
 function run(command, args) {
+  const env = { ...process.env };
+  const nodeHeadersDir = resolveNodeHeadersDir();
+  if (nodeHeadersDir && !env.npm_config_nodedir) {
+    env.npm_config_nodedir = nodeHeadersDir;
+  }
+
   const result = spawnSync(command, args, {
     cwd: projectRoot,
     stdio: 'inherit',
-    env: process.env,
+    env,
   });
 
   if (result.status !== 0) {

@@ -25,7 +25,10 @@
     "education",
     "grading"
   ],
-  "author": "Codex",
+  "author": {
+    "name": "BobH",
+    "email": "admin@bit-helper.cn"
+  },
   "license": "MIT",
   "dependencies": {
     "@vueuse/core": "^14.2.1",
