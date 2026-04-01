@@ -12,6 +12,7 @@ import type {
   ProjectSettings,
   ProjectStats,
   ResultRecord,
+  ProjectRubricDebug,
 } from '@preload/contracts';
 import { getDatabase } from '@main/database/client';
 import {
@@ -176,6 +177,8 @@ async function listSortedSubDirectories(targetDir: string): Promise<string[]> {
 }
 
 function normalizeResultPayload(payload: unknown): {
+  status: ResultRecord['status'];
+  errorMessage?: string | null;
   modelResult: ModelResult;
   finalResult: FinalResult;
   referenceAnswerVersion: number;
@@ -185,6 +188,12 @@ function normalizeResultPayload(payload: unknown): {
   }
 
   const candidate = payload as Record<string, unknown>;
+  const status =
+    candidate.status === 'processing' || candidate.status === 'failed' || candidate.status === 'completed'
+      ? candidate.status
+      : 'completed';
+  const errorMessage =
+    typeof candidate.errorMessage === 'string' ? candidate.errorMessage : null;
   if (candidate.modelResult && candidate.finalResult) {
     const referenceAnswerVersion =
       typeof candidate.referenceAnswerVersion === 'number' &&
@@ -193,6 +202,8 @@ function normalizeResultPayload(payload: unknown): {
         ? Math.trunc(candidate.referenceAnswerVersion)
         : 1;
     return {
+      status,
+      errorMessage,
       modelResult: candidate.modelResult as ModelResult,
       finalResult: candidate.finalResult as FinalResult,
       referenceAnswerVersion,
@@ -220,9 +231,49 @@ function normalizeResultPayload(payload: unknown): {
         score: Number(item.score ?? 0),
         reasoning: String(item.reasoning ?? ''),
         issues: Array.isArray(item.issues) ? item.issues.map((issue) => String(issue)) : [],
+        scoreBreakdown: Array.isArray(item.scoreBreakdown)
+          ? item.scoreBreakdown.map((point: Record<string, any>) => ({
+              criterionId: String(point.criterionId ?? ''),
+              criterion: String(point.criterion ?? ''),
+              maxScore: Number(point.maxScore ?? 0),
+              score: Number(point.score ?? 0),
+              verdict:
+                point.verdict === 'earned' ||
+                point.verdict === 'partial' ||
+                point.verdict === 'missed' ||
+                point.verdict === 'unclear'
+                  ? point.verdict
+                  : 'partial',
+              evidence: String(point.evidence ?? ''),
+            }))
+          : [],
       })),
       totalScore: Number(totalScore),
       overallComment: String(overallComment),
+      overallAdvice: {
+        summary: String(legacy.overallAdvice?.summary ?? legacy.overall_advice?.summary ?? ''),
+        strengths: Array.isArray(legacy.overallAdvice?.strengths ?? legacy.overall_advice?.strengths)
+          ? (legacy.overallAdvice?.strengths ?? legacy.overall_advice?.strengths).map((item: unknown) => String(item))
+          : [],
+        priorityKnowledgePoints: Array.isArray(
+          legacy.overallAdvice?.priorityKnowledgePoints ?? legacy.overall_advice?.priority_knowledge_points,
+        )
+          ? (
+              legacy.overallAdvice?.priorityKnowledgePoints ??
+              legacy.overall_advice?.priority_knowledge_points
+            ).map((item: unknown) => String(item))
+          : [],
+        attentionPoints: Array.isArray(
+          legacy.overallAdvice?.attentionPoints ?? legacy.overall_advice?.attention_points,
+        )
+          ? (legacy.overallAdvice?.attentionPoints ?? legacy.overall_advice?.attention_points).map((item: unknown) =>
+              String(item),
+            )
+          : [],
+        encouragement: String(
+          legacy.overallAdvice?.encouragement ?? legacy.overall_advice?.encouragement ?? '',
+        ),
+      },
       questionRegions: Array.isArray(questionRegions)
         ? questionRegions.map((item: Record<string, any>) => ({
             questionId: item.questionId ?? item.question_id ?? '',
@@ -236,6 +287,8 @@ function normalizeResultPayload(payload: unknown): {
     };
 
     return {
+      status: 'completed',
+      errorMessage: null,
       modelResult,
       finalResult: {
         ...modelResult,
@@ -249,6 +302,17 @@ function normalizeResultPayload(payload: unknown): {
 
 function getFileNameWithoutExtension(filePath: string): string {
   return path.basename(filePath, path.extname(filePath));
+}
+
+function getResultFilePath(rootPath: string, paperId: string): string {
+  return path.join(getProjectStructure(rootPath).resultsDir, `${paperId}.json`);
+}
+
+interface PaperGradingSnapshot {
+  status: PaperRecord['gradingStatus'];
+  referenceAnswerVersion?: number;
+  updatedAt?: string;
+  errorMessage?: string | null;
 }
 
 function getPaperPageAssetPaths(
@@ -318,6 +382,64 @@ function inferScanStatus(pages: PaperPage[]): PaperRecord['scanStatus'] {
 export class ProjectService {
   async ensureSeedData(): Promise<void> {
     return;
+  }
+
+  async getReferenceAnswerMarkdown(projectId: string): Promise<string> {
+    const project = await this.getProjectById(projectId);
+    const structure = getProjectStructure(project.rootPath);
+    if (!(await fs.pathExists(structure.referenceAnswerPath))) {
+      return '';
+    }
+    return fs.readFile(structure.referenceAnswerPath, 'utf-8');
+  }
+
+  async getProjectRubricDebug(projectId: string): Promise<ProjectRubricDebug> {
+    const project = await this.getProjectById(projectId);
+    const rubricPath = path.join(
+      project.rootPath,
+      'reference-answer',
+      `rubric-v${project.referenceAnswerVersion}.json`,
+    );
+    const exists = await fs.pathExists(rubricPath);
+
+    if (!exists) {
+      return {
+        projectId,
+        referenceAnswerVersion: project.referenceAnswerVersion,
+        rubricPath,
+        exists: false,
+        updatedAt: null,
+        rubricJson: '',
+        rubricData: null,
+      };
+    }
+
+    const [rubricJson, stat] = await Promise.all([
+      fs.readFile(rubricPath, 'utf-8'),
+      fs.stat(rubricPath),
+    ]);
+
+    try {
+      return {
+        projectId,
+        referenceAnswerVersion: project.referenceAnswerVersion,
+        rubricPath,
+        exists: true,
+        updatedAt: stat.mtime.toISOString(),
+        rubricJson,
+        rubricData: JSON.parse(rubricJson) as unknown,
+      };
+    } catch {
+      return {
+        projectId,
+        referenceAnswerVersion: project.referenceAnswerVersion,
+        rubricPath,
+        exists: true,
+        updatedAt: stat.mtime.toISOString(),
+        rubricJson,
+        rubricData: null,
+      };
+    }
   }
 
   async listProjects(): Promise<ProjectMeta[]> {
@@ -522,10 +644,8 @@ export class ProjectService {
 
   async getProjectDetail(projectId: string): Promise<ProjectDetail> {
     const project = await this.recomputeStats(projectId);
-    const structure = getProjectStructure(project.rootPath);
-    const referenceAnswerMarkdown = (await fs.pathExists(structure.referenceAnswerPath))
-      ? await fs.readFile(structure.referenceAnswerPath, 'utf-8')
-      : '# 尚未上传参考答案';
+    const referenceAnswerMarkdown =
+      (await this.getReferenceAnswerMarkdown(projectId)) || '# 尚未上传参考答案';
 
     const originals = await this.listProjectPapers(projectId);
     const results = await this.listResults(projectId);
@@ -572,8 +692,6 @@ export class ProjectService {
     const project = await this.getProjectById(projectId);
     const structure = getProjectStructure(project.rootPath);
     const paperCodes = await listSortedSubDirectories(structure.originalsDir);
-    const results = await this.listResults(projectId);
-    const gradedPaperIds = new Set(results.map((item) => item.paperId));
     const papers: PaperRecord[] = [];
 
     for (const paperCode of paperCodes) {
@@ -607,6 +725,7 @@ export class ProjectService {
         });
       }
 
+      const gradingSnapshot = await this.getPaperGradingSnapshot(projectId, paperCode);
       papers.push({
         id: paperCode,
         projectId,
@@ -614,7 +733,10 @@ export class ProjectService {
         pageCount: pages.length,
         originalPages: pages,
         scanStatus: inferScanStatus(pages),
-        gradingStatus: gradedPaperIds.has(paperCode) ? 'completed' : 'pending',
+        gradingStatus: gradingSnapshot.status,
+        gradingReferenceAnswerVersion: gradingSnapshot.referenceAnswerVersion,
+        gradingUpdatedAt: gradingSnapshot.updatedAt,
+        gradingError: gradingSnapshot.errorMessage ?? null,
       });
     }
 
@@ -753,7 +875,7 @@ export class ProjectService {
       try {
         const payload = await fs.readJson(filePath);
         const normalized = normalizeResultPayload(payload);
-        if (!normalized) {
+        if (!normalized || normalized.status !== 'completed') {
           continue;
         }
 
@@ -764,6 +886,8 @@ export class ProjectService {
           projectId,
           paperId,
           filePath,
+          status: normalized.status,
+          errorMessage: normalized.errorMessage ?? null,
           referenceAnswerVersion: normalized.referenceAnswerVersion,
           modelResult: normalized.modelResult,
           finalResult: normalized.finalResult,
@@ -777,9 +901,170 @@ export class ProjectService {
     return records;
   }
 
+  async getPaperGradingSnapshot(projectId: string, paperId: string): Promise<PaperGradingSnapshot> {
+    const project = await this.getProjectById(projectId);
+    const filePath = getResultFilePath(project.rootPath, paperId);
+    if (!(await fs.pathExists(filePath))) {
+      return {
+        status: 'pending',
+      };
+    }
+
+    try {
+      const payload = (await fs.readJson(filePath)) as Record<string, unknown>;
+      const stat = await fs.stat(filePath);
+      if (payload.status === 'failed' || payload.status === 'processing' || payload.status === 'completed') {
+        return {
+          status: payload.status,
+          referenceAnswerVersion:
+            typeof payload.referenceAnswerVersion === 'number'
+              ? Math.trunc(payload.referenceAnswerVersion)
+              : undefined,
+          updatedAt:
+            typeof payload.updatedAt === 'string' && payload.updatedAt
+              ? payload.updatedAt
+              : stat.mtime.toISOString(),
+          errorMessage:
+            typeof payload.errorMessage === 'string' ? payload.errorMessage : null,
+        };
+      }
+
+      const normalized = normalizeResultPayload(payload);
+      if (normalized) {
+        return {
+          status: normalized.status,
+          referenceAnswerVersion: normalized.referenceAnswerVersion,
+          updatedAt: stat.mtime.toISOString(),
+          errorMessage: normalized.errorMessage ?? null,
+        };
+      }
+    } catch {
+      return {
+        status: 'failed',
+        errorMessage: '结果文件损坏，无法读取。',
+      };
+    }
+
+    return {
+      status: 'pending',
+    };
+  }
+
   async getResult(projectId: string, paperId: string): Promise<ResultRecord | null> {
     const results = await this.listResults(projectId);
     return results.find((item) => item.paperId === paperId) ?? null;
+  }
+
+  async writeProcessingResult(
+    projectId: string,
+    paperId: string,
+    referenceAnswerVersion: number,
+  ): Promise<void> {
+    const project = await this.getProjectById(projectId);
+    const filePath = getResultFilePath(project.rootPath, paperId);
+    await fs.ensureDir(path.dirname(filePath));
+    await fs.writeJson(
+      filePath,
+      {
+        status: 'processing',
+        errorMessage: null,
+        referenceAnswerVersion,
+        updatedAt: new Date().toISOString(),
+      },
+      { spaces: 2 },
+    );
+  }
+
+  async writeFailedResult(
+    projectId: string,
+    paperId: string,
+    referenceAnswerVersion: number,
+    errorMessage: string,
+  ): Promise<void> {
+    const project = await this.getProjectById(projectId);
+    const filePath = getResultFilePath(project.rootPath, paperId);
+    await fs.ensureDir(path.dirname(filePath));
+    await fs.writeJson(
+      filePath,
+      {
+        status: 'failed',
+        errorMessage,
+        referenceAnswerVersion,
+        updatedAt: new Date().toISOString(),
+      },
+      { spaces: 2 },
+    );
+  }
+
+  async saveComputedResult(
+    projectId: string,
+    paperId: string,
+    payload: {
+      referenceAnswerVersion: number;
+      modelResult: ModelResult;
+      finalResult: FinalResult;
+    },
+  ): Promise<ResultRecord> {
+    const project = await this.getProjectById(projectId);
+    const filePath = getResultFilePath(project.rootPath, paperId);
+    await fs.ensureDir(path.dirname(filePath));
+    await fs.writeJson(
+      filePath,
+      {
+        status: 'completed',
+        errorMessage: null,
+        referenceAnswerVersion: payload.referenceAnswerVersion,
+        modelResult: payload.modelResult,
+        finalResult: payload.finalResult,
+        updatedAt: new Date().toISOString(),
+      },
+      { spaces: 2 },
+    );
+
+    await this.recomputeStats(projectId);
+    return (await this.getResult(projectId, paperId))!;
+  }
+
+  async clearProcessingResult(projectId: string, paperId: string): Promise<void> {
+    const project = await this.getProjectById(projectId);
+    const filePath = getResultFilePath(project.rootPath, paperId);
+    if (!(await fs.pathExists(filePath))) {
+      return;
+    }
+
+    try {
+      const payload = (await fs.readJson(filePath)) as Record<string, unknown>;
+      if (payload.status === 'processing') {
+        await fs.remove(filePath);
+      }
+    } catch {
+      await fs.remove(filePath);
+    }
+  }
+
+  async resetProcessingResults(projectId: string): Promise<void> {
+    const project = await this.getProjectById(projectId);
+    const structure = getProjectStructure(project.rootPath);
+    if (!(await fs.pathExists(structure.resultsDir))) {
+      return;
+    }
+
+    const entries = await fs.readdir(structure.resultsDir, { withFileTypes: true });
+    await Promise.all(
+      entries
+        .filter((entry) => entry.isFile() && entry.name.toLowerCase().endsWith('.json'))
+        .map(async (entry) => {
+          const filePath = path.join(structure.resultsDir, entry.name);
+          try {
+            const payload = (await fs.readJson(filePath)) as Record<string, unknown>;
+            if (payload.status === 'processing') {
+              await fs.remove(filePath);
+            }
+          } catch {
+            return;
+          }
+        }),
+    );
   }
 
   async saveFinalResult(
@@ -793,15 +1078,21 @@ export class ProjectService {
     if (!current) {
       throw new Error('未找到待保存的评分结果。');
     }
+    if (!current.modelResult) {
+      throw new Error('当前结果缺少模型原始评分数据，无法保存人工修订。');
+    }
 
     const filePath = path.join(structure.resultsDir, `${paperId}.json`);
     await fs.ensureDir(path.dirname(filePath));
     await fs.writeJson(
       filePath,
       {
+        status: 'completed',
+        errorMessage: null,
         referenceAnswerVersion: current.referenceAnswerVersion,
         modelResult: current.modelResult,
         finalResult,
+        updatedAt: new Date().toISOString(),
       },
       { spaces: 2 },
     );
@@ -837,7 +1128,7 @@ export class ProjectService {
     const papers = await this.listProjectPapers(projectId);
     const results = await this.listResults(projectId);
     const scoreList = results.map(
-      (item) => item.finalResult.manualTotalScore ?? item.finalResult.totalScore,
+      (item) => item.finalResult!.manualTotalScore ?? item.finalResult!.totalScore,
     );
     const averageScore =
       scoreList.length > 0
@@ -913,9 +1204,26 @@ export class ProjectService {
             reasoning:
               '### 说明\n当前阶段已接入真实项目文件读写，但批阅引擎尚未替换为真实 LLM 调用。\n',
             issues: [],
+            scoreBreakdown: [
+              {
+                criterionId: '1',
+                criterion: '占位采分点',
+                maxScore: 25,
+                score,
+                verdict: score >= 20 ? 'earned' : 'partial',
+                evidence: '占位结果',
+              },
+            ],
           },
         ],
         totalScore: score,
+        overallAdvice: {
+          summary: '当前为占位批阅结果，尚未生成真实的整卷建议。',
+          strengths: ['项目文件读写链路正常'],
+          priorityKnowledgePoints: ['等待接入真实 LLM 阅卷建议'],
+          attentionPoints: ['当前建议为占位内容，不应作为教学依据'],
+          encouragement: '真实批阅接入后，这里会展示面向学生的总体建议。',
+        },
         overallComment:
           '## 说明\n当前结果由占位批阅任务生成。下一阶段会替换为真实批阅输出。',
       };
@@ -927,9 +1235,12 @@ export class ProjectService {
       await fs.writeJson(
         filePath,
         {
+          status: 'completed',
+          errorMessage: null,
           referenceAnswerVersion: project.referenceAnswerVersion,
           modelResult,
           finalResult,
+          updatedAt: new Date().toISOString(),
         },
         { spaces: 2 },
       );

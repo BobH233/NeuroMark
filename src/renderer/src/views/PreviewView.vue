@@ -760,6 +760,32 @@ async function saveCurrentImage() {
   background: linear-gradient(180deg, rgba(13, 13, 13, 0.96), rgba(24, 24, 24, 0.9));
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
   overflow-y: auto;
+  color-scheme: dark;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.24) rgba(255, 255, 255, 0.06);
+  scrollbar-gutter: stable;
+}
+
+.preview-rail::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.preview-rail::-webkit-scrollbar-track {
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.preview-rail::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.24);
+  background-clip: padding-box;
+}
+
+.preview-rail::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.34);
+  background-clip: padding-box;
 }
 
 .preview-thumb {

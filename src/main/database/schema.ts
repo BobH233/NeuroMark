@@ -60,6 +60,8 @@ export const settingsTable = sqliteTable('settings', {
   apiKeyEncrypted: text('api_key_encrypted').notNull(),
   timeoutMs: integer('timeout_ms').notNull(),
   reasoningEffort: text('reasoning_effort').notNull(),
+  answerGenerationTemperature: real('answer_generation_temperature').notNull().default(0.2),
+  gradingTemperature: real('grading_temperature').notNull().default(0),
   storageMode: text('storage_mode').notNull(),
 });
 

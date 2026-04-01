@@ -25,6 +25,8 @@ const form = reactive({
   apiKey: '',
   timeoutMs: 180000,
   reasoningEffort: 'medium' as LlmReasoningEffort,
+  answerGenerationTemperature: 0.2,
+  gradingTemperature: 0,
 });
 
 const reasoningEffortOptions = [
@@ -57,6 +59,8 @@ onMounted(async () => {
     form.apiKey = settingsStore.settings.apiKey;
     form.timeoutMs = settingsStore.settings.timeoutMs;
     form.reasoningEffort = settingsStore.settings.reasoningEffort;
+    form.answerGenerationTemperature = settingsStore.settings.answerGenerationTemperature;
+    form.gradingTemperature = settingsStore.settings.gradingTemperature;
   }
 });
 
@@ -178,6 +182,24 @@ async function deletePreset(presetId: string) {
             v-model:value="form.reasoningEffort"
             :options="reasoningEffortOptions"
             placeholder="选择模型思考强度"
+          />
+        </n-form-item>
+        <n-form-item label="参考答案生成温度">
+          <n-input-number
+            v-model:value="form.answerGenerationTemperature"
+            :min="0"
+            :max="2"
+            :step="0.1"
+            :precision="2"
+          />
+        </n-form-item>
+        <n-form-item label="批阅温度">
+          <n-input-number
+            v-model:value="form.gradingTemperature"
+            :min="0"
+            :max="2"
+            :step="0.1"
+            :precision="2"
           />
         </n-form-item>
 

@@ -26,6 +26,9 @@ export function registerProjectIpc(services: ServiceBundle): void {
   ipcMain.handle('projects:get-detail', (_event, projectId: string) =>
     services.projects.getProjectDetail(projectId),
   );
+  ipcMain.handle('projects:get-rubric-debug', (_event, projectId: string) =>
+    services.projects.getProjectRubricDebug(projectId),
+  );
   ipcMain.handle('projects:delete', (_event, projectId: string) =>
     services.tasks.deleteProject(projectId),
   );

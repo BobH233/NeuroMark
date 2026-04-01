@@ -1,44 +1,42 @@
+<script lang="ts">
+import katex from 'katex';
+import { config } from 'md-editor-v3';
+
+config({
+  editorExtensions: {
+    katex: {
+      instance: katex,
+    },
+  },
+});
+</script>
+
 <script setup lang="ts">
-import { computed } from 'vue';
-import MarkdownIt from 'markdown-it';
-import markdownItKatex from 'markdown-it-katex';
-import hljs from 'highlight.js';
 import DOMPurify from 'dompurify';
+import { MdPreview } from 'md-editor-v3';
 
 const props = defineProps<{
   source: string;
 }>();
 
-function escapeHtml(value: string): string {
-  return value
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll("'", '&#39;');
+const previewId = `markdown-preview-${Math.random().toString(36).slice(2, 10)}`;
+
+function sanitize(html: string) {
+  return DOMPurify.sanitize(html);
 }
-
-const md: MarkdownIt = new MarkdownIt({
-  html: false,
-  linkify: true,
-  typographer: true,
-  highlight(code, language): string {
-    if (language && hljs.getLanguage(language)) {
-      return `<pre class="hljs"><code>${hljs.highlight(code, {
-        language,
-      }).value}</code></pre>`;
-    }
-    return `<pre class="hljs"><code>${escapeHtml(code)}</code></pre>`;
-  },
-});
-
-md.use(markdownItKatex);
-
-const html = computed(() =>
-  DOMPurify.sanitize(md.render(props.source || '')),
-);
 </script>
 
 <template>
-  <div class="markdown-body" v-html="html" />
+  <MdPreview
+    :editor-id="previewId"
+    class="markdown-preview"
+    theme="light"
+    preview-theme="default"
+    :model-value="props.source || ''"
+    :sanitize="sanitize"
+    :no-highlight="true"
+    :no-mermaid="true"
+    :no-echarts="true"
+    no-img-zoom-in
+  />
 </template>

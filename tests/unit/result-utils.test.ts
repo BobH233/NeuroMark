@@ -16,6 +16,7 @@ const baseResult: FinalResult = {
       score: 6,
       reasoning: 'A',
       issues: [],
+      scoreBreakdown: [],
     },
     {
       questionId: '2',
@@ -24,9 +25,17 @@ const baseResult: FinalResult = {
       score: 12,
       reasoning: 'B',
       issues: [],
+      scoreBreakdown: [],
     },
   ],
   totalScore: 18,
+  overallAdvice: {
+    summary: '基础尚可，但需要继续巩固关键考点。',
+    strengths: ['计算结果基本稳定'],
+    priorityKnowledgePoints: ['等效变换', '步骤表达'],
+    attentionPoints: ['避免只写结论不写分析'],
+    encouragement: '保持练习，先把核心知识点吃透。',
+  },
   overallComment: 'OK',
 };
 
@@ -44,4 +53,3 @@ describe('computeDisplayedTotal', () => {
     expect(computeDisplayedTotal(baseResult)).toBe(18);
   });
 });
-

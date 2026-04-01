@@ -13,7 +13,8 @@ export type PaperStageStatus =
   | 'ready'
   | 'processing'
   | 'completed'
-  | 'skipped';
+  | 'skipped'
+  | 'failed';
 export type DraftGenerationStatus =
   | 'idle'
   | 'queued'
@@ -72,12 +73,24 @@ export interface PaperRecord {
   originalPages: PaperPage[];
   scanStatus: PaperStageStatus;
   gradingStatus: PaperStageStatus;
+  gradingReferenceAnswerVersion?: number;
+  gradingUpdatedAt?: string;
+  gradingError?: string | null;
 }
 
 export interface StudentInfo {
   className: string;
   studentId: string;
   name: string;
+}
+
+export interface ScoreBreakdownItem {
+  criterionId: string;
+  criterion: string;
+  maxScore: number;
+  score: number;
+  verdict: 'earned' | 'partial' | 'missed' | 'unclear';
+  evidence: string;
 }
 
 export interface QuestionScore {
@@ -87,6 +100,7 @@ export interface QuestionScore {
   score: number;
   reasoning: string;
   issues: string[];
+  scoreBreakdown: ScoreBreakdownItem[];
 }
 
 export interface QuestionRegion {
@@ -98,11 +112,20 @@ export interface QuestionRegion {
   height: number;
 }
 
+export interface OverallAdvice {
+  summary: string;
+  strengths: string[];
+  priorityKnowledgePoints: string[];
+  attentionPoints: string[];
+  encouragement: string;
+}
+
 export interface ModelResult {
   studentInfo: StudentInfo;
   questionScores: QuestionScore[];
   totalScore: number;
   overallComment: string;
+  overallAdvice: OverallAdvice;
   questionRegions?: QuestionRegion[];
 }
 
@@ -115,9 +138,11 @@ export interface ResultRecord {
   projectId: string;
   paperId: string;
   filePath: string;
+  status: Extract<PaperStageStatus, 'processing' | 'completed' | 'failed'>;
+  errorMessage?: string | null;
   referenceAnswerVersion: number;
-  modelResult: ModelResult;
-  finalResult: FinalResult;
+  modelResult: ModelResult | null;
+  finalResult: FinalResult | null;
   updatedAt: string;
 }
 
@@ -147,6 +172,8 @@ export interface GlobalLlmSettings {
   apiKey: string;
   timeoutMs: number;
   reasoningEffort: LlmReasoningEffort;
+  answerGenerationTemperature: number;
+  gradingTemperature: number;
 }
 
 export interface SaveGlobalLlmSettingsInput {
@@ -155,6 +182,8 @@ export interface SaveGlobalLlmSettingsInput {
   apiKey?: string;
   timeoutMs: number;
   reasoningEffort: LlmReasoningEffort;
+  answerGenerationTemperature: number;
+  gradingTemperature: number;
 }
 
 export interface TestLlmConnectionPayload {
@@ -163,6 +192,8 @@ export interface TestLlmConnectionPayload {
   apiKey: string;
   timeoutMs: number;
   reasoningEffort: LlmReasoningEffort;
+  answerGenerationTemperature: number;
+  gradingTemperature: number;
 }
 
 export interface TestLlmConnectionResult {
@@ -225,6 +256,16 @@ export interface ProjectDetail {
   recentJobs: BackgroundJob[];
 }
 
+export interface ProjectRubricDebug {
+  projectId: string;
+  referenceAnswerVersion: number;
+  rubricPath: string;
+  exists: boolean;
+  updatedAt: string | null;
+  rubricJson: string;
+  rubricData: unknown | null;
+}
+
 export interface CreateProjectInput {
   name: string;
   basePath: string;
@@ -284,6 +325,7 @@ export interface NeuromarkApi {
     create: (input: CreateProjectInput) => Promise<ProjectMeta>;
     list: () => Promise<ProjectMeta[]>;
     getDetail: (projectId: string) => Promise<ProjectDetail>;
+    getRubricDebug: (projectId: string) => Promise<ProjectRubricDebug>;
     delete: (projectId: string) => Promise<void>;
     removePaper: (projectId: string, paperId: string) => Promise<ProjectDetail>;
     importOriginalImages: (

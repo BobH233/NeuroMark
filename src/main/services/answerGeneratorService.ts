@@ -501,7 +501,7 @@ export class AnswerGeneratorService {
     return db
       .select()
       .from(answerDraftsTable)
-      .orderBy(desc(answerDraftsTable.updatedAt))
+      .orderBy(desc(answerDraftsTable.createdAt))
       .all()
       .map((item) => toDraftRecord(item, presets));
   }
@@ -737,8 +737,7 @@ export class AnswerGeneratorService {
 
       const requestPayload = {
         model: settings.model,
-        response_format: { type: 'json_object' as const },
-        temperature: 0.8,
+        temperature: settings.answerGenerationTemperature,
         max_tokens: 9000,
         reasoning_effort: settings.reasoningEffort,
         messages: [

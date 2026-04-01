@@ -51,6 +51,8 @@ export function logLlmRequest(
       timeoutMs: number;
       apiKey: string;
       reasoningEffort?: string;
+      answerGenerationTemperature?: number;
+      gradingTemperature?: number;
     };
     payload: unknown;
   },

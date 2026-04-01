@@ -1,9 +1,11 @@
 import { desc, eq, isNotNull, isNull } from 'drizzle-orm';
 import dayjs from 'dayjs';
 import { nanoid } from 'nanoid';
+import PQueue from 'p-queue';
 import type { BackgroundJob, JobKind, JobStatus, StartJobOptions } from '@preload/contracts';
 import { getDatabase } from '@main/database/client';
 import { tasksTable } from '@main/database/schema';
+import { GradingService } from './gradingService';
 import { ProjectService } from './projectService';
 
 type TaskListener = (tasks: BackgroundJob[]) => void;
@@ -60,9 +62,13 @@ export class TaskManager {
   private listeners = new Set<TaskListener>();
   private timers = new Map<string, NodeJS.Timeout>();
   private scanControllers = new Map<string, AbortController>();
+  private gradingControllers = new Map<string, AbortController>();
   private deletingProjects = new Set<string>();
 
-  constructor(private readonly projects: ProjectService) {}
+  constructor(
+    private readonly projects: ProjectService,
+    private readonly gradingService: GradingService,
+  ) {}
 
   async list(): Promise<BackgroundJob[]> {
     const db = getDatabase();
@@ -98,11 +104,11 @@ export class TaskManager {
   }
 
   async startGrading(projectId: string, options?: StartJobOptions): Promise<BackgroundJob> {
-    return this.startMockJob(projectId, 'grading', options);
+    return this.startGradingJob(projectId, options);
   }
 
   async resumeGrading(projectId: string): Promise<BackgroundJob> {
-    return this.startMockJob(projectId, 'grading', { skipCompleted: true });
+    return this.startGradingJob(projectId, { skipCompleted: true });
   }
 
   async createJob(input: {
@@ -244,6 +250,11 @@ export class TaskManager {
       controller.abort();
       this.scanControllers.delete(jobId);
     }
+    const gradingController = this.gradingControllers.get(jobId);
+    if (gradingController) {
+      gradingController.abort();
+      this.gradingControllers.delete(jobId);
+    }
     const db = getDatabase();
     const current = db.select().from(tasksTable).where(eq(tasksTable.id, jobId)).get();
     if (!current) {
@@ -289,6 +300,12 @@ export class TaskManager {
         if (controller) {
           controller.abort();
           this.scanControllers.delete(job.id);
+        }
+
+        const gradingController = this.gradingControllers.get(job.id);
+        if (gradingController) {
+          gradingController.abort();
+          this.gradingControllers.delete(job.id);
         }
       }
 
@@ -458,6 +475,70 @@ export class TaskManager {
     return toJob(row!);
   }
 
+  private async startGradingJob(
+    projectId: string,
+    options?: StartJobOptions,
+  ): Promise<BackgroundJob> {
+    const activeTask = (await this.list()).find(
+      (task) =>
+        task.projectId === projectId &&
+        task.kind === 'grading' &&
+        ['queued', 'running', 'paused'].includes(task.status),
+    );
+    if (activeTask) {
+      throw new Error('当前项目已有进行中的批阅任务。');
+    }
+
+    const { project } = await this.gradingService.prepareProjectGrading(projectId);
+    await this.projects.resetProcessingResults(projectId);
+    const papers = await this.projects.listProjectPapers(projectId);
+    const eligiblePapers = papers.filter((paper) => paper.scanStatus === 'completed');
+    const pendingPapers = eligiblePapers.filter(
+      (paper) => !(options?.skipCompleted ?? true) || paper.gradingStatus !== 'completed',
+    );
+    const db = getDatabase();
+    const now = new Date().toISOString();
+    const jobId = nanoid();
+    const controller = new AbortController();
+
+    db.insert(tasksTable)
+      .values({
+        id: jobId,
+        projectId,
+        projectName: project.name,
+        kind: 'grading',
+        referenceAnswerVersion: project.referenceAnswerVersion,
+        status: 'running',
+        progress: pendingPapers.length === 0 ? 1 : 0,
+        speed: 0,
+        eta: null,
+        startedAt: now,
+        finishedAt: pendingPapers.length === 0 ? now : null,
+        archivedAt: null,
+        abortable: true,
+        currentPaperLabel: pendingPapers[0]?.paperCode ?? '准备中',
+        summary:
+          pendingPapers.length === 0
+            ? '没有需要批阅的新答卷'
+            : `正在批量批阅扫描答卷，共 ${pendingPapers.length} 份`,
+        createdAt: now,
+        updatedAt: now,
+      })
+      .run();
+
+    this.gradingControllers.set(jobId, controller);
+    await this.emit();
+
+    if (pendingPapers.length === 0) {
+      const row = db.select().from(tasksTable).where(eq(tasksTable.id, jobId)).get();
+      return toJob(row!);
+    }
+
+    void this.runGradingJob(jobId, projectId, controller, pendingPapers.length, options);
+    const row = db.select().from(tasksTable).where(eq(tasksTable.id, jobId)).get();
+    return toJob(row!);
+  }
+
   private async runScanJob(
     jobId: string,
     projectId: string,
@@ -541,6 +622,171 @@ export class TaskManager {
         .run();
     } finally {
       this.scanControllers.delete(jobId);
+      await this.emit();
+    }
+  }
+
+  private async runGradingJob(
+    jobId: string,
+    projectId: string,
+    controller: AbortController,
+    totalPaperCount: number,
+    options?: StartJobOptions,
+  ): Promise<void> {
+    const db = getDatabase();
+    const startedAt = Date.now();
+
+    try {
+      const { project, referenceAnswerMarkdown, settings } =
+        await this.gradingService.prepareProjectGrading(projectId);
+      const rubric = await this.gradingService.getCompiledRubric({
+        projectId,
+        projectName: project.name,
+        projectRootPath: project.rootPath,
+        referenceAnswerVersion: project.referenceAnswerVersion,
+        referenceAnswerMarkdown,
+        settings,
+        signal: controller.signal,
+      });
+
+      const papers = await this.projects.listProjectPapers(projectId);
+      const targetPapers = papers.filter(
+        (paper) =>
+          paper.scanStatus === 'completed' &&
+          (!(options?.skipCompleted ?? true) || paper.gradingStatus !== 'completed'),
+      );
+
+      let settledCount = 0;
+      let succeededCount = 0;
+      let failedCount = 0;
+      const activeLabels = new Set<string>();
+      const queue = new PQueue({
+        concurrency: Math.max(project.settings.gradingConcurrency, 1),
+      });
+
+      const updateProgress = async () => {
+        const progress =
+          totalPaperCount > 0 ? Number((settledCount / totalPaperCount).toFixed(3)) : 1;
+        const elapsedSeconds = Math.max((Date.now() - startedAt) / 1000, 1);
+        const speed = getSecondsPerPaper(progress, elapsedSeconds, totalPaperCount);
+        const currentPaperLabel =
+          activeLabels.size > 0 ? Array.from(activeLabels).slice(0, 3).join(', ') : '等待收尾';
+        const summary =
+          settledCount >= totalPaperCount
+            ? `批阅结束，成功 ${succeededCount} 份，失败 ${failedCount} 份`
+            : `正在批阅答卷，已完成 ${settledCount}/${totalPaperCount}，成功 ${succeededCount}，失败 ${failedCount}`;
+
+        db.update(tasksTable)
+          .set({
+            progress,
+            speed,
+            eta: estimateEta(progress, speed * totalPaperCount),
+            currentPaperLabel,
+            summary,
+            updatedAt: new Date().toISOString(),
+          })
+          .where(eq(tasksTable.id, jobId))
+          .run();
+        await this.emit();
+      };
+
+      for (const paper of targetPapers) {
+        queue.add(async () => {
+          if (controller.signal.aborted) {
+            return;
+          }
+
+          activeLabels.add(paper.paperCode);
+          await this.projects.writeProcessingResult(
+            projectId,
+            paper.paperCode,
+            project.referenceAnswerVersion,
+          );
+          await updateProgress();
+
+          try {
+            const graded = await this.gradingService.gradePaper({
+              projectName: project.name,
+              paper,
+              referenceAnswerVersion: project.referenceAnswerVersion,
+              referenceAnswerMarkdown,
+              rubric,
+              drawRegions: project.settings.drawRegions,
+              settings,
+              signal: controller.signal,
+            });
+            if (controller.signal.aborted) {
+              await this.projects.clearProcessingResult(projectId, paper.paperCode);
+              return;
+            }
+
+            await this.projects.saveComputedResult(projectId, paper.paperCode, {
+              referenceAnswerVersion: project.referenceAnswerVersion,
+              modelResult: graded.modelResult,
+              finalResult: graded.finalResult,
+            });
+            succeededCount += 1;
+          } catch (error) {
+            if (controller.signal.aborted) {
+              await this.projects.clearProcessingResult(projectId, paper.paperCode);
+              return;
+            }
+            failedCount += 1;
+            await this.projects.writeFailedResult(
+              projectId,
+              paper.paperCode,
+              project.referenceAnswerVersion,
+              error instanceof Error ? error.message : '模型批阅失败',
+            );
+            await this.projects.recomputeStats(projectId);
+          } finally {
+            activeLabels.delete(paper.paperCode);
+            settledCount += 1;
+            await updateProgress();
+          }
+        });
+      }
+
+      await queue.onIdle();
+      if (controller.signal.aborted || this.deletingProjects.has(projectId)) {
+        return;
+      }
+
+      db.update(tasksTable)
+        .set({
+          status: 'completed',
+          progress: 1,
+          speed: getSecondsPerPaper(
+            1,
+            Math.max((Date.now() - startedAt) / 1000, 1),
+            totalPaperCount,
+          ),
+          eta: null,
+          finishedAt: new Date().toISOString(),
+          currentPaperLabel: failedCount > 0 ? '存在失败答卷待处理' : '全部完成',
+          summary: `批阅任务已完成，成功 ${succeededCount} 份，失败 ${failedCount} 份`,
+          updatedAt: new Date().toISOString(),
+        })
+        .where(eq(tasksTable.id, jobId))
+        .run();
+    } catch (error) {
+      if (controller.signal.aborted) {
+        return;
+      }
+
+      db.update(tasksTable)
+        .set({
+          status: 'failed',
+          progress: 1,
+          eta: null,
+          finishedAt: new Date().toISOString(),
+          summary: error instanceof Error ? error.message : '批阅任务执行失败',
+          updatedAt: new Date().toISOString(),
+        })
+        .where(eq(tasksTable.id, jobId))
+        .run();
+    } finally {
+      this.gradingControllers.delete(jobId);
       await this.emit();
     }
   }

@@ -22,6 +22,7 @@ import {
 } from 'naive-ui';
 import type { FinalResult, PaperRecord, PreviewImageItem, ResultRecord } from '@preload/contracts';
 import ImagePreviewTile from '@/components/ImagePreviewTile.vue';
+import JsonTreeView from '@/components/JsonTreeView.vue';
 import MarkdownRenderer from '@/components/MarkdownRenderer.vue';
 import MetricCard from '@/components/MetricCard.vue';
 import StatusPill from '@/components/StatusPill.vue';
@@ -42,10 +43,12 @@ const previewMode = ref<'original' | 'scanned'>('scanned');
 const editableResult = ref<FinalResult | null>(null);
 const referenceAnswerDraft = ref('');
 const referenceAnswerSaving = ref(false);
+const rubricLoading = ref(false);
 const referenceAnswerDraftProjectId = ref('');
 const referenceAnswerDraftVersion = ref(0);
 const deletingProject = ref(false);
 const scanActionLoading = ref(false);
+const gradingActionLoading = ref(false);
 const removingPaperId = ref('');
 
 const projectId = computed(() => String(route.params.projectId ?? ''));
@@ -81,7 +84,21 @@ const currentScanTask = computed(() =>
   ) ?? null,
 );
 const hasActiveScanTask = computed(() => Boolean(currentScanTask.value));
-const results = computed(() => detail.value?.results ?? []);
+const currentGradingTask = computed(() =>
+  tasksStore.tasks.find(
+    (task) =>
+      task.projectId === projectId.value &&
+      task.kind === 'grading' &&
+      ['queued', 'running', 'paused'].includes(task.status),
+  ) ?? null,
+);
+const hasActiveGradingTask = computed(() => Boolean(currentGradingTask.value));
+const results = computed(() =>
+  (detail.value?.results ?? []).filter(
+    (item): item is ResultRecord & { finalResult: FinalResult; modelResult: NonNullable<ResultRecord['modelResult']> } =>
+      Boolean(item.finalResult && item.modelResult),
+  ),
+);
 const papers = computed(() => detail.value?.originals ?? []);
 
 function buildOriginalPreviewImage(
@@ -139,6 +156,9 @@ const allDebugPreviewImages = computed<PreviewImageItem[]>(() =>
   ),
 );
 const latestReferenceAnswerVersion = computed(() => selectedProject.value?.referenceAnswerVersion ?? 1);
+const rubricDebug = computed(() =>
+  projectsStore.rubricDebug?.projectId === projectId.value ? projectsStore.rubricDebug : null,
+);
 const referenceAnswerDirty = computed(() =>
   detail.value ? referenceAnswerDraft.value !== detail.value.referenceAnswerMarkdown : false,
 );
@@ -179,7 +199,7 @@ const resultPreviewImages = computed<PreviewImageItem[]>(() => {
         : page.originalVersion,
     title: `${paper.paperCode} · 第 ${index + 1} 页`,
     caption: previewMode.value === 'scanned' ? '扫描答卷视图' : '原始答卷视图',
-    regions: currentResult.modelResult.questionRegions?.filter((region) => region.pageIndex === index) ?? [],
+    regions: currentResult.modelResult?.questionRegions?.filter((region) => region.pageIndex === index) ?? [],
   }));
 });
 
@@ -223,7 +243,7 @@ watch(
 watch(
   () => selectedResult.value,
   (value) => {
-    editableResult.value = value ? cloneFinalResult(value.finalResult) : null;
+    editableResult.value = value?.finalResult ? cloneFinalResult(value.finalResult) : null;
   },
   { immediate: true },
 );
@@ -235,8 +255,31 @@ onMounted(async () => {
 
   if (projectId.value) {
     await projectsStore.selectProject(projectId.value);
+    await loadRubricDebug();
   }
 });
+
+watch(
+  () => [projectId.value, latestReferenceAnswerVersion.value] as const,
+  async ([nextProjectId]) => {
+    if (!nextProjectId) {
+      return;
+    }
+    await loadRubricDebug();
+  },
+);
+
+async function loadRubricDebug() {
+  if (!projectId.value) {
+    return;
+  }
+  rubricLoading.value = true;
+  try {
+    await projectsStore.loadProjectRubricDebug(projectId.value);
+  } finally {
+    rubricLoading.value = false;
+  }
+}
 
 async function importImages() {
   if (!selectedProject.value) {
@@ -325,17 +368,41 @@ async function stopScan() {
 }
 
 async function startGrading() {
-  if (!selectedProject.value) {
+  if (!selectedProject.value || gradingActionLoading.value || hasActiveGradingTask.value) {
     return;
   }
-  await window.neuromark.grading.start(selectedProject.value.id, { skipCompleted: true });
+  gradingActionLoading.value = true;
+  try {
+    await window.neuromark.grading.start(selectedProject.value.id, { skipCompleted: true });
+    await Promise.all([
+      tasksStore.refresh(),
+      projectsStore.loadProjectDetail(selectedProject.value.id),
+    ]);
+    message.success('批阅任务已开始。');
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : '启动批阅任务失败。');
+  } finally {
+    gradingActionLoading.value = false;
+  }
 }
 
-async function resumeGrading() {
-  if (!selectedProject.value) {
+async function stopGrading() {
+  if (!selectedProject.value || gradingActionLoading.value || !currentGradingTask.value) {
     return;
   }
-  await window.neuromark.grading.resume(selectedProject.value.id);
+  gradingActionLoading.value = true;
+  try {
+    await window.neuromark.grading.cancel(currentGradingTask.value.id);
+    await Promise.all([
+      tasksStore.refresh(),
+      projectsStore.loadProjectDetail(selectedProject.value.id),
+    ]);
+    message.success('当前批阅任务已停止。');
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : '停止批阅任务失败。');
+  } finally {
+    gradingActionLoading.value = false;
+  }
 }
 
 async function exportResults() {
@@ -377,6 +444,7 @@ async function saveReferenceAnswer() {
   referenceAnswerSaving.value = true;
   try {
     await projectsStore.updateReferenceAnswer(selectedProject.value.id, nextMarkdown);
+    await loadRubricDebug();
   } finally {
     referenceAnswerSaving.value = false;
   }
@@ -517,8 +585,24 @@ function goBack() {
               强制重新扫描
             </n-button>
           </template>
-          <n-button secondary type="primary" @click="startGrading">开始批阅</n-button>
-          <n-button tertiary type="primary" @click="resumeGrading">断点续批</n-button>
+          <n-button
+            v-if="hasActiveGradingTask"
+            secondary
+            type="error"
+            :loading="gradingActionLoading"
+            @click="stopGrading"
+          >
+            停止当前批阅
+          </n-button>
+          <n-button
+            v-else
+            secondary
+            type="primary"
+            :loading="gradingActionLoading"
+            @click="startGrading"
+          >
+            开始批阅
+          </n-button>
           <n-button tertiary @click="exportResults">导出 JSON</n-button>
         </div>
       </div>
@@ -657,8 +741,17 @@ function goBack() {
               </template>
               <div class="paper-meta">
                 <span>{{ paper.pageCount }} 页</span>
-                <span>批改状态：{{ paper.gradingStatus === 'completed' ? '已完成' : '待处理' }}</span>
+                <span>批改状态：{{ paper.gradingStatus === 'completed' ? '已完成' : paper.gradingStatus === 'failed' ? '失败' : paper.gradingStatus === 'processing' ? '批阅中' : '待处理' }}</span>
+                <span v-if="paper.gradingReferenceAnswerVersion">参考答案 v{{ paper.gradingReferenceAnswerVersion }}</span>
               </div>
+              <n-alert
+                v-if="paper.gradingError"
+                type="error"
+                :show-icon="false"
+                class="result-version-alert"
+              >
+                {{ paper.gradingError }}
+              </n-alert>
               <div class="image-grid">
                 <ImagePreviewTile
                   v-for="(page, pageIndex) in paper.originalPages"
@@ -807,6 +900,15 @@ function goBack() {
                     <n-input-number v-model:value="question.score" :min="0" :max="question.maxScore" />
                   </div>
                   <MarkdownRenderer :source="question.reasoning" />
+                  <div v-if="question.scoreBreakdown.length" class="issues-box">
+                    <strong>采分明细</strong>
+                    <ul>
+                      <li v-for="point in question.scoreBreakdown" :key="`${question.questionId}-${point.criterionId}`">
+                        {{ point.criterionId }} · {{ point.criterion }}：{{ point.score }}/{{ point.maxScore }}（{{ point.verdict }}）
+                        <div>{{ point.evidence }}</div>
+                      </li>
+                    </ul>
+                  </div>
                   <div v-if="question.issues.length" class="issues-box">
                     <strong>问题点</strong>
                     <ul>
@@ -815,6 +917,55 @@ function goBack() {
                   </div>
                 </div>
               </div>
+
+              <n-card title="整卷建议" embedded class="surface-card nested">
+                <div class="question-list">
+                  <div class="question-card">
+                    <div class="question-card-title">总体判断</div>
+                    <div class="detail-subtitle">{{ editableResult.overallAdvice.summary }}</div>
+                  </div>
+
+                  <div class="question-card">
+                    <div class="question-card-title">表现较好的方面</div>
+                    <div v-if="editableResult.overallAdvice.strengths.length" class="issues-box">
+                      <ul>
+                        <li v-for="item in editableResult.overallAdvice.strengths" :key="item">{{ item }}</li>
+                      </ul>
+                    </div>
+                    <div v-else class="detail-subtitle">暂无特别突出的优势总结。</div>
+                  </div>
+
+                  <div class="question-card">
+                    <div class="question-card-title">优先补强知识点</div>
+                    <div v-if="editableResult.overallAdvice.priorityKnowledgePoints.length" class="issues-box">
+                      <ul>
+                        <li
+                          v-for="item in editableResult.overallAdvice.priorityKnowledgePoints"
+                          :key="item"
+                        >
+                          {{ item }}
+                        </li>
+                      </ul>
+                    </div>
+                    <div v-else class="detail-subtitle">当前没有明确需要优先补强的知识点。</div>
+                  </div>
+
+                  <div class="question-card">
+                    <div class="question-card-title">答题注意事项</div>
+                    <div v-if="editableResult.overallAdvice.attentionPoints.length" class="issues-box">
+                      <ul>
+                        <li v-for="item in editableResult.overallAdvice.attentionPoints" :key="item">{{ item }}</li>
+                      </ul>
+                    </div>
+                    <div v-else class="detail-subtitle">当前没有额外的答题习惯提醒。</div>
+                  </div>
+
+                  <div class="question-card">
+                    <div class="question-card-title">鼓励与提醒</div>
+                    <div class="detail-subtitle">{{ editableResult.overallAdvice.encouragement }}</div>
+                  </div>
+                </div>
+              </n-card>
 
               <n-card title="整体评语" embedded class="surface-card nested">
                 <MarkdownRenderer :source="editableResult.overallComment" />
@@ -962,6 +1113,59 @@ function goBack() {
                 </template>
                 确认彻底删除当前项目吗？这会清空项目目录和数据库中的相关数据。
               </n-popconfirm>
+            </n-card>
+          </div>
+        </n-tab-pane>
+
+        <n-tab-pane name="rubric-debug" tab="Rubric 调试">
+          <div class="project-settings-stack">
+            <n-card class="surface-card" title="当前 Rubric 缓存">
+              <div class="reference-editor-head">
+                <div class="project-section-copy">
+                  这里展示当前项目最新参考答案版本对应的 rubric 缓存文件，内容就是后台批阅实际使用的结构化评分模板。
+                </div>
+                <div class="reference-editor-actions">
+                  <n-tag round :bordered="false">参考答案 v{{ latestReferenceAnswerVersion }}</n-tag>
+                  <n-button tertiary :loading="rubricLoading" @click="loadRubricDebug">
+                    刷新 Rubric
+                  </n-button>
+                </div>
+              </div>
+
+              <div v-if="rubricDebug" class="rubric-debug-stack">
+                <div class="rubric-debug-meta-grid">
+                  <div class="task-list-meta-item">
+                    <span class="task-list-meta-label">缓存文件</span>
+                    <strong class="task-list-meta-value">{{ rubricDebug.rubricPath }}</strong>
+                  </div>
+                  <div class="task-list-meta-item">
+                    <span class="task-list-meta-label">状态</span>
+                    <strong class="task-list-meta-value">{{ rubricDebug.exists ? '已生成' : '尚未生成' }}</strong>
+                  </div>
+                  <div class="task-list-meta-item">
+                    <span class="task-list-meta-label">更新时间</span>
+                    <strong class="task-list-meta-value">{{ getTaskStartedAtLabel(rubricDebug.updatedAt) }}</strong>
+                  </div>
+                </div>
+
+                <n-empty v-if="!rubricDebug.exists" description="当前版本的 rubric 还没有生成。首次启动批阅后会自动生成缓存。" />
+
+                <template v-else>
+                  <div class="rubric-debug-panel">
+                    <div class="result-section-title">可展开 JSON Tree</div>
+                    <div class="json-tree-shell">
+                      <JsonTreeView
+                        v-if="rubricDebug.rubricData"
+                        :value="rubricDebug.rubricData"
+                        label="root"
+                        :depth="0"
+                        :initially-expanded="true"
+                      />
+                      <n-empty v-else description="当前 rubric JSON 解析失败。" />
+                    </div>
+                  </div>
+                </template>
+              </div>
             </n-card>
           </div>
         </n-tab-pane>

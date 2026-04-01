@@ -18,6 +18,7 @@ const api: NeuromarkApi = {
     create: (input) => ipcRenderer.invoke('projects:create', input),
     list: () => ipcRenderer.invoke('projects:list'),
     getDetail: (projectId) => ipcRenderer.invoke('projects:get-detail', projectId),
+    getRubricDebug: (projectId) => ipcRenderer.invoke('projects:get-rubric-debug', projectId),
     delete: (projectId) => ipcRenderer.invoke('projects:delete', projectId),
     removePaper: (projectId, paperId) => ipcRenderer.invoke('projects:remove-paper', projectId, paperId),
     importOriginalImages: (projectId, filePaths) =>

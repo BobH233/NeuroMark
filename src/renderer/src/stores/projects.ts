@@ -4,6 +4,7 @@ import type {
   FinalResult,
   ProjectDetail,
   ProjectMeta,
+  ProjectRubricDebug,
   ProjectSettings,
   ResultRecord,
 } from '@preload/contracts';
@@ -13,6 +14,7 @@ export const useProjectsStore = defineStore('projects', {
     projects: [] as ProjectMeta[],
     selectedProjectId: '' as string,
     detail: null as ProjectDetail | null,
+    rubricDebug: null as ProjectRubricDebug | null,
     loading: false,
   }),
   getters: {
@@ -34,6 +36,7 @@ export const useProjectsStore = defineStore('projects', {
     clearSelection() {
       this.selectedProjectId = '';
       this.detail = null;
+      this.rubricDebug = null;
     },
     async selectProject(projectId: string) {
       this.selectedProjectId = projectId;
@@ -46,6 +49,10 @@ export const useProjectsStore = defineStore('projects', {
       } finally {
         this.loading = false;
       }
+    },
+    async loadProjectRubricDebug(projectId: string) {
+      this.rubricDebug = await window.neuromark.projects.getRubricDebug(projectId);
+      return this.rubricDebug;
     },
     async createProject(input: CreateProjectInput) {
       const project = await window.neuromark.projects.create(input);

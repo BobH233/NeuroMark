@@ -8,6 +8,7 @@ import { createMainWindow } from './windows/mainWindow';
 import { createPreviewWindow } from './windows/previewWindow';
 import { AppService } from './services/appService';
 import { AnswerGeneratorService } from './services/answerGeneratorService';
+import { GradingService } from './services/gradingService';
 import { ProjectService } from './services/projectService';
 import { SettingsService } from './services/settingsService';
 import { TaskManager } from './services/taskManager';
@@ -86,7 +87,8 @@ function applyPlatformChrome(): void {
 async function bootstrap(): Promise<void> {
   const projects = new ProjectService();
   const settings = new SettingsService();
-  const tasks = new TaskManager(projects);
+  const grading = new GradingService(projects, settings);
+  const tasks = new TaskManager(projects, grading);
   const answerGenerator = new AnswerGeneratorService(settings, tasks);
   answerGeneratorService = answerGenerator;
   const appService = new AppService(

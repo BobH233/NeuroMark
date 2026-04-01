@@ -13,11 +13,21 @@ import { logLlmRequest, logLlmResult } from './llmRequestLogger';
 
 const SETTINGS_ID = 1;
 const DEFAULT_REASONING_EFFORT: LlmReasoningEffort = 'medium';
+const DEFAULT_ANSWER_GENERATION_TEMPERATURE = 0.2;
+const DEFAULT_GRADING_TEMPERATURE = 0;
 
 function normalizeReasoningEffort(value: string | null | undefined): LlmReasoningEffort {
   return value === 'low' || value === 'medium' || value === 'high'
     ? value
     : DEFAULT_REASONING_EFFORT;
+}
+
+function normalizeTemperature(value: number | null | undefined, fallback: number): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return fallback;
+  }
+
+  return Math.min(2, Math.max(0, Number(value.toFixed(2))));
 }
 
 export class SettingsService {
@@ -36,6 +46,8 @@ export class SettingsService {
         apiKey: '',
         timeoutMs: 180000,
         reasoningEffort: DEFAULT_REASONING_EFFORT,
+        answerGenerationTemperature: DEFAULT_ANSWER_GENERATION_TEMPERATURE,
+        gradingTemperature: DEFAULT_GRADING_TEMPERATURE,
       };
     }
 
@@ -45,6 +57,14 @@ export class SettingsService {
       apiKey: current.apiKeyEncrypted,
       timeoutMs: current.timeoutMs,
       reasoningEffort: normalizeReasoningEffort(current.reasoningEffort),
+      answerGenerationTemperature: normalizeTemperature(
+        current.answerGenerationTemperature,
+        DEFAULT_ANSWER_GENERATION_TEMPERATURE,
+      ),
+      gradingTemperature: normalizeTemperature(
+        current.gradingTemperature,
+        DEFAULT_GRADING_TEMPERATURE,
+      ),
     };
   }
 
@@ -67,6 +87,14 @@ export class SettingsService {
         apiKeyEncrypted: apiKey,
         timeoutMs: input.timeoutMs,
         reasoningEffort: input.reasoningEffort,
+        answerGenerationTemperature: normalizeTemperature(
+          input.answerGenerationTemperature,
+          DEFAULT_ANSWER_GENERATION_TEMPERATURE,
+        ),
+        gradingTemperature: normalizeTemperature(
+          input.gradingTemperature,
+          DEFAULT_GRADING_TEMPERATURE,
+        ),
         storageMode: 'plainText',
       })
       .onConflictDoUpdate({
@@ -77,6 +105,14 @@ export class SettingsService {
           apiKeyEncrypted: apiKey,
           timeoutMs: input.timeoutMs,
           reasoningEffort: input.reasoningEffort,
+          answerGenerationTemperature: normalizeTemperature(
+            input.answerGenerationTemperature,
+            DEFAULT_ANSWER_GENERATION_TEMPERATURE,
+          ),
+          gradingTemperature: normalizeTemperature(
+            input.gradingTemperature,
+            DEFAULT_GRADING_TEMPERATURE,
+          ),
           storageMode: 'plainText',
         },
       })
@@ -102,11 +138,13 @@ export class SettingsService {
         client: {
           baseURL: payload.baseUrl,
           model: payload.model,
-          timeoutMs: payload.timeoutMs,
-          apiKey: payload.apiKey,
-          reasoningEffort: payload.reasoningEffort,
-        },
-        payload: requestPayload,
+        timeoutMs: payload.timeoutMs,
+        apiKey: payload.apiKey,
+        reasoningEffort: payload.reasoningEffort,
+        answerGenerationTemperature: payload.answerGenerationTemperature,
+        gradingTemperature: payload.gradingTemperature,
+      },
+      payload: requestPayload,
       });
 
       const client = new OpenAI({
@@ -201,6 +239,28 @@ export class SettingsService {
       return {
         ok: false,
         message: '模型思考强度配置无效，请先到设置页重新保存一次。',
+      };
+    }
+
+    if (
+      !Number.isFinite(settings.answerGenerationTemperature) ||
+      settings.answerGenerationTemperature < 0 ||
+      settings.answerGenerationTemperature > 2
+    ) {
+      return {
+        ok: false,
+        message: '参考答案生成温度配置无效，请先到设置页检查参数。',
+      };
+    }
+
+    if (
+      !Number.isFinite(settings.gradingTemperature) ||
+      settings.gradingTemperature < 0 ||
+      settings.gradingTemperature > 2
+    ) {
+      return {
+        ok: false,
+        message: '批阅温度配置无效，请先到设置页检查参数。',
       };
     }
 
