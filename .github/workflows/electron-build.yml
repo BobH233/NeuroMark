@@ -22,20 +22,25 @@ jobs:
           - name: Ubuntu
             runs_on: ubuntu-24.04
             artifact_name: neuromark-electron-ubuntu
+            cmake_parallel_level: '4'
           - name: Windows
             runs_on: windows-2022
             artifact_name: neuromark-electron-windows
+            cmake_parallel_level: '3'
           - name: macOS Intel
             runs_on: macos-15-intel
             artifact_name: neuromark-electron-macos-x64
+            cmake_parallel_level: '3'
           - name: macOS Apple Silicon
             runs_on: macos-15
             artifact_name: neuromark-electron-macos-arm64
+            cmake_parallel_level: '3'
 
     env:
       CSC_IDENTITY_AUTO_DISCOVERY: 'false'
       ELECTRON_CACHE: ${{ github.workspace }}/.cache/electron
       ELECTRON_BUILDER_CACHE: ${{ github.workspace }}/.cache/electron-builder
+      CMAKE_BUILD_PARALLEL_LEVEL: ${{ matrix.cmake_parallel_level }}
 
     steps:
       - name: Checkout repository
