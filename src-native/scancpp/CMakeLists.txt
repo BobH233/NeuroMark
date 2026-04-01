@@ -13,9 +13,15 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
+if(MSVC)
+    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
+endif()
+
 option(SCANCPP_BUILD_CLI "Build the scancpp CLI executable" ON)
 option(SCANCPP_BUILD_NODE_ADDON "Build the scancpp Node-API addon" ON)
 set(NODEJS_EXECUTABLE "node" CACHE STRING "Node.js executable used to resolve Node-API include directories")
+set(NODE_API_INCLUDE_DIR_HINT "" CACHE PATH "Optional explicit path to the directory containing node_api.h")
+set(NODE_LIBRARY_HINT "" CACHE FILEPATH "Optional explicit path to node.lib")
 
 set(SCANCPP_DEFAULT_OPENCV_PROVIDER "system")
 if(EXISTS "${CMAKE_SOURCE_DIR}/third_party/opencv/CMakeLists.txt")
@@ -68,6 +74,9 @@ elseif(SCANCPP_OPENCV_PROVIDER STREQUAL "bundled-static")
     set(BUILD_PNG ON CACHE BOOL "" FORCE)
     set(BUILD_PROTOBUF ON CACHE BOOL "" FORCE)
     set(ENABLE_PIC ON CACHE BOOL "" FORCE)
+    if(MSVC)
+        set(BUILD_WITH_STATIC_CRT OFF CACHE BOOL "" FORCE)
+    endif()
 
     set(WITH_OPENCL OFF CACHE BOOL "" FORCE)
     set(WITH_OPENVINO OFF CACHE BOOL "" FORCE)
@@ -177,6 +186,7 @@ if(SCANCPP_BUILD_NODE_ADDON)
         NODE_API_INCLUDE_DIR
         node_api.h
         HINTS
+            "${NODE_API_INCLUDE_DIR_HINT}"
             "$ENV{npm_config_nodedir}/include/node"
             "$ENV{npm_config_nodedir}"
             "/opt/homebrew/include/node"
@@ -187,11 +197,30 @@ if(SCANCPP_BUILD_NODE_ADDON)
         message(FATAL_ERROR "Could not find node_api.h. Set npm_config_nodedir or install Node headers.")
     endif()
 
+    if(MSVC)
+        find_library(
+            NODE_LIBRARY
+            node
+            HINTS
+                "${NODE_LIBRARY_HINT}"
+                "$ENV{npm_config_nodedir}/$ENV{PROCESSOR_ARCHITECTURE}"
+                "$ENV{npm_config_nodedir}/x64"
+                "$ENV{npm_config_nodedir}/win-x64"
+                "$ENV{npm_config_nodedir}/Release"
+        )
+        if(NOT NODE_LIBRARY)
+            message(FATAL_ERROR "Could not find node.lib. Set NODE_LIBRARY_HINT or ensure node-gyp headers are installed.")
+        endif()
+    endif()
+
     add_library(scancpp_node MODULE
         src/node_addon.cpp
     )
 
     target_link_libraries(scancpp_node PRIVATE scancpp_core ${SCANCPP_OPENCV_TARGETS})
+    if(MSVC)
+        target_link_libraries(scancpp_node PRIVATE "${NODE_LIBRARY}")
+    endif()
     target_include_directories(scancpp_node
         PRIVATE
             ${SCANCPP_OPENCV_INCLUDE_DIRS}

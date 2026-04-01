@@ -21,6 +21,8 @@ extraResources:
       - '*.onnx'
 mac:
   category: public.app-category.education
+  target:
+    - zip
 win:
   target:
     - nsis
