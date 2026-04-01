@@ -350,6 +350,7 @@ export interface NeuromarkApi {
       initialIndex?: number,
       title?: string,
     ) => Promise<void>;
+    copyImage: (source: string) => Promise<void>;
     saveImage: (source: string, suggestedName?: string) => Promise<string | null>;
   };
 }

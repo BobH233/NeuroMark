@@ -88,6 +88,7 @@ const api: NeuromarkApi = {
   preview: {
     open: (images, initialIndex, title) =>
       ipcRenderer.invoke('preview:open', images, initialIndex, title),
+    copyImage: (source) => ipcRenderer.invoke('preview:copy-image', source),
     saveImage: (source, suggestedName) =>
       ipcRenderer.invoke('preview:save-image', source, suggestedName),
   },

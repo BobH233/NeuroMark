@@ -15,4 +15,7 @@ export function registerPreviewIpc(services: ServiceBundle): void {
       suggestedName,
     ),
   );
+  ipcMain.handle('preview:copy-image', (_event, source: string) =>
+    services.app.copyPreviewImage(source),
+  );
 }

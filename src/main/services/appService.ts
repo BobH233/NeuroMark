@@ -1,7 +1,16 @@
 import { copyFile, writeFile } from 'node:fs/promises';
 import { basename, extname, join } from 'node:path';
-import { app, dialog, shell, type BrowserWindow, type OpenDialogOptions } from 'electron';
+import {
+  app,
+  clipboard,
+  dialog,
+  nativeImage,
+  shell,
+  type BrowserWindow,
+  type OpenDialogOptions,
+} from 'electron';
 import { nanoid } from 'nanoid';
+import sharp from 'sharp';
 import type { PreviewImageItem, PreviewSession } from '@preload/contracts';
 
 export class AppService {
@@ -72,6 +81,21 @@ export class AppService {
 
   async savePreviewImage(source: string, suggestedName?: string): Promise<string | null> {
     return this.savePreviewImageForWindow(this.getParentWindow(), source, suggestedName);
+  }
+
+  async copyPreviewImage(source: string): Promise<void> {
+    const image = await resolvePreviewImageSource(source);
+    const clipboardBuffer =
+      image.kind === 'file'
+        ? await sharp(image.path).rotate().png().toBuffer()
+        : await sharp(image.buffer).rotate().png().toBuffer();
+    const clipboardImage = nativeImage.createFromBuffer(clipboardBuffer);
+
+    if (clipboardImage.isEmpty()) {
+      throw new Error('当前图片暂时无法复制到剪贴板。');
+    }
+
+    clipboard.writeImage(clipboardImage);
   }
 
   async savePreviewImageForWindow(
