@@ -1,0 +1,77 @@
+name: build-electron
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - master
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.runs_on }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Ubuntu
+            runs_on: ubuntu-24.04
+            artifact_name: neuromark-electron-ubuntu
+          - name: Windows
+            runs_on: windows-2022
+            artifact_name: neuromark-electron-windows
+          - name: macOS
+            runs_on: macos-15-intel
+            artifact_name: neuromark-electron-macos
+
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      ELECTRON_CACHE: ${{ runner.temp }}/electron
+      ELECTRON_BUILDER_CACHE: ${{ runner.temp }}/electron-builder
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Install Linux native build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential \
+            cmake \
+            fakeroot \
+            libarchive-tools \
+            ninja-build \
+            pkg-config \
+            rpm
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Build and package Electron app
+        run: npm run dist:ci
+
+      - name: Upload packaged artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: artifacts/github-actions/**
+          if-no-files-found: error
+          retention-days: 14
