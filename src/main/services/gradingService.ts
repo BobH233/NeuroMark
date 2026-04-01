@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import path from 'node:path';
 import fs from 'fs-extra';
 import OpenAI from 'openai';
@@ -200,6 +201,35 @@ function formatStreamPreview(text: string): string {
   }
 
   return `${normalized.slice(-STREAM_PREVIEW_LIMIT)}...`;
+}
+
+export function getReferenceAnswerFingerprint(markdown: string): string {
+  return createHash('sha256').update(markdown.trim()).digest('hex');
+}
+
+export function canReuseCompiledRubric(
+  payload: Record<string, unknown>,
+  input: {
+    referenceAnswerVersion: number;
+    referenceAnswerMarkdown: string;
+  },
+): boolean {
+  const storedVersion =
+    typeof payload.referenceAnswerVersion === 'number' &&
+    Number.isFinite(payload.referenceAnswerVersion) &&
+    payload.referenceAnswerVersion > 0
+      ? Math.trunc(payload.referenceAnswerVersion)
+      : null;
+  const storedFingerprint =
+    typeof payload.referenceAnswerFingerprint === 'string'
+      ? payload.referenceAnswerFingerprint.trim()
+      : '';
+
+  if (storedVersion !== input.referenceAnswerVersion || !storedFingerprint) {
+    return false;
+  }
+
+  return storedFingerprint === getReferenceAnswerFingerprint(input.referenceAnswerMarkdown);
 }
 
 function asNumber(value: unknown, field: string): number {
@@ -563,10 +593,18 @@ export class GradingService {
       'reference-answer',
       `rubric-v${input.referenceAnswerVersion}.json`,
     );
+    const referenceAnswerFingerprint = getReferenceAnswerFingerprint(input.referenceAnswerMarkdown);
 
     if (await fs.pathExists(rubricPath)) {
       const existing = parseJsonObject(await fs.readFile(rubricPath, 'utf-8'));
-      return validateCompiledRubric(existing, input.projectName);
+      if (
+        canReuseCompiledRubric(existing, {
+          referenceAnswerVersion: input.referenceAnswerVersion,
+          referenceAnswerMarkdown: input.referenceAnswerMarkdown,
+        })
+      ) {
+        return validateCompiledRubric(existing, input.projectName);
+      }
     }
 
     ensureAbort(input.signal);
@@ -615,7 +653,15 @@ export class GradingService {
       rawOutput = await readChatText(response);
       parsedCandidate = parseJsonObject(rawOutput);
       const parsed = validateCompiledRubric(parsedCandidate, input.projectName);
-      await fs.writeJson(rubricPath, parsed, { spaces: 2 });
+      await fs.writeJson(
+        rubricPath,
+        {
+          ...parsed,
+          referenceAnswerVersion: input.referenceAnswerVersion,
+          referenceAnswerFingerprint,
+        },
+        { spaces: 2 },
+      );
       logLlmResult('grading-rubric', {
         status: 'success',
         detail: {

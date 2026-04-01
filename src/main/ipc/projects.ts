@@ -12,6 +12,8 @@ const createProjectSchema = z.object({
   enableScanPostProcess: z.boolean().optional(),
 });
 
+const projectNameSchema = z.string().trim().min(1);
+
 const projectSettingsSchema = z.object({
   gradingConcurrency: z.number().int().min(1),
   drawRegions: z.boolean(),
@@ -23,6 +25,9 @@ const referenceAnswerSchema = z.string().trim().min(1);
 
 export function registerProjectIpc(services: ServiceBundle): void {
   ipcMain.handle('projects:list', () => services.projects.listProjects());
+  ipcMain.handle('projects:validate-create', (_event, payload: Pick<CreateProjectInput, 'name' | 'basePath'>) =>
+    services.projects.validateCreateProject(createProjectSchema.parse(payload)),
+  );
   ipcMain.handle('projects:get-detail', (_event, projectId: string) =>
     services.projects.getProjectDetail(projectId),
   );
@@ -37,6 +42,9 @@ export function registerProjectIpc(services: ServiceBundle): void {
   );
   ipcMain.handle('projects:create', (_event, payload: CreateProjectInput) =>
     services.projects.createProject(createProjectSchema.parse(payload)),
+  );
+  ipcMain.handle('projects:update-name', (_event, projectId: string, name: string) =>
+    services.projects.updateProjectName(projectId, projectNameSchema.parse(name)),
   );
   ipcMain.handle(
     'projects:import-original-images',

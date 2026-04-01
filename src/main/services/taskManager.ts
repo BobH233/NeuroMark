@@ -2,7 +2,13 @@ import { desc, eq, isNotNull, isNull } from 'drizzle-orm';
 import dayjs from 'dayjs';
 import { nanoid } from 'nanoid';
 import PQueue from 'p-queue';
-import type { BackgroundJob, JobKind, JobStatus, StartJobOptions } from '@preload/contracts';
+import type {
+  BackgroundJob,
+  JobKind,
+  JobStatus,
+  PaperRecord,
+  StartJobOptions,
+} from '@preload/contracts';
 import { getDatabase } from '@main/database/client';
 import { tasksTable } from '@main/database/schema';
 import { GradingService } from './gradingService';
@@ -56,6 +62,26 @@ function getSecondsPerPaper(progress: number, elapsedSeconds: number, totalPaper
   }
 
   return Number((elapsedSeconds / completedPaperEquivalent).toFixed(2));
+}
+
+export function shouldGradePaper(
+  paper: Pick<PaperRecord, 'scanStatus' | 'gradingStatus' | 'gradingReferenceAnswerVersion'>,
+  referenceAnswerVersion: number,
+  skipCompleted = true,
+): boolean {
+  if (paper.scanStatus !== 'completed') {
+    return false;
+  }
+
+  if (!skipCompleted) {
+    return true;
+  }
+
+  if (paper.gradingStatus !== 'completed') {
+    return true;
+  }
+
+  return paper.gradingReferenceAnswerVersion !== referenceAnswerVersion;
 }
 
 export class TaskManager {
@@ -492,9 +518,12 @@ export class TaskManager {
     const { project } = await this.gradingService.prepareProjectGrading(projectId);
     await this.projects.resetProcessingResults(projectId);
     const papers = await this.projects.listProjectPapers(projectId);
-    const eligiblePapers = papers.filter((paper) => paper.scanStatus === 'completed');
-    const pendingPapers = eligiblePapers.filter(
-      (paper) => !(options?.skipCompleted ?? true) || paper.gradingStatus !== 'completed',
+    const pendingPapers = papers.filter((paper) =>
+      shouldGradePaper(
+        paper,
+        project.referenceAnswerVersion,
+        options?.skipCompleted ?? true,
+      ),
     );
     const db = getDatabase();
     const now = new Date().toISOString();
@@ -508,15 +537,15 @@ export class TaskManager {
         projectName: project.name,
         kind: 'grading',
         referenceAnswerVersion: project.referenceAnswerVersion,
-        status: 'running',
+        status: pendingPapers.length === 0 ? 'completed' : 'running',
         progress: pendingPapers.length === 0 ? 1 : 0,
         speed: 0,
         eta: null,
         startedAt: now,
         finishedAt: pendingPapers.length === 0 ? now : null,
         archivedAt: null,
-        abortable: true,
-        currentPaperLabel: pendingPapers[0]?.paperCode ?? '准备中',
+        abortable: pendingPapers.length > 0,
+        currentPaperLabel: pendingPapers.length === 0 ? '全部完成' : pendingPapers[0]?.paperCode ?? '准备中',
         summary:
           pendingPapers.length === 0
             ? '没有需要批阅的新答卷'
@@ -526,7 +555,6 @@ export class TaskManager {
       })
       .run();
 
-    this.gradingControllers.set(jobId, controller);
     await this.emit();
 
     if (pendingPapers.length === 0) {
@@ -534,6 +562,7 @@ export class TaskManager {
       return toJob(row!);
     }
 
+    this.gradingControllers.set(jobId, controller);
     void this.runGradingJob(jobId, projectId, controller, pendingPapers.length, options);
     const row = db.select().from(tasksTable).where(eq(tasksTable.id, jobId)).get();
     return toJob(row!);
@@ -650,10 +679,12 @@ export class TaskManager {
       });
 
       const papers = await this.projects.listProjectPapers(projectId);
-      const targetPapers = papers.filter(
-        (paper) =>
-          paper.scanStatus === 'completed' &&
-          (!(options?.skipCompleted ?? true) || paper.gradingStatus !== 'completed'),
+      const targetPapers = papers.filter((paper) =>
+        shouldGradePaper(
+          paper,
+          project.referenceAnswerVersion,
+          options?.skipCompleted ?? true,
+        ),
       );
 
       let settledCount = 0;

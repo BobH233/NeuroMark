@@ -57,14 +57,15 @@ ${questionLines}
 15. 每个 scoreBreakdown 项的字段名必须严格使用：criterionId、criterion、maxScore、score、verdict、evidence。
 16. overallAdvice 的字段名必须严格使用：summary、strengths、priorityKnowledgePoints、attentionPoints、encouragement。
 17. 不要返回任何未在 schema 中出现的别名字段，不要自行改写字段名。
-18. 输出必须严格符合下面这份 JSON Schema：
+18. 如果在 reasoning、overallComment、scoreBreakdown.evidence 等 Markdown 文本里写到公式，必须严格使用 LaTeX 原样表达，不得私自改掉上下标、分式、根号、括号层级、希腊字母或省略关键公式片段。
+19. 输出必须严格符合下面这份 JSON Schema：
 
 ${JSON.stringify(gradingSchema, null, 2)}
 
-下面是本次阅卷必须严格遵守的 rubric JSON：
+下面是本次阅卷必须严格遵守的 rubric JSON。注意：rubric 只提供固定评分单元、满分和采分点约束；具体判分时，你必须更多参考后面的原始“参考答案与评分标准”正文：
 ${JSON.stringify(input.rubric, null, 2)}
 
-下面是老师维护的参考答案原文，你必须与 rubric 一起使用：
+下面是老师维护的参考答案原文。这里的内容是本次阅卷更主要的判分依据，尤其当 rubric 中的概括与原文细节相比更简略时，必须以这里的标准内容为准：
 【参考答案与评分标准开始】
 ${input.referenceAnswerMarkdown}
 【参考答案与评分标准结束】

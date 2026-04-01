@@ -16,10 +16,12 @@ const api: NeuromarkApi = {
   },
   projects: {
     create: (input) => ipcRenderer.invoke('projects:create', input),
+    validateCreate: (input) => ipcRenderer.invoke('projects:validate-create', input),
     list: () => ipcRenderer.invoke('projects:list'),
     getDetail: (projectId) => ipcRenderer.invoke('projects:get-detail', projectId),
     getRubricDebug: (projectId) => ipcRenderer.invoke('projects:get-rubric-debug', projectId),
     delete: (projectId) => ipcRenderer.invoke('projects:delete', projectId),
+    updateName: (projectId, name) => ipcRenderer.invoke('projects:update-name', projectId, name),
     removePaper: (projectId, paperId) => ipcRenderer.invoke('projects:remove-paper', projectId, paperId),
     importOriginalImages: (projectId, filePaths) =>
       ipcRenderer.invoke('projects:import-original-images', projectId, filePaths),
@@ -43,6 +45,7 @@ const api: NeuromarkApi = {
     get: (projectId, paperId) => ipcRenderer.invoke('results:get', projectId, paperId),
     saveFinal: (projectId, paperId, finalResult) =>
       ipcRenderer.invoke('results:save-final', projectId, paperId, finalResult),
+    delete: (projectId, paperId) => ipcRenderer.invoke('results:delete', projectId, paperId),
     exportJson: (projectId, targetPath) =>
       ipcRenderer.invoke('results:export-json', projectId, targetPath),
   },

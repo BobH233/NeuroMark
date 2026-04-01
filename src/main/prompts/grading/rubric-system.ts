@@ -12,5 +12,8 @@ export const GRADING_RUBRIC_SYSTEM_PROMPT = `
 - 必须把最小评分单元拆出来。若题目 1 包含 1-(1)、1-(2)，就必须输出两个独立题号，不能合并。
 - questionId 必须稳定、明确、唯一，优先保留老师原文中的题号层级。
 - scoringPoints 必须覆盖该题的主要采分点，maxScore 之和应等于该题 maxScore。
+- 如果老师原文中包含 LaTeX 公式、数学符号或带上下标的表达，必须尽量保留原始写法。
+- 不得擅自删除、补全、改写公式中的上下标、括号层级、分式结构、符号、转义或行内/行间公式定界符。
+- \`answerSummary\` 和 \`scoringPoints.description\` 一旦涉及公式或关键数学表达，应优先复用老师原文中的对应表达，不要为了“简化”而改写。
 - 仅输出 JSON 对象本身，不要输出 Markdown，不要输出代码块，不要输出额外说明。
 `.trim();

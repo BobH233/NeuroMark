@@ -19,7 +19,8 @@ export function buildRubricCompilationUserPrompt(input: {
 8. 每个 question 的字段名必须严格使用：questionId、questionTitle、maxScore、answerSummary、scoringPoints。
 9. 每个 scoringPoints 项的字段名必须严格使用：criterionId、description、maxScore。
 10. 不要使用 pointId、pointDescription、title、paper_name 等其他命名。
-11. 输出必须严格符合下面这份 JSON Schema：
+11. 如果老师原文里有 LaTeX 公式或数学表达，answerSummary 和 scoringPoints.description 中必须尽量保留原文公式，不得私自改掉上下标、括号、分式、符号或省略公式片段。
+12. 输出必须严格符合下面这份 JSON Schema：
 
 ${JSON.stringify(GRADING_RUBRIC_JSON_SCHEMA, null, 2)}
 

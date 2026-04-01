@@ -275,6 +275,12 @@ export interface CreateProjectInput {
   enableScanPostProcess?: boolean;
 }
 
+export interface CreateProjectValidationResult {
+  available: boolean;
+  message: string | null;
+  targetRootPath: string;
+}
+
 export interface ImportOriginalImagesResult {
   projectId: string;
   addedPaperCount: number;
@@ -323,10 +329,14 @@ export interface NeuromarkApi {
   };
   projects: {
     create: (input: CreateProjectInput) => Promise<ProjectMeta>;
+    validateCreate: (
+      input: Pick<CreateProjectInput, 'name' | 'basePath'>,
+    ) => Promise<CreateProjectValidationResult>;
     list: () => Promise<ProjectMeta[]>;
     getDetail: (projectId: string) => Promise<ProjectDetail>;
     getRubricDebug: (projectId: string) => Promise<ProjectRubricDebug>;
     delete: (projectId: string) => Promise<void>;
+    updateName: (projectId: string, name: string) => Promise<ProjectMeta>;
     removePaper: (projectId: string, paperId: string) => Promise<ProjectDetail>;
     importOriginalImages: (
       projectId: string,
@@ -359,6 +369,7 @@ export interface NeuromarkApi {
       paperId: string,
       finalResult: FinalResult,
     ) => Promise<ResultRecord>;
+    delete: (projectId: string, paperId: string) => Promise<void>;
     exportJson: (projectId: string, targetPath?: string) => Promise<string>;
   };
   settings: {

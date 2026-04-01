@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia';
 import type {
+  CreateProjectValidationResult,
   CreateProjectInput,
   FinalResult,
   ProjectDetail,
@@ -60,12 +61,22 @@ export const useProjectsStore = defineStore('projects', {
       await this.selectProject(project.id);
       return project;
     },
+    async validateCreateProject(
+      input: Pick<CreateProjectInput, 'name' | 'basePath'>,
+    ): Promise<CreateProjectValidationResult> {
+      return window.neuromark.projects.validateCreate(input);
+    },
     async deleteProject(projectId: string) {
       await window.neuromark.projects.delete(projectId);
       await this.loadProjects();
       if (this.selectedProjectId === projectId) {
         this.clearSelection();
       }
+    },
+    async updateProjectName(projectId: string, name: string) {
+      await window.neuromark.projects.updateName(projectId, name);
+      await this.loadProjects();
+      await this.loadProjectDetail(projectId);
     },
     async removePaper(projectId: string, paperId: string) {
       this.detail = await window.neuromark.projects.removePaper(projectId, paperId);
@@ -97,6 +108,11 @@ export const useProjectsStore = defineStore('projects', {
       await this.loadProjects();
       await this.loadProjectDetail(projectId);
       return updated;
+    },
+    async deleteResult(projectId: string, paperId: string) {
+      await window.neuromark.results.delete(projectId, paperId);
+      await this.loadProjects();
+      await this.loadProjectDetail(projectId);
     },
     async exportResults(projectId: string) {
       return window.neuromark.results.exportJson(projectId);

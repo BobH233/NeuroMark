@@ -21,8 +21,10 @@ export function registerGradingIpc(services: ServiceBundle): void {
     (_event, projectId: string, paperId: string, finalResult: FinalResult) =>
       services.projects.saveFinalResult(projectId, paperId, finalResult),
   );
+  ipcMain.handle('results:delete', (_event, projectId: string, paperId: string) =>
+    services.projects.deleteResult(projectId, paperId),
+  );
   ipcMain.handle('results:export-json', (_event, projectId: string, targetPath?: string) =>
     services.projects.exportResults(projectId, targetPath),
   );
 }
-

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue';
+import { computed, onMounted, ref, toRaw, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { MdEditor } from 'md-editor-v3';
 import {
@@ -20,7 +20,13 @@ import {
   NTabs,
   useMessage,
 } from 'naive-ui';
-import type { FinalResult, PaperRecord, PreviewImageItem, ResultRecord } from '@preload/contracts';
+import type {
+  FinalResult,
+  PaperRecord,
+  PreviewImageItem,
+  ResultRecord,
+  ScoreBreakdownItem,
+} from '@preload/contracts';
 import ImagePreviewTile from '@/components/ImagePreviewTile.vue';
 import JsonTreeView from '@/components/JsonTreeView.vue';
 import MarkdownRenderer from '@/components/MarkdownRenderer.vue';
@@ -39,17 +45,20 @@ const tasksStore = useTasksStore();
 
 const activeTab = ref('overview');
 const selectedResultId = ref('');
-const previewMode = ref<'original' | 'scanned'>('scanned');
 const editableResult = ref<FinalResult | null>(null);
 const referenceAnswerDraft = ref('');
 const referenceAnswerSaving = ref(false);
+const projectNameDraft = ref('');
 const rubricLoading = ref(false);
 const referenceAnswerDraftProjectId = ref('');
 const referenceAnswerDraftVersion = ref(0);
 const deletingProject = ref(false);
 const scanActionLoading = ref(false);
 const gradingActionLoading = ref(false);
+const projectSettingsSaving = ref(false);
 const removingPaperId = ref('');
+const deletingResultPaperId = ref('');
+const activeQuestionId = ref('');
 
 const projectId = computed(() => String(route.params.projectId ?? ''));
 const detail = computed(() =>
@@ -100,6 +109,25 @@ const results = computed(() =>
   ),
 );
 const papers = computed(() => detail.value?.originals ?? []);
+const gradedPaperIds = computed(() => new Set(results.value.map((item) => item.paperId)));
+const ungradedPapers = computed(() =>
+  papers.value.filter((paper) => !gradedPaperIds.value.has(paper.id)),
+);
+const gradedResultEntries = computed(() =>
+  results.value.map((item) => {
+    const paper = papers.value.find((paperItem) => paperItem.id === item.paperId) ?? null;
+
+    return {
+      result: item,
+      paper,
+      paperLabel: paper?.paperCode ?? '未命名答卷',
+      studentName: item.finalResult.studentInfo.name,
+      studentId: item.finalResult.studentInfo.studentId,
+      className: item.finalResult.studentInfo.className,
+      displayScore: computeDisplayedTotal(item.finalResult),
+    };
+  }),
+);
 
 function buildOriginalPreviewImage(
   paper: PaperRecord,
@@ -189,19 +217,59 @@ const resultPreviewImages = computed<PreviewImageItem[]>(() => {
   }
 
   return paper.originalPages.map((page, index) => ({
-    src:
-      previewMode.value === 'scanned'
-        ? page.scannedPath || page.originalPath
-        : page.originalPath,
-    cacheKey:
-      previewMode.value === 'scanned'
-        ? (page.scannedPath ? page.scannedVersion : page.originalVersion)
-        : page.originalVersion,
+    src: page.scannedPath || page.originalPath,
+    cacheKey: page.scannedPath ? page.scannedVersion : page.originalVersion,
     title: `${paper.paperCode} · 第 ${index + 1} 页`,
-    caption: previewMode.value === 'scanned' ? '扫描答卷视图' : '原始答卷视图',
+    caption: page.scannedPath ? '扫描答卷与批阅区域' : '原始答卷（扫描件缺失）',
     regions: currentResult.modelResult?.questionRegions?.filter((region) => region.pageIndex === index) ?? [],
   }));
 });
+const editableAutoTotal = computed(() => {
+  if (!editableResult.value) {
+    return 0;
+  }
+
+  return Number(
+    editableResult.value.questionScores
+      .reduce((sum, question) => sum + (typeof question.score === 'number' ? question.score : 0), 0)
+      .toFixed(2),
+  );
+});
+
+function formatScoreValue(value: number): string {
+  return Number(value.toFixed(2)).toString();
+}
+
+function formatScoreBreakdownBadge(point: ScoreBreakdownItem): string {
+  return `${formatScoreValue(point.score)}/${formatScoreValue(point.maxScore)}`;
+}
+
+function getScoreBreakdownBadgeClass(point: ScoreBreakdownItem): string {
+  const epsilon = 0.001;
+
+  if (point.maxScore > 0 && Math.abs(point.score - point.maxScore) <= epsilon) {
+    return 'score-breakdown-badge--full';
+  }
+
+  if (point.score <= epsilon) {
+    return 'score-breakdown-badge--zero';
+  }
+
+  return 'score-breakdown-badge--partial';
+}
+
+watch(
+  () => [selectedProject.value?.id, selectedProject.value?.name] as const,
+  ([nextProjectId, nextProjectName]) => {
+    if (!nextProjectId) {
+      projectNameDraft.value = '';
+      return;
+    }
+
+    projectNameDraft.value = nextProjectName ?? '';
+  },
+  { immediate: true },
+);
 
 watch(
   () => [detail.value?.project.id, detail.value?.project.referenceAnswerVersion] as const,
@@ -246,6 +314,28 @@ watch(
     editableResult.value = value?.finalResult ? cloneFinalResult(value.finalResult) : null;
   },
   { immediate: true },
+);
+
+watch(
+  () => editableResult.value,
+  (value) => {
+    activeQuestionId.value = value?.questionScores[0]?.questionId ?? '';
+
+    if (value) {
+      value.manualTotalScore = editableAutoTotal.value;
+    }
+  },
+  { immediate: true },
+);
+
+watch(
+  () => editableResult.value?.questionScores.map((question) => question.score) ?? [],
+  () => {
+    if (editableResult.value) {
+      editableResult.value.manualTotalScore = editableAutoTotal.value;
+    }
+  },
+  { deep: true, immediate: true },
 );
 
 onMounted(async () => {
@@ -416,18 +506,70 @@ async function saveResult() {
   if (!selectedProject.value || !selectedResult.value || !editableResult.value) {
     return;
   }
+  const nextResult = cloneFinalResult(editableResult.value);
+  nextResult.manualTotalScore = editableAutoTotal.value;
   await projectsStore.saveFinalResult(
     selectedProject.value.id,
     selectedResult.value.paperId,
-    editableResult.value,
+    nextResult,
   );
 }
 
-async function saveProjectSettings() {
-  if (!selectedProject.value) {
+async function deleteSelectedResult() {
+  if (
+    !selectedProject.value ||
+    !selectedResult.value ||
+    deletingResultPaperId.value ||
+    hasActiveGradingTask.value
+  ) {
     return;
   }
-  await projectsStore.updateProjectSettings(selectedProject.value.id, selectedProject.value.settings);
+
+  deletingResultPaperId.value = selectedResult.value.paperId;
+  try {
+    await projectsStore.deleteResult(selectedProject.value.id, selectedResult.value.paperId);
+    await tasksStore.refresh();
+    message.success('该试卷的批阅数据已删除，现在可以重新批阅。');
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : '删除批阅数据失败。');
+  } finally {
+    deletingResultPaperId.value = '';
+  }
+}
+
+async function saveProjectSettings() {
+  if (!selectedProject.value || projectSettingsSaving.value) {
+    return;
+  }
+
+  const nextName = projectNameDraft.value.trim();
+  if (!nextName) {
+    message.error('项目名称不能为空。');
+    return;
+  }
+
+  const nextSettings = {
+    gradingConcurrency: selectedProject.value.settings.gradingConcurrency,
+    drawRegions: selectedProject.value.settings.drawRegions,
+    defaultImageDetail: selectedProject.value.settings.defaultImageDetail,
+    enableScanPostProcess: selectedProject.value.settings.enableScanPostProcess,
+  };
+  const projectIdToSave = selectedProject.value.id;
+  const nameChanged = nextName !== selectedProject.value.name;
+
+  projectSettingsSaving.value = true;
+  try {
+    if (nameChanged) {
+      await projectsStore.updateProjectName(projectIdToSave, nextName);
+    }
+    await projectsStore.updateProjectSettings(projectIdToSave, nextSettings);
+    await tasksStore.refresh();
+    message.success(nameChanged ? '项目名称和设置已保存。' : '项目设置已保存。');
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : '保存项目设置失败。');
+  } finally {
+    projectSettingsSaving.value = false;
+  }
 }
 
 async function saveReferenceAnswer() {
@@ -469,11 +611,21 @@ function handleReferenceAnswerChange(value: string) {
   referenceAnswerDraft.value = value;
 }
 
-async function openStagePreview() {
+async function openStagePreview(initialIndex = 0) {
   if (resultPreviewImages.value.length === 0) {
     return;
   }
-  await window.neuromark.preview.open(resultPreviewImages.value, 0, '答卷图片预览');
+  const safeIndex = Math.min(Math.max(initialIndex, 0), resultPreviewImages.value.length - 1);
+  const previewImages = resultPreviewImages.value.map((image) => ({
+    src: image.src,
+    cacheKey: image.cacheKey,
+    title: image.title,
+    caption: image.caption,
+    regions: image.regions?.map((region) => ({
+      ...toRaw(region),
+    })),
+  }));
+  await window.neuromark.preview.open(previewImages, safeIndex, '答卷图片预览');
 }
 
 function getPaperPagePreviewIndex(paperId: string, pageIndex: number) {
@@ -487,6 +639,10 @@ function getPaperPagePreviewIndex(paperId: string, pageIndex: number) {
   }
 
   return 0;
+}
+
+function focusQuestion(questionId: string) {
+  activeQuestionId.value = questionId;
 }
 
 function isResultOutdated(result: ResultRecord) {
@@ -807,226 +963,371 @@ function goBack() {
         </n-tab-pane>
 
         <n-tab-pane name="results" tab="批阅结果">
-          <div v-if="results.length && editableResult && selectedPaper" class="result-layout">
-            <div class="result-list surface-card">
-              <div class="result-list-head">已批改答卷</div>
-              <button
-                v-for="item in results"
-                :key="item.id"
-                class="result-row"
-                :class="{ active: item.id === selectedResult?.id }"
-                @click="selectedResultId = item.id"
-              >
-                <div class="result-row-meta">
-                  <div class="result-row-title">
-                    {{ papers.find((paper) => paper.id === item.paperId)?.paperCode || '未命名答卷' }}
-                  </div>
-                  <div class="result-row-subtitle">{{ item.finalResult.studentInfo.name || '未识别姓名' }}</div>
-                  <div class="result-version-tags">
-                    <n-tag size="small" round :bordered="false">参考答案 v{{ item.referenceAnswerVersion }}</n-tag>
-                    <n-tag
-                      v-if="isResultOutdated(item)"
-                      size="small"
-                      round
-                      type="warning"
-                      :bordered="false"
-                    >
-                      不是最新版本
-                    </n-tag>
-                  </div>
+          <div v-if="papers.length" class="result-review-layout">
+            <aside class="result-sidebar surface-card">
+              <div class="result-sidebar-head">
+                <div>
+                  <div class="result-section-title">答卷导航</div>
+                  <div class="detail-subtitle">这里独立滚动，快速切换答卷并查看批改进度。</div>
                 </div>
-                <div class="result-row-score">{{ computeDisplayedTotal(item.finalResult) }}</div>
-              </button>
-            </div>
-
-            <div class="result-detail surface-card">
-              <div class="result-detail-head">
-                <div class="result-section-title">评分明细与人工修订</div>
-                <n-button type="primary" @click="saveResult">保存修改</n-button>
-              </div>
-
-              <n-alert
-                v-if="selectedResult && !selectedResultUsesLatestReference"
-                type="warning"
-                class="result-version-alert"
-                :show-icon="false"
-              >
-                当前结果基于参考答案 v{{ selectedResult.referenceAnswerVersion }} 批阅，项目最新版本为
-                v{{ latestReferenceAnswerVersion }}。如需和最新标准保持一致，建议重新批阅。
-              </n-alert>
-
-              <div v-else-if="selectedResult" class="result-version-row">
-                <n-tag size="small" round :bordered="false">参考答案 v{{ selectedResult.referenceAnswerVersion }}</n-tag>
-                <span class="detail-subtitle">当前结果已使用最新参考答案版本。</span>
-              </div>
-
-              <n-form v-if="editableResult" label-placement="top">
-                <div class="three-col">
-                  <n-form-item label="班级">
-                    <n-input v-model:value="editableResult.studentInfo.className" />
-                  </n-form-item>
-                  <n-form-item label="学号">
-                    <n-input v-model:value="editableResult.studentInfo.studentId" />
-                  </n-form-item>
-                  <n-form-item label="姓名">
-                    <n-input v-model:value="editableResult.studentInfo.name" />
-                  </n-form-item>
-                </div>
-                <div class="two-col">
-                  <n-form-item label="总分">
-                    <n-input-number
-                      v-model:value="editableResult.manualTotalScore"
-                      :min="0"
-                      :max="100"
-                    />
-                  </n-form-item>
-                  <n-form-item label="模型总分">
-                    <n-input :value="String(editableResult.totalScore)" readonly />
-                  </n-form-item>
-                </div>
-              </n-form>
-
-              <div class="question-list">
-                <div
-                  v-for="question in editableResult.questionScores"
-                  :key="question.questionId"
-                  class="question-card"
-                >
-                  <div class="question-card-head">
-                    <div>
-                      <div class="question-card-title">{{ question.questionId }} · {{ question.questionTitle }}</div>
-                      <div class="question-card-meta">满分 {{ question.maxScore }}</div>
-                    </div>
-                    <n-input-number v-model:value="question.score" :min="0" :max="question.maxScore" />
-                  </div>
-                  <MarkdownRenderer :source="question.reasoning" />
-                  <div v-if="question.scoreBreakdown.length" class="issues-box">
-                    <strong>采分明细</strong>
-                    <ul>
-                      <li v-for="point in question.scoreBreakdown" :key="`${question.questionId}-${point.criterionId}`">
-                        {{ point.criterionId }} · {{ point.criterion }}：{{ point.score }}/{{ point.maxScore }}（{{ point.verdict }}）
-                        <div>{{ point.evidence }}</div>
-                      </li>
-                    </ul>
-                  </div>
-                  <div v-if="question.issues.length" class="issues-box">
-                    <strong>问题点</strong>
-                    <ul>
-                      <li v-for="issue in question.issues" :key="issue">{{ issue }}</li>
-                    </ul>
-                  </div>
+                <div class="result-sidebar-stats">
+                  <n-tag size="small" round :bordered="false">已批改 {{ results.length }}</n-tag>
+                  <n-tag size="small" round type="warning" :bordered="false">未批改 {{ ungradedPapers.length }}</n-tag>
                 </div>
               </div>
 
-              <n-card title="整卷建议" embedded class="surface-card nested">
-                <div class="question-list">
-                  <div class="question-card">
-                    <div class="question-card-title">总体判断</div>
-                    <div class="detail-subtitle">{{ editableResult.overallAdvice.summary }}</div>
-                  </div>
-
-                  <div class="question-card">
-                    <div class="question-card-title">表现较好的方面</div>
-                    <div v-if="editableResult.overallAdvice.strengths.length" class="issues-box">
-                      <ul>
-                        <li v-for="item in editableResult.overallAdvice.strengths" :key="item">{{ item }}</li>
-                      </ul>
-                    </div>
-                    <div v-else class="detail-subtitle">暂无特别突出的优势总结。</div>
-                  </div>
-
-                  <div class="question-card">
-                    <div class="question-card-title">优先补强知识点</div>
-                    <div v-if="editableResult.overallAdvice.priorityKnowledgePoints.length" class="issues-box">
-                      <ul>
-                        <li
-                          v-for="item in editableResult.overallAdvice.priorityKnowledgePoints"
-                          :key="item"
+              <div class="result-sidebar-scroll">
+                <div class="result-nav-section">
+                  <div class="result-list-head">已批改</div>
+                  <button
+                    v-for="entry in gradedResultEntries"
+                    :key="entry.result.id"
+                    class="result-row"
+                    :class="{ active: entry.result.id === selectedResult?.id }"
+                    @click="selectedResultId = entry.result.id"
+                  >
+                    <div class="result-row-main">
+                      <div class="result-row-topline">
+                        <div class="result-row-title">{{ entry.paperLabel }}</div>
+                        <div class="result-row-score">{{ entry.displayScore }}</div>
+                      </div>
+                      <div class="result-row-student">{{ entry.studentName || '未识别姓名' }}</div>
+                      <div class="result-row-student-meta">
+                        <span>学号 {{ entry.studentId || '未识别' }}</span>
+                        <span>班级 {{ entry.className || '未识别' }}</span>
+                      </div>
+                      <div class="result-version-tags">
+                        <n-tag size="small" round :bordered="false">
+                          参考答案 v{{ entry.result.referenceAnswerVersion }}
+                        </n-tag>
+                        <n-tag
+                          v-if="isResultOutdated(entry.result)"
+                          size="small"
+                          round
+                          type="warning"
+                          :bordered="false"
                         >
-                          {{ item }}
-                        </li>
-                      </ul>
+                          需复查
+                        </n-tag>
+                      </div>
                     </div>
-                    <div v-else class="detail-subtitle">当前没有明确需要优先补强的知识点。</div>
-                  </div>
-
-                  <div class="question-card">
-                    <div class="question-card-title">答题注意事项</div>
-                    <div v-if="editableResult.overallAdvice.attentionPoints.length" class="issues-box">
-                      <ul>
-                        <li v-for="item in editableResult.overallAdvice.attentionPoints" :key="item">{{ item }}</li>
-                      </ul>
-                    </div>
-                    <div v-else class="detail-subtitle">当前没有额外的答题习惯提醒。</div>
-                  </div>
-
-                  <div class="question-card">
-                    <div class="question-card-title">鼓励与提醒</div>
-                    <div class="detail-subtitle">{{ editableResult.overallAdvice.encouragement }}</div>
+                  </button>
+                  <div v-if="!gradedResultEntries.length" class="result-nav-empty">
+                    还没有已批改答卷。
                   </div>
                 </div>
-              </n-card>
 
-              <n-card title="整体评语" embedded class="surface-card nested">
-                <MarkdownRenderer :source="editableResult.overallComment" />
-              </n-card>
-            </div>
+                <div class="result-nav-section">
+                  <div class="result-list-head">未批改</div>
+                  <div
+                    v-for="paper in ungradedPapers"
+                    :key="paper.id"
+                    class="result-row result-row--pending"
+                  >
+                    <div class="result-row-main">
+                      <div class="result-row-topline">
+                        <div class="result-row-title">{{ paper.paperCode }}</div>
+                        <StatusPill :value="paper.gradingStatus" />
+                      </div>
+                      <div class="result-row-subtitle">
+                        扫描状态：{{ paper.scanStatus === 'completed' ? '已完成' : paper.scanStatus }}
+                      </div>
+                      <div class="result-row-student-meta">
+                        <span>{{ paper.pageCount }} 页</span>
+                        <span v-if="paper.gradingReferenceAnswerVersion">
+                          参考答案 v{{ paper.gradingReferenceAnswerVersion }}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                  <div v-if="!ungradedPapers.length" class="result-nav-empty">
+                    当前没有待批改答卷。
+                  </div>
+                </div>
+              </div>
+            </aside>
 
-            <div class="result-stage surface-card">
-              <div class="result-detail-head">
-                <div class="result-section-title">原图 / 扫描图与批阅区域</div>
+            <section class="result-workspace surface-card" v-if="selectedResult && editableResult && selectedPaper">
+              <div class="result-workspace-head">
+                <div>
+                  <div class="result-section-title">手工核对工作区</div>
+                  <div class="detail-subtitle">
+                    可以在此处查看学生扫描卷信息，手动修改每一小题的得分情况。
+                  </div>
+                </div>
                 <n-space>
-                  <n-button
-                    size="small"
-                    :type="previewMode === 'original' ? 'primary' : 'default'"
-                    @click="previewMode = 'original'"
+                  <n-popconfirm
+                    positive-text="确认删除"
+                    negative-text="取消"
+                    @positive-click="deleteSelectedResult"
                   >
-                    原始答卷
-                  </n-button>
-                  <n-button
-                    size="small"
-                    :type="previewMode === 'scanned' ? 'primary' : 'default'"
-                    @click="previewMode = 'scanned'"
-                  >
-                    扫描答卷
-                  </n-button>
-                  <n-button tertiary size="small" @click="openStagePreview">单独预览</n-button>
+                    <template #trigger>
+                      <n-button
+                        type="error"
+                        secondary
+                        :loading="deletingResultPaperId === selectedResult.paperId"
+                        :disabled="hasActiveGradingTask"
+                      >
+                        删除批阅数据
+                      </n-button>
+                    </template>
+                    删除后会移除这张试卷当前的批阅结果，并恢复为“未批改”状态，可重新发起批阅。确认继续吗？
+                  </n-popconfirm>
+                  <n-button type="primary" @click="saveResult">保存修改</n-button>
                 </n-space>
               </div>
-              <div class="stage-stack">
-                <div v-for="image in resultPreviewImages" :key="image.title" class="stage-card">
-                  <div class="stage-card-title">{{ image.title }}</div>
-                  <div class="paper-stage" @click="openStagePreview">
-                    <img
-                      class="paper-stage-image"
-                      :src="toImageSrc(image.src, image.cacheKey)"
-                      :alt="image.title"
-                    />
-                    <div
-                      v-for="region in image.regions"
-                      :key="`${image.title}-${region.questionId}`"
-                      class="paper-stage-region"
-                      :style="{
-                        left: `${region.x * 100}%`,
-                        top: `${region.y * 100}%`,
-                        width: `${region.width * 100}%`,
-                        height: `${region.height * 100}%`
-                      }"
-                    >
-                      <span>{{ region.questionId }}</span>
+
+              <div class="result-workspace-scroll">
+                <div class="result-workspace-stack">
+                    <div class="result-subsection-card">
+                      <div class="result-panel-head">
+                        <div>
+                          <div class="result-section-title">扫描答卷与答题区域</div>
+                          <div class="detail-subtitle">
+                            点击任意缩略图即可打开预览窗口放大查看。
+                          </div>
+                        </div>
+                      </div>
+
+                      <div class="result-stage-stack result-stage-stack--embedded">
+                        <div v-for="(image, imageIndex) in resultPreviewImages" :key="image.title" class="stage-card">
+                          <div class="stage-card-title">{{ image.title }}</div>
+                          <div class="paper-stage paper-stage--thumbnail" @click="openStagePreview(imageIndex)">
+                            <img
+                              class="paper-stage-image"
+                              :src="toImageSrc(image.src, image.cacheKey)"
+                              :alt="image.title"
+                            />
+                            <div
+                              v-for="region in image.regions"
+                              :key="`${image.title}-${region.questionId}`"
+                              class="paper-stage-region"
+                              :style="{
+                                left: `${region.x * 100}%`,
+                                top: `${region.y * 100}%`,
+                                width: `${region.width * 100}%`,
+                                height: `${region.height * 100}%`
+                              }"
+                              @click.stop="openStagePreview(imageIndex)"
+                            >
+                              <span>{{ region.questionId }}</span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
                     </div>
-                  </div>
+
+                    <div class="result-panel-head">
+                      <div>
+                        <div class="result-section-title">当前答卷</div>
+                      </div>
+                    </div>
+
+                    <div class="result-paper-summary">
+                      <div class="result-paper-title">{{ selectedPaper.paperCode }}</div>
+                      <div class="result-paper-meta">
+                        {{ editableResult.studentInfo.name || '未识别姓名' }}
+                        <span>学号 {{ editableResult.studentInfo.studentId || '未识别' }}</span>
+                        <span>班级 {{ editableResult.studentInfo.className || '未识别' }}</span>
+                        <span>自动汇总总分 {{ editableAutoTotal }}</span>
+                      </div>
+                    </div>
+
+                    <n-alert
+                      v-if="selectedResult && !selectedResultUsesLatestReference"
+                      type="warning"
+                      class="result-version-alert"
+                      :show-icon="false"
+                    >
+                      当前结果基于参考答案 v{{ selectedResult.referenceAnswerVersion }} 批阅，项目最新版本为
+                      v{{ latestReferenceAnswerVersion }}。如需和最新标准保持一致，建议重新批阅。
+                    </n-alert>
+
+                    <div v-else-if="selectedResult" class="result-version-row">
+                      <n-tag size="small" round :bordered="false">
+                        参考答案 v{{ selectedResult.referenceAnswerVersion }}
+                      </n-tag>
+                      <span class="detail-subtitle">当前结果已使用最新参考答案版本。</span>
+                    </div>
+
+                    <div class="result-subsection-card">
+                      <div class="result-panel-head">
+                        <div>
+                          <div class="result-section-title">基础信息与总分</div>
+                          <div class="detail-subtitle">
+                            修改班级、学号、姓名和每题分数后，总分会自动重新汇总。
+                          </div>
+                        </div>
+                      </div>
+
+                      <n-form label-placement="top">
+                        <div class="three-col">
+                          <n-form-item label="班级">
+                            <n-input v-model:value="editableResult.studentInfo.className" />
+                          </n-form-item>
+                          <n-form-item label="学号">
+                            <n-input v-model:value="editableResult.studentInfo.studentId" />
+                          </n-form-item>
+                          <n-form-item label="姓名">
+                            <n-input v-model:value="editableResult.studentInfo.name" />
+                          </n-form-item>
+                        </div>
+                      </n-form>
+
+                      <div class="result-score-summary-grid">
+                        <div class="result-score-summary-card">
+                          <span>自动汇总总分</span>
+                          <strong>{{ editableAutoTotal }}</strong>
+                        </div>
+                        <div class="result-score-summary-card">
+                          <span>模型原始总分</span>
+                          <strong>{{ editableResult.totalScore }}</strong>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div class="result-subsection-card">
+                      <div class="result-panel-head">
+                        <div>
+                          <div class="result-section-title">小题逐项核对</div>
+                          <div class="detail-subtitle">可以在此修改学生每个小题的得分，系统自动计算新的总分</div>
+                        </div>
+                      </div>
+
+                      <div class="question-list">
+                        <div
+                          v-for="question in editableResult.questionScores"
+                          :key="question.questionId"
+                          class="question-card"
+                          :class="{ 'question-card--active': question.questionId === activeQuestionId }"
+                          @click="focusQuestion(question.questionId)"
+                        >
+                          <div class="question-card-head">
+                            <div>
+                              <div class="question-card-title">{{ question.questionId }} · {{ question.questionTitle }}</div>
+                              <div class="question-card-meta">满分 {{ question.maxScore }}</div>
+                            </div>
+                            <n-input-number v-model:value="question.score" :min="0" :max="question.maxScore" />
+                          </div>
+                          <MarkdownRenderer :source="question.reasoning" />
+                          <div v-if="question.scoreBreakdown.length" class="issues-box">
+                            <strong>采分明细</strong>
+                            <ul class="score-breakdown-list">
+                              <li
+                                v-for="point in question.scoreBreakdown"
+                                :key="`${question.questionId}-${point.criterionId}`"
+                              >
+                                <div class="score-breakdown-head">
+                                  <span class="score-breakdown-criterion-id">{{ point.criterionId }} ·</span>
+                                  <span
+                                    class="score-breakdown-badge"
+                                    :class="getScoreBreakdownBadgeClass(point)"
+                                  >
+                                    {{ formatScoreBreakdownBadge(point) }}
+                                  </span>
+                                </div>
+                                <div class="score-breakdown-text">{{ point.criterion }}</div>
+                                <div class="score-breakdown-evidence">{{ point.evidence }}</div>
+                              </li>
+                            </ul>
+                          </div>
+                          <div v-if="question.issues.length" class="issues-box">
+                            <strong>问题点</strong>
+                            <ul>
+                              <li v-for="issue in question.issues" :key="issue">{{ issue }}</li>
+                            </ul>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div class="result-subsection-card">
+                      <div class="result-panel-head">
+                        <div>
+                          <div class="result-section-title">整卷建议</div>
+                          <div class="detail-subtitle">查看模型的整体建议与评语。</div>
+                        </div>
+                      </div>
+
+                      <div class="question-list">
+                        <div class="question-card question-card--advice">
+                          <div class="question-card-title">总体判断</div>
+                          <div class="detail-subtitle">{{ editableResult.overallAdvice.summary }}</div>
+                        </div>
+
+                        <div class="question-card question-card--advice">
+                          <div class="question-card-title">表现较好的方面</div>
+                          <div v-if="editableResult.overallAdvice.strengths.length" class="issues-box">
+                            <ul>
+                              <li v-for="item in editableResult.overallAdvice.strengths" :key="item">{{ item }}</li>
+                            </ul>
+                          </div>
+                          <div v-else class="detail-subtitle">暂无特别突出的优势总结。</div>
+                        </div>
+
+                        <div class="question-card question-card--advice">
+                          <div class="question-card-title">优先补强知识点</div>
+                          <div v-if="editableResult.overallAdvice.priorityKnowledgePoints.length" class="issues-box">
+                            <ul>
+                              <li
+                                v-for="item in editableResult.overallAdvice.priorityKnowledgePoints"
+                                :key="item"
+                              >
+                                {{ item }}
+                              </li>
+                            </ul>
+                          </div>
+                          <div v-else class="detail-subtitle">当前没有明确需要优先补强的知识点。</div>
+                        </div>
+
+                        <div class="question-card question-card--advice">
+                          <div class="question-card-title">答题注意事项</div>
+                          <div v-if="editableResult.overallAdvice.attentionPoints.length" class="issues-box">
+                            <ul>
+                              <li v-for="item in editableResult.overallAdvice.attentionPoints" :key="item">{{ item }}</li>
+                            </ul>
+                          </div>
+                          <div v-else class="detail-subtitle">当前没有额外的答题习惯提醒。</div>
+                        </div>
+
+                        <div class="question-card question-card--advice">
+                          <div class="question-card-title">鼓励与提醒</div>
+                          <div class="detail-subtitle">{{ editableResult.overallAdvice.encouragement }}</div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div class="result-subsection-card">
+                      <div class="result-panel-head">
+                        <div>
+                          <div class="result-section-title">整体评语</div>
+                        </div>
+                      </div>
+                      <MarkdownRenderer :source="editableResult.overallComment" />
+                    </div>
                 </div>
               </div>
-            </div>
+            </section>
+
+            <section v-else class="result-workspace result-workspace--empty">
+              <div class="surface-card result-empty-state">
+                <n-empty description="左侧还没有可查看的已批改答卷。" />
+              </div>
+            </section>
           </div>
-          <n-empty v-else description="完成扫描和批阅后，这里会显示三栏复核视图。" />
+          <n-empty v-else description="先导入答卷。批改后，这里会显示左侧导航与右侧核对工作区。" />
         </n-tab-pane>
 
         <n-tab-pane name="project-settings" tab="项目设置">
           <div class="project-settings-stack">
             <n-card class="surface-card" title="项目级批阅设置">
               <n-form v-if="selectedProject" label-placement="top" class="stack-form">
+                <n-form-item label="项目名称">
+                  <n-input v-model:value="projectNameDraft" placeholder="例如：第二章随堂练习" />
+                  <div class="field-hint" style="margin-top: 8px;">
+                    这里只修改项目显示名称，不会改动磁盘上的项目目录。
+                  </div>
+                </n-form-item>
                 <div class="two-col create-project-settings-grid">
                   <n-form-item label="批阅并行数">
                     <n-input-number
@@ -1061,7 +1362,9 @@ function goBack() {
                   </div>
                   <n-switch v-model:value="selectedProject.settings.drawRegions" />
                 </div>
-                <n-button type="primary" @click="saveProjectSettings">保存项目设置</n-button>
+                <n-button type="primary" :loading="projectSettingsSaving" @click="saveProjectSettings">
+                  保存项目设置
+                </n-button>
               </n-form>
             </n-card>
 

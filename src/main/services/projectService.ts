@@ -2,6 +2,7 @@ import path from 'node:path';
 import fs from 'fs-extra';
 import { and, desc, eq, isNull } from 'drizzle-orm';
 import type {
+  CreateProjectValidationResult,
   CreateProjectInput,
   FinalResult,
   ModelResult,
@@ -57,6 +58,14 @@ function toSafeFolderName(name: string): string {
     .trim()
     .replace(/[\\/:*?"<>|]/g, '-')
     .replace(/\s+/g, '-');
+}
+
+function normalizeProjectName(name: string): string {
+  return name.trim();
+}
+
+function getProjectTargetRootPath(basePath: string, projectName: string): string {
+  return path.join(basePath, toSafeFolderName(projectName));
 }
 
 function parseJson<T>(value: string): T {
@@ -467,11 +476,27 @@ export class ProjectService {
     return toProjectMeta(row);
   }
 
+  async validateCreateProject(
+    input: Pick<CreateProjectInput, 'name' | 'basePath'>,
+  ): Promise<CreateProjectValidationResult> {
+    const projectName = normalizeProjectName(input.name);
+    const basePath = input.basePath.trim();
+    const targetRootPath = getProjectTargetRootPath(basePath, projectName);
+    const hasProjectManifest = await fs.pathExists(path.join(targetRootPath, 'project.json'));
+
+    return {
+      available: !hasProjectManifest,
+      message: hasProjectManifest ? '该目录下已经存在同名项目。' : null,
+      targetRootPath,
+    };
+  }
+
   async createProject(input: CreateProjectInput): Promise<ProjectMeta> {
     const db = getDatabase();
     const now = new Date().toISOString();
-    const projectId = input.name.trim() ? `${Date.now()}-${toSafeFolderName(input.name)}` : `${Date.now()}`;
-    const targetRootPath = path.join(input.basePath, toSafeFolderName(input.name));
+    const projectName = normalizeProjectName(input.name);
+    const targetRootPath = getProjectTargetRootPath(input.basePath, projectName);
+    const projectId = projectName ? `${Date.now()}-${toSafeFolderName(projectName)}` : `${Date.now()}`;
     const settings: ProjectSettings = {
       ...normalizeProjectSettings(input),
     };
@@ -492,7 +517,7 @@ export class ProjectService {
 
     const project: ProjectMeta = {
       id: projectId,
-      name: input.name.trim(),
+      name: projectName,
       rootPath: targetRootPath,
       referenceAnswerVersion: 1,
       createdAt: now,
@@ -516,6 +541,40 @@ export class ProjectService {
 
     await writeProjectManifest(project);
     return this.recomputeStats(project.id);
+  }
+
+  async updateProjectName(projectId: string, name: string): Promise<ProjectMeta> {
+    const db = getDatabase();
+    const current = await this.getProjectById(projectId);
+    const nextName = normalizeProjectName(name);
+
+    if (current.name === nextName) {
+      return current;
+    }
+
+    const updatedAt = new Date().toISOString();
+    db.update(projectsTable)
+      .set({
+        name: nextName,
+        updatedAt,
+      })
+      .where(eq(projectsTable.id, projectId))
+      .run();
+    db.update(tasksTable)
+      .set({
+        projectName: nextName,
+        updatedAt,
+      })
+      .where(eq(tasksTable.projectId, projectId))
+      .run();
+
+    const updated: ProjectMeta = {
+      ...current,
+      name: nextName,
+      updatedAt,
+    };
+    await writeProjectManifest(updated);
+    return updated;
   }
 
   async updateProjectSettings(
@@ -1099,6 +1158,44 @@ export class ProjectService {
 
     await this.recomputeStats(projectId);
     return (await this.getResult(projectId, paperId))!;
+  }
+
+  async deleteResult(projectId: string, paperId: string): Promise<void> {
+    const db = getDatabase();
+    const project = await this.getProjectById(projectId);
+    const current = await this.getResult(projectId, paperId);
+
+    if (!current) {
+      throw new Error('未找到要删除的批阅结果。');
+    }
+
+    const activeGradingTask = db
+      .select()
+      .from(tasksTable)
+      .where(
+        and(
+          eq(tasksTable.projectId, projectId),
+          eq(tasksTable.kind, 'grading'),
+          isNull(tasksTable.archivedAt),
+        ),
+      )
+      .all()
+      .find((task) => ['queued', 'running', 'paused'].includes(task.status));
+
+    if (activeGradingTask) {
+      throw new Error('当前项目还有进行中的批阅任务，请先停止或等待任务完成后再删除批阅数据。');
+    }
+
+    const filePath = getResultFilePath(project.rootPath, paperId);
+    if (await fs.pathExists(filePath)) {
+      await fs.remove(filePath);
+    }
+
+    db.delete(resultRecordsTable)
+      .where(and(eq(resultRecordsTable.projectId, projectId), eq(resultRecordsTable.paperId, paperId)))
+      .run();
+
+    await this.recomputeStats(projectId);
   }
 
   async exportResults(projectId: string, targetPath?: string): Promise<string> {
