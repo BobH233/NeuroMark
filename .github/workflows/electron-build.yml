@@ -4,7 +4,8 @@ on:
   workflow_dispatch:
   push:
     branches:
-      - dev-windows-ci
+      - main
+      - master
 
 permissions:
   contents: read
@@ -17,9 +18,21 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          - name: Ubuntu
+            runs_on: ubuntu-24.04
+            artifact_name: neuromark-electron-ubuntu
+            cmake_parallel_level: '4'
           - name: Windows
             runs_on: windows-2022
             artifact_name: neuromark-electron-windows
+            cmake_parallel_level: '3'
+          - name: macOS Intel
+            runs_on: macos-15-intel
+            artifact_name: neuromark-electron-macos-x64
+            cmake_parallel_level: '3'
+          - name: macOS Apple Silicon
+            runs_on: macos-15
+            artifact_name: neuromark-electron-macos-arm64
             cmake_parallel_level: '3'
 
     env:
@@ -63,6 +76,19 @@ jobs:
             .cache/electron-builder
             build/native
           key: ${{ runner.os }}-${{ runner.arch }}-node22-native-v2-${{ hashFiles('package-lock.json', 'package.json', 'scripts/build-native.mjs', 'src-native/scancpp/CMakeLists.txt', 'src-native/scancpp/src/**', 'src-native/scancpp/third_party/opencv/cmake/**', 'src-native/scancpp/third_party/opencv/CMakeLists.txt') }}
+
+      - name: Install Linux native build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential \
+            cmake \
+            fakeroot \
+            libarchive-tools \
+            ninja-build \
+            pkg-config \
+            rpm
 
       - name: Install npm dependencies
         run: npm ci
