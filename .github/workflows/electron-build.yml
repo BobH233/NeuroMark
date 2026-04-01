@@ -31,8 +31,8 @@ jobs:
 
     env:
       CSC_IDENTITY_AUTO_DISCOVERY: 'false'
-      ELECTRON_CACHE: ${{ runner.temp }}/electron
-      ELECTRON_BUILDER_CACHE: ${{ runner.temp }}/electron-builder
+      ELECTRON_CACHE: ${{ github.workspace }}/.cache/electron
+      ELECTRON_BUILDER_CACHE: ${{ github.workspace }}/.cache/electron-builder
 
     steps:
       - name: Checkout repository
