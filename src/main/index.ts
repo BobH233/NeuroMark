@@ -45,26 +45,13 @@ function registerLocalFileProtocol(): void {
 
 function createMinimalMacosMenu(): Menu {
   const template: MenuItemConstructorOptions[] = [
-    {
-      label: app.name,
-      submenu: [
-        { role: 'about' },
-        { type: 'separator' },
-        { role: 'services' },
-        { type: 'separator' },
-        { role: 'hide' },
-        { role: 'hideOthers' },
-        { role: 'unhide' },
-        { type: 'separator' },
-        { role: 'quit' },
-      ],
-    },
+    { role: 'appMenu' },
+    { role: 'fileMenu' },
     {
       role: 'editMenu',
     },
     {
       role: 'windowMenu',
-      submenu: [{ role: 'minimize' }, { role: 'zoom' }, { type: 'separator' }, { role: 'front' }],
     },
   ];
 
