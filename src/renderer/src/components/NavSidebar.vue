@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
+import brandLogo from '../../../../build/icons/128x128.png';
 
 const route = useRoute();
 const router = useRouter();
@@ -37,7 +38,9 @@ const activeKey = computed(() => {
   <aside class="nav-sidebar glass-panel">
     <div class="nav-sidebar-main">
       <div class="brand-block">
-        <div class="brand-mark">NM</div>
+        <div class="brand-mark">
+          <img class="brand-logo" :src="brandLogo" alt="NeuroMark logo" />
+        </div>
         <div>
           <div class="brand-title">NeuroMark</div>
           <div class="brand-subtitle">AI 自动阅卷</div>

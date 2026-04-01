@@ -13,7 +13,7 @@ export async function createPreviewWindow(token: string): Promise<BrowserWindow>
     minHeight: 720,
     title: 'NeuroMark 图片预览',
     backgroundColor: '#111111',
-    autoHideMenuBar: true,
+    autoHideMenuBar: process.platform !== 'darwin',
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
     ...(process.platform === 'darwin'
       ? {
@@ -30,6 +30,11 @@ export async function createPreviewWindow(token: string): Promise<BrowserWindow>
       sandbox: false,
     },
   });
+
+  if (process.platform !== 'darwin') {
+    window.removeMenu();
+    window.setMenuBarVisibility(false);
+  }
 
   window.once('ready-to-show', () => {
     window.show();

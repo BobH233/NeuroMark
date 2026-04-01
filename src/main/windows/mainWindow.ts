@@ -12,6 +12,7 @@ export async function createMainWindow(): Promise<BrowserWindow> {
     minHeight: 760,
     title: 'NeuroMark',
     backgroundColor: '#ecf4f4',
+    autoHideMenuBar: process.platform !== 'darwin',
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
     ...(process.platform === 'darwin'
       ? {
@@ -28,6 +29,11 @@ export async function createMainWindow(): Promise<BrowserWindow> {
       sandbox: false,
     },
   });
+
+  if (process.platform !== 'darwin') {
+    window.removeMenu();
+    window.setMenuBarVisibility(false);
+  }
 
   if (process.env.ELECTRON_RENDERER_URL) {
     await window.loadURL(process.env.ELECTRON_RENDERER_URL);

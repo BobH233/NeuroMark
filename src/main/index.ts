@@ -1,4 +1,6 @@
-import { app, BrowserWindow, nativeTheme, net, protocol } from 'electron';
+import { Menu, app, BrowserWindow, nativeTheme, net, protocol } from 'electron';
+import type { MenuItemConstructorOptions } from 'electron';
+import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { registerIpcHandlers } from './ipc';
@@ -41,6 +43,56 @@ function registerLocalFileProtocol(): void {
   });
 }
 
+function createMinimalMacosMenu(): Menu {
+  const template: MenuItemConstructorOptions[] = [
+    {
+      label: app.name,
+      submenu: [
+        { role: 'about' },
+        { type: 'separator' },
+        { role: 'services' },
+        { type: 'separator' },
+        { role: 'hide' },
+        { role: 'hideOthers' },
+        { role: 'unhide' },
+        { type: 'separator' },
+        { role: 'quit' },
+      ],
+    },
+    {
+      role: 'windowMenu',
+      submenu: [{ role: 'minimize' }, { role: 'zoom' }, { type: 'separator' }, { role: 'front' }],
+    },
+  ];
+
+  return Menu.buildFromTemplate(template);
+}
+
+function resolveAppIconPath(): string | null {
+  const candidatePaths = [
+    path.join(app.getAppPath(), 'build/icons/512x512.png'),
+    path.join(process.cwd(), 'build/icons/512x512.png'),
+  ];
+
+  return candidatePaths.find((candidatePath) => existsSync(candidatePath)) ?? null;
+}
+
+function applyPlatformChrome(): void {
+  const iconPath = resolveAppIconPath();
+
+  if (process.platform === 'darwin') {
+    Menu.setApplicationMenu(createMinimalMacosMenu());
+
+    if (iconPath) {
+      app.dock?.setIcon(iconPath);
+    }
+
+    return;
+  }
+
+  Menu.setApplicationMenu(null);
+}
+
 async function bootstrap(): Promise<void> {
   const projects = new ProjectService();
   const settings = new SettingsService();
@@ -77,6 +129,7 @@ app.setAppUserModelId('cn.bit-helper.neuromark');
 nativeTheme.themeSource = 'light';
 
 app.whenReady().then(async () => {
+  applyPlatformChrome();
   registerLocalFileProtocol();
   await bootstrap();
 });
