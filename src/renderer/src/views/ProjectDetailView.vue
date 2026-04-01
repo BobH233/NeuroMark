@@ -940,6 +940,7 @@ function goBack() {
                   preview-theme="github"
                   code-theme="github"
                   :toolbars-exclude="['pageFullscreen', 'fullscreen', 'github']"
+                  @on-save="saveReferenceAnswer"
                   @update:model-value="handleReferenceAnswerChange"
                 />
               </div>

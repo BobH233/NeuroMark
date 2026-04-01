@@ -21,6 +21,8 @@ const store = useAnswerGeneratorStore();
 const markdown = ref('');
 const retrying = ref(false);
 const saving = ref(false);
+const markdownDraftId = ref('');
+const savedMarkdown = ref('');
 const promptExpanded = ref(false);
 const programPromptExpanded = ref(false);
 const logsExpanded = ref(false);
@@ -47,6 +49,7 @@ const generationStatusCopy = computed(() => {
 const canRetry = computed(
   () => Boolean(draft.value) && !isGenerating.value,
 );
+const markdownDirty = computed(() => markdown.value !== savedMarkdown.value);
 const promptDisplayText = computed(() =>
   promptExpanded.value ? (draft.value?.promptText ?? '') : collapseText(draft.value?.promptText ?? '', 160),
 );
@@ -91,7 +94,27 @@ const sourcePreviewImages = computed(() =>
 watch(
   () => draft.value?.markdown,
   (value) => {
-    markdown.value = value ?? '';
+    const nextMarkdown = value ?? '';
+    const nextDraftId = draft.value?.id ?? '';
+
+    if (!nextDraftId) {
+      markdown.value = '';
+      savedMarkdown.value = '';
+      markdownDraftId.value = '';
+      return;
+    }
+
+    if (markdownDraftId.value !== nextDraftId) {
+      markdown.value = nextMarkdown;
+      savedMarkdown.value = nextMarkdown;
+      markdownDraftId.value = nextDraftId;
+      return;
+    }
+
+    if (!markdownDirty.value || nextMarkdown === markdown.value) {
+      markdown.value = nextMarkdown;
+      savedMarkdown.value = nextMarkdown;
+    }
   },
   { immediate: true },
 );
@@ -128,18 +151,37 @@ onMounted(async () => {
   }
 });
 
-async function saveDraft(value: string) {
+function updateMarkdown(value: string) {
   markdown.value = value;
-  if (!draft.value || isGenerating.value || saving.value) {
+}
+
+async function saveDraft() {
+  if (!draft.value || isGenerating.value || saving.value || !markdownDirty.value) {
     return;
   }
 
+  const nextMarkdown = markdown.value.trim();
+  if (!nextMarkdown) {
+    window.alert('参考答案不能为空。');
+    return;
+  }
+
+  markdown.value = nextMarkdown;
+
   saving.value = true;
   try {
-    await store.updateDraft(draft.value.id, value);
+    await store.updateDraft(draft.value.id, nextMarkdown);
+    savedMarkdown.value = nextMarkdown;
   } finally {
     saving.value = false;
   }
+}
+
+function handleEditorSave() {
+  if (!draft.value || isGenerating.value || saving.value) {
+    return;
+  }
+  void saveDraft();
 }
 
 function goBack() {
@@ -459,17 +501,42 @@ async function deleteDraft() {
 
         <div
           v-else
-          class="editor-card-resizer"
         >
-          <MdEditor
-            class="editor-card-editor"
-            :model-value="markdown"
-            language="zh-CN"
-            preview-theme="github"
-            code-theme="github"
-            :toolbars-exclude="['pageFullscreen', 'fullscreen', 'github']"
-            @update:model-value="saveDraft"
-          />
+          <div class="reference-editor-head">
+            <div class="project-section-copy">
+              在这里修改本次生成的参考答案草稿。点击保存后才会写回历史记录，方便你先编辑再决定是否落盘。
+            </div>
+            <div class="reference-editor-actions">
+              <n-tag
+                v-if="markdownDirty"
+                round
+                type="warning"
+                :bordered="false"
+              >
+                有未保存修改
+              </n-tag>
+              <n-button
+                type="primary"
+                :disabled="!markdownDirty"
+                :loading="saving"
+                @click="saveDraft"
+              >
+                保存
+              </n-button>
+            </div>
+          </div>
+          <div class="editor-card-resizer">
+            <MdEditor
+              class="editor-card-editor"
+              :model-value="markdown"
+              language="zh-CN"
+              preview-theme="github"
+              code-theme="github"
+              :toolbars-exclude="['pageFullscreen', 'fullscreen', 'github']"
+              @on-save="handleEditorSave"
+              @update:model-value="updateMarkdown"
+            />
+          </div>
         </div>
       </n-card>
 
