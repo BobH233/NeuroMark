@@ -6,6 +6,10 @@ files:
   - dist/**
   - dist-electron/**
 asar: true
+asarUnpack:
+  - node_modules/sharp/**
+  - node_modules/@img/sharp-*/**
+  - node_modules/@img/sharp-libvips-*/**
 extraResources:
   - from: build/native
     to: native
@@ -17,6 +21,8 @@ extraResources:
       - '*.onnx'
 mac:
   category: public.app-category.education
+  target:
+    - zip
 win:
   target:
     - nsis
