@@ -90,10 +90,19 @@ const api: NeuromarkApi = {
     },
   },
   preview: {
-    open: (images, initialIndex, title, activeQuestionId) =>
-      ipcRenderer.invoke('preview:open', images, initialIndex, title, activeQuestionId),
+    open: (images, initialIndex, title, activeQuestionId, displayOptions) =>
+      ipcRenderer.invoke(
+        'preview:open',
+        images,
+        initialIndex,
+        title,
+        activeQuestionId,
+        displayOptions,
+      ),
     setActiveQuestion: (token, activeQuestionId) =>
       ipcRenderer.invoke('preview:set-active-question', token, activeQuestionId),
+    setDisplayOptions: (token, displayOptions) =>
+      ipcRenderer.invoke('preview:set-display-options', token, displayOptions),
     onActiveQuestionChanged: (handler) => {
       const listener = (_event: Electron.IpcRendererEvent, payload: unknown) => {
         handler(payload as any);
@@ -101,6 +110,15 @@ const api: NeuromarkApi = {
       ipcRenderer.on('preview:active-question-changed', listener);
       return () => {
         ipcRenderer.removeListener('preview:active-question-changed', listener);
+      };
+    },
+    onDisplayOptionsChanged: (handler) => {
+      const listener = (_event: Electron.IpcRendererEvent, payload: unknown) => {
+        handler(payload as any);
+      };
+      ipcRenderer.on('preview:display-options-changed', listener);
+      return () => {
+        ipcRenderer.removeListener('preview:display-options-changed', listener);
       };
     },
     copyImage: (source) => ipcRenderer.invoke('preview:copy-image', source),

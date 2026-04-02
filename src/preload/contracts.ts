@@ -112,6 +112,17 @@ export interface QuestionRegion {
   height: number;
 }
 
+export interface PreviewRegionOverlay extends QuestionRegion {
+  score?: number | null;
+  maxScore?: number | null;
+}
+
+export interface PreviewDisplayOptions {
+  showQuestionTags: boolean;
+  showQuestionBoxes: boolean;
+  showQuestionScores: boolean;
+}
+
 export interface OverallAdvice {
   summary: string;
   strengths: string[];
@@ -293,7 +304,7 @@ export interface PreviewImageItem {
   cacheKey?: string | number;
   title: string;
   caption?: string;
-  regions?: QuestionRegion[];
+  regions?: PreviewRegionOverlay[];
 }
 
 export interface PreviewSession {
@@ -302,11 +313,17 @@ export interface PreviewSession {
   initialIndex: number;
   images: PreviewImageItem[];
   activeQuestionId?: string;
+  displayOptions: PreviewDisplayOptions;
 }
 
 export interface PreviewActiveQuestionPayload {
   token: string;
   activeQuestionId: string;
+}
+
+export interface PreviewDisplayOptionsPayload {
+  token: string;
+  displayOptions: PreviewDisplayOptions;
 }
 
 export interface StartJobOptions {
@@ -410,10 +427,18 @@ export interface NeuromarkApi {
       initialIndex?: number,
       title?: string,
       activeQuestionId?: string,
+      displayOptions?: PreviewDisplayOptions,
     ) => Promise<string>;
     setActiveQuestion: (token: string | null, activeQuestionId: string) => Promise<void>;
+    setDisplayOptions: (
+      token: string | null,
+      displayOptions: PreviewDisplayOptions,
+    ) => Promise<void>;
     onActiveQuestionChanged: (
       handler: (payload: PreviewActiveQuestionPayload) => void,
+    ) => () => void;
+    onDisplayOptionsChanged: (
+      handler: (payload: PreviewDisplayOptionsPayload) => void,
     ) => () => void;
     copyImage: (source: string) => Promise<void>;
     saveImage: (source: string, suggestedName?: string) => Promise<string | null>;

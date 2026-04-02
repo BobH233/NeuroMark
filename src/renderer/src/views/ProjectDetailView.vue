@@ -23,6 +23,7 @@ import {
 import type {
   FinalResult,
   PaperRecord,
+  PreviewDisplayOptions,
   PreviewImageItem,
   ResultRecord,
   ScoreBreakdownItem,
@@ -43,6 +44,13 @@ const message = useMessage();
 const projectsStore = useProjectsStore();
 const tasksStore = useTasksStore();
 
+const DEFAULT_PREVIEW_DISPLAY_OPTIONS: PreviewDisplayOptions = {
+  showQuestionTags: true,
+  showQuestionBoxes: true,
+  showQuestionScores: false,
+};
+const PREVIEW_DISPLAY_OPTIONS_STORAGE_KEY_PREFIX = 'neuromark:preview-display-options:';
+
 const activeTab = ref('overview');
 const selectedResultId = ref('');
 const editableResult = ref<FinalResult | null>(null);
@@ -59,6 +67,7 @@ const projectSettingsSaving = ref(false);
 const removingPaperId = ref('');
 const deletingResultPaperId = ref('');
 const activeQuestionId = ref('');
+const previewDisplayOptions = ref<PreviewDisplayOptions>({ ...DEFAULT_PREVIEW_DISPLAY_OPTIONS });
 const isReviewScrollActive = ref(false);
 const expandedQuestionIds = ref<string[]>([]);
 
@@ -76,6 +85,47 @@ function setShellScrollLocked(locked: boolean) {
 
   shellContent.classList.toggle('shell-content--scroll-locked', locked);
   lockedShellContent = locked ? shellContent : null;
+}
+
+function getPreviewDisplayOptionsStorageKey(targetProjectId: string): string {
+  return `${PREVIEW_DISPLAY_OPTIONS_STORAGE_KEY_PREFIX}${targetProjectId}`;
+}
+
+function loadStoredPreviewDisplayOptions(targetProjectId: string): PreviewDisplayOptions {
+  if (typeof window === 'undefined' || !targetProjectId) {
+    return { ...DEFAULT_PREVIEW_DISPLAY_OPTIONS };
+  }
+
+  try {
+    const raw = window.localStorage.getItem(getPreviewDisplayOptionsStorageKey(targetProjectId));
+    if (!raw) {
+      return { ...DEFAULT_PREVIEW_DISPLAY_OPTIONS };
+    }
+
+    const parsed = JSON.parse(raw) as Partial<PreviewDisplayOptions>;
+    return {
+      showQuestionTags: parsed.showQuestionTags ?? DEFAULT_PREVIEW_DISPLAY_OPTIONS.showQuestionTags,
+      showQuestionBoxes: parsed.showQuestionBoxes ?? DEFAULT_PREVIEW_DISPLAY_OPTIONS.showQuestionBoxes,
+      showQuestionScores:
+        parsed.showQuestionScores ?? DEFAULT_PREVIEW_DISPLAY_OPTIONS.showQuestionScores,
+    };
+  } catch {
+    return { ...DEFAULT_PREVIEW_DISPLAY_OPTIONS };
+  }
+}
+
+function persistPreviewDisplayOptions(
+  targetProjectId: string,
+  displayOptions: PreviewDisplayOptions,
+): void {
+  if (typeof window === 'undefined' || !targetProjectId) {
+    return;
+  }
+
+  window.localStorage.setItem(
+    getPreviewDisplayOptionsStorageKey(targetProjectId),
+    JSON.stringify(displayOptions),
+  );
 }
 
 const projectId = computed(() => String(route.params.projectId ?? ''));
@@ -230,18 +280,42 @@ const selectedPaper = computed(() => {
 const resultPreviewImages = computed<PreviewImageItem[]>(() => {
   const paper = selectedPaper.value;
   const currentResult = selectedResult.value;
-  if (!paper || !currentResult) {
+  const currentEditableResult = editableResult.value;
+  if (!paper || !currentResult || !currentEditableResult) {
     return [];
   }
+
+  const scoreMap = new Map(
+    currentEditableResult.questionScores.map((question) => [
+      question.questionId,
+      {
+        score: question.score,
+        maxScore: question.maxScore,
+      },
+    ]),
+  );
 
   return paper.originalPages.map((page, index) => ({
     src: page.scannedPath || page.originalPath,
     cacheKey: page.scannedPath ? page.scannedVersion : page.originalVersion,
     title: `${paper.paperCode} · 第 ${index + 1} 页`,
     caption: page.scannedPath ? '扫描答卷与批阅区域' : '原始答卷（扫描件缺失）',
-    regions: currentResult.modelResult?.questionRegions?.filter((region) => region.pageIndex === index) ?? [],
+    regions:
+      currentResult.modelResult?.questionRegions
+        ?.filter((region) => region.pageIndex === index)
+        .map((region) => ({
+          ...region,
+          score: scoreMap.get(region.questionId)?.score ?? null,
+          maxScore: scoreMap.get(region.questionId)?.maxScore ?? null,
+        })) ?? [],
   }));
 });
+const hasVisibleRegionOverlay = computed(
+  () =>
+    previewDisplayOptions.value.showQuestionBoxes ||
+    previewDisplayOptions.value.showQuestionTags ||
+    previewDisplayOptions.value.showQuestionScores,
+);
 const editableAutoTotal = computed(() => {
   if (!editableResult.value) {
     return 0;
@@ -260,6 +334,14 @@ function formatScoreValue(value: number): string {
 
 function formatScoreBreakdownBadge(point: ScoreBreakdownItem): string {
   return `${formatScoreValue(point.score)}/${formatScoreValue(point.maxScore)}`;
+}
+
+function formatRegionScore(score?: number | null, maxScore?: number | null): string {
+  if (typeof score !== 'number' || typeof maxScore !== 'number') {
+    return '';
+  }
+
+  return `${formatScoreValue(score)}/${formatScoreValue(maxScore)}`;
 }
 
 function getScoreBreakdownBadgeClass(point: ScoreBreakdownItem): string {
@@ -363,6 +445,27 @@ watch(
     await window.neuromark.preview.setActiveQuestion(null, questionId);
   },
   { flush: 'post' },
+);
+
+watch(
+  projectId,
+  (nextProjectId) => {
+    previewDisplayOptions.value = loadStoredPreviewDisplayOptions(nextProjectId);
+  },
+  { immediate: true },
+);
+
+watch(
+  previewDisplayOptions,
+  async (displayOptions) => {
+    const plainDisplayOptions = toPlainPreviewDisplayOptions(displayOptions);
+    persistPreviewDisplayOptions(projectId.value, plainDisplayOptions);
+    await window.neuromark.preview.setDisplayOptions(
+      null,
+      plainDisplayOptions,
+    );
+  },
+  { deep: true },
 );
 
 watch(
@@ -672,7 +775,27 @@ async function openStagePreview(initialIndex = 0) {
     safeIndex,
     '答卷图片预览',
     activeQuestionId.value,
+    toPlainPreviewDisplayOptions(previewDisplayOptions.value),
   );
+}
+
+function togglePreviewDisplayOption(option: keyof PreviewDisplayOptions) {
+  previewDisplayOptions.value = {
+    ...previewDisplayOptions.value,
+    [option]: !previewDisplayOptions.value[option],
+  };
+}
+
+function toPlainPreviewDisplayOptions(
+  value: PreviewDisplayOptions,
+): PreviewDisplayOptions {
+  const rawValue = toRaw(value);
+
+  return {
+    showQuestionTags: rawValue.showQuestionTags,
+    showQuestionBoxes: rawValue.showQuestionBoxes,
+    showQuestionScores: rawValue.showQuestionScores,
+  };
 }
 
 function getPaperPagePreviewIndex(paperId: string, pageIndex: number) {
@@ -1052,7 +1175,7 @@ function goBack() {
               <div class="result-sidebar-head">
                 <div>
                   <div class="result-section-title">答卷导航</div>
-                  <div class="detail-subtitle">这里独立滚动，快速切换答卷并查看批改进度。</div>
+                  <div class="detail-subtitle">浏览所有已批阅答卷。</div>
                 </div>
                 <div class="result-sidebar-stats">
                   <n-tag size="small" round :bordered="false">已批改 {{ results.length }}</n-tag>
@@ -1164,10 +1287,58 @@ function goBack() {
               <div class="result-workspace-scroll">
                 <div class="result-workspace-stack">
                     <div class="result-subsection-card">
-                      <div class="result-panel-head">
+                      <div class="result-panel-head result-panel-head--with-tools">
                         <div>
                           <div class="result-section-title">扫描答卷与答题区域</div>
                           <div class="detail-subtitle">用于对照当前小题对应的答题区域。</div>
+                        </div>
+                        <div class="preview-overlay-controls" aria-label="预览覆盖层开关">
+                          <button
+                            class="preview-overlay-toggle"
+                            :class="{ 'is-active': previewDisplayOptions.showQuestionTags }"
+                            :aria-pressed="previewDisplayOptions.showQuestionTags"
+                            aria-label="切换题目标号"
+                            title="显示题目标号"
+                            @click="togglePreviewDisplayOption('showQuestionTags')"
+                          >
+                            <svg viewBox="0 0 24 24" aria-hidden="true">
+                              <path d="M4 7h11" />
+                              <path d="M4 12h8" />
+                              <path d="M4 17h11" />
+                              <path d="M18 6v6" />
+                              <path d="M15 9h6" />
+                            </svg>
+                          </button>
+                          <button
+                            class="preview-overlay-toggle"
+                            :class="{ 'is-active': previewDisplayOptions.showQuestionBoxes }"
+                            :aria-pressed="previewDisplayOptions.showQuestionBoxes"
+                            aria-label="切换题目方框"
+                            title="显示题目方框"
+                            @click="togglePreviewDisplayOption('showQuestionBoxes')"
+                          >
+                            <svg viewBox="0 0 24 24" aria-hidden="true">
+                              <rect x="5" y="5" width="14" height="14" rx="3" ry="3" />
+                              <path d="M9 9h6" />
+                              <path d="M9 15h6" />
+                            </svg>
+                          </button>
+                          <button
+                            class="preview-overlay-toggle"
+                            :class="{ 'is-active': previewDisplayOptions.showQuestionScores }"
+                            :aria-pressed="previewDisplayOptions.showQuestionScores"
+                            aria-label="切换小题得分"
+                            title="显示小题得分"
+                            @click="togglePreviewDisplayOption('showQuestionScores')"
+                          >
+                            <svg viewBox="0 0 24 24" aria-hidden="true">
+                              <path d="M5 7h14" />
+                              <path d="M7 12h4" />
+                              <path d="M13 12h4" />
+                              <path d="M7 17h10" />
+                              <path d="M11.5 10.5 12.5 13.5" />
+                            </svg>
+                          </button>
                         </div>
                       </div>
 
@@ -1181,10 +1352,14 @@ function goBack() {
                               :alt="image.title"
                             />
                             <div
+                              v-if="hasVisibleRegionOverlay"
                               v-for="region in image.regions"
                               :key="`${image.title}-${region.questionId}`"
                               class="paper-stage-region"
-                              :class="{ 'paper-stage-region--active': region.questionId === activeQuestionId }"
+                              :class="{
+                                'paper-stage-region--active': region.questionId === activeQuestionId,
+                                'paper-stage-region--box-hidden': !previewDisplayOptions.showQuestionBoxes
+                              }"
                               :style="{
                                 left: `${region.x * 100}%`,
                                 top: `${region.y * 100}%`,
@@ -1192,7 +1367,13 @@ function goBack() {
                                 height: `${region.height * 100}%`
                               }"
                             >
-                              <span>{{ region.questionId }}</span>
+                              <span v-if="previewDisplayOptions.showQuestionTags">{{ region.questionId }}</span>
+                              <strong
+                                v-if="previewDisplayOptions.showQuestionScores"
+                                class="paper-stage-region-score"
+                              >
+                                {{ formatRegionScore(region.score, region.maxScore) }}
+                              </strong>
                             </div>
                           </div>
                         </div>
@@ -1286,7 +1467,13 @@ function goBack() {
                         >
                           <div class="question-card-head">
                             <div>
-                              <div class="question-card-title">{{ question.questionId }} · {{ question.questionTitle }}</div>
+                              <div class="question-card-title question-card-title--markdown">
+                                <span class="question-card-title-prefix">{{ question.questionId }} · </span>
+                                <MarkdownRenderer
+                                  class="question-card-title-content"
+                                  :source="question.questionTitle"
+                                />
+                              </div>
                               <div class="question-card-meta">满分 {{ question.maxScore }}</div>
                             </div>
                             <div class="question-card-actions">
@@ -1435,9 +1622,6 @@ function goBack() {
               <n-form v-if="selectedProject" label-placement="top" class="stack-form">
                 <n-form-item label="项目名称">
                   <n-input v-model:value="projectNameDraft" placeholder="例如：第二章随堂练习" />
-                  <div class="field-hint" style="margin-top: 8px;">
-                    这里只修改项目显示名称，不会改动磁盘上的项目目录。
-                  </div>
                 </n-form-item>
                 <div class="two-col create-project-settings-grid">
                   <n-form-item label="批阅并行数">

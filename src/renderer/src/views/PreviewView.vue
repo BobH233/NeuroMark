@@ -3,7 +3,12 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router';
 import { NEmpty } from 'naive-ui';
 import type { ComponentPublicInstance } from 'vue';
-import type { PreviewActiveQuestionPayload, PreviewSession } from '@preload/contracts';
+import type {
+  PreviewActiveQuestionPayload,
+  PreviewDisplayOptions,
+  PreviewDisplayOptionsPayload,
+  PreviewSession,
+} from '@preload/contracts';
 import { toImageSrc } from '@/utils/file';
 
 const route = useRoute();
@@ -27,8 +32,14 @@ const contextMenu = ref({
   y: 0,
 });
 const activeQuestionId = ref('');
+const displayOptions = ref<PreviewDisplayOptions>({
+  showQuestionTags: true,
+  showQuestionBoxes: true,
+  showQuestionScores: false,
+});
 let thumbnailObserver: IntersectionObserver | null = null;
 let removePreviewQuestionListener: (() => void) | null = null;
+let removePreviewDisplayOptionsListener: (() => void) | null = null;
 
 const activeImage = computed(() => {
   if (!session.value) {
@@ -42,6 +53,12 @@ const hasMultipleImages = computed(() => (session.value?.images.length ?? 0) > 1
 const activeTitle = computed(() => activeImage.value?.title ?? '图片预览');
 const activeCaption = computed(() => activeImage.value?.caption ?? '');
 const activeRotation = computed(() => rotations.value[activeIndex.value] ?? 0);
+const hasVisibleRegionOverlay = computed(
+  () =>
+    displayOptions.value.showQuestionBoxes ||
+    displayOptions.value.showQuestionTags ||
+    displayOptions.value.showQuestionScores,
+);
 
 onMounted(async () => {
   const token = String(route.params.token ?? '');
@@ -50,6 +67,7 @@ onMounted(async () => {
     session.value = previewSession;
     activeIndex.value = previewSession?.initialIndex ?? 0;
     activeQuestionId.value = previewSession?.activeQuestionId ?? '';
+    displayOptions.value = previewSession?.displayOptions ?? displayOptions.value;
   } finally {
     loading.value = false;
   }
@@ -66,6 +84,14 @@ onMounted(async () => {
       activeQuestionId.value = payload.activeQuestionId;
     },
   );
+  removePreviewDisplayOptionsListener = window.neuromark.preview.onDisplayOptionsChanged(
+    (payload: PreviewDisplayOptionsPayload) => {
+      if (payload.token !== token) {
+        return;
+      }
+      displayOptions.value = payload.displayOptions;
+    },
+  );
 });
 
 onBeforeUnmount(() => {
@@ -77,6 +103,8 @@ onBeforeUnmount(() => {
   thumbnailObserver = null;
   removePreviewQuestionListener?.();
   removePreviewQuestionListener = null;
+  removePreviewDisplayOptionsListener?.();
+  removePreviewDisplayOptionsListener = null;
 });
 
 watch(
@@ -369,6 +397,18 @@ async function saveCurrentImage() {
     saving.value = false;
   }
 }
+
+function formatScoreValue(value: number): string {
+  return Number(value.toFixed(2)).toString();
+}
+
+function formatRegionScore(score?: number | null, maxScore?: number | null): string {
+  if (typeof score !== 'number' || typeof maxScore !== 'number') {
+    return '';
+  }
+
+  return `${formatScoreValue(score)}/${formatScoreValue(maxScore)}`;
+}
 </script>
 
 <template>
@@ -469,10 +509,14 @@ async function saveCurrentImage() {
                 draggable="false"
               >
               <div
+                v-if="hasVisibleRegionOverlay"
                 v-for="region in activeImage.regions"
                 :key="`${activeImage.title}-${region.questionId}`"
                 class="preview-region"
-                :class="{ 'preview-region--active': region.questionId === activeQuestionId }"
+                :class="{
+                  'preview-region--active': region.questionId === activeQuestionId,
+                  'preview-region--box-hidden': !displayOptions.showQuestionBoxes
+                }"
                 :style="{
                   left: `${region.x * 100}%`,
                   top: `${region.y * 100}%`,
@@ -480,7 +524,13 @@ async function saveCurrentImage() {
                   height: `${region.height * 100}%`
                 }"
               >
-                <span>{{ region.questionId }}</span>
+                <span v-if="displayOptions.showQuestionTags">{{ region.questionId }}</span>
+                <strong
+                  v-if="displayOptions.showQuestionScores"
+                  class="preview-region-score"
+                >
+                  {{ formatRegionScore(region.score, region.maxScore) }}
+                </strong>
               </div>
             </div>
 

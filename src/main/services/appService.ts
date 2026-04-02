@@ -11,7 +11,17 @@ import {
 } from 'electron';
 import { nanoid } from 'nanoid';
 import sharp from 'sharp';
-import type { PreviewImageItem, PreviewSession } from '@preload/contracts';
+import type {
+  PreviewDisplayOptions,
+  PreviewImageItem,
+  PreviewSession,
+} from '@preload/contracts';
+
+const DEFAULT_PREVIEW_DISPLAY_OPTIONS: PreviewDisplayOptions = {
+  showQuestionTags: true,
+  showQuestionBoxes: true,
+  showQuestionScores: false,
+};
 
 export class AppService {
   private readonly previewSessions = new Map<string, PreviewSession>();
@@ -66,6 +76,7 @@ export class AppService {
     initialIndex = 0,
     title = '图片预览',
     activeQuestionId = '',
+    displayOptions: PreviewDisplayOptions = DEFAULT_PREVIEW_DISPLAY_OPTIONS,
   ): Promise<string> {
     const token = nanoid();
     this.previewSessions.set(token, {
@@ -74,6 +85,7 @@ export class AppService {
       initialIndex,
       images,
       activeQuestionId,
+      displayOptions: normalizePreviewDisplayOptions(displayOptions),
     });
     const previewWindow = await this.openPreviewWindow(token);
     this.previewWindows.set(token, previewWindow);
@@ -106,6 +118,32 @@ export class AppService {
       previewWindow.webContents.send('preview:active-question-changed', {
         token: targetToken,
         activeQuestionId,
+      });
+    }
+  }
+
+  async setPreviewDisplayOptions(
+    token: string | null,
+    displayOptions: PreviewDisplayOptions,
+  ): Promise<void> {
+    const targetTokens = token ? [token] : [...this.previewSessions.keys()];
+    const normalizedDisplayOptions = normalizePreviewDisplayOptions(displayOptions);
+
+    for (const targetToken of targetTokens) {
+      const session = this.previewSessions.get(targetToken);
+      if (!session) {
+        continue;
+      }
+
+      session.displayOptions = normalizedDisplayOptions;
+      const previewWindow = this.previewWindows.get(targetToken);
+      if (!previewWindow || previewWindow.isDestroyed()) {
+        continue;
+      }
+
+      previewWindow.webContents.send('preview:display-options-changed', {
+        token: targetToken,
+        displayOptions: normalizedDisplayOptions,
       });
     }
   }
@@ -160,6 +198,17 @@ export class AppService {
 
     return result.filePath;
   }
+}
+
+function normalizePreviewDisplayOptions(
+  displayOptions?: PreviewDisplayOptions,
+): PreviewDisplayOptions {
+  return {
+    showQuestionTags: displayOptions?.showQuestionTags ?? DEFAULT_PREVIEW_DISPLAY_OPTIONS.showQuestionTags,
+    showQuestionBoxes: displayOptions?.showQuestionBoxes ?? DEFAULT_PREVIEW_DISPLAY_OPTIONS.showQuestionBoxes,
+    showQuestionScores:
+      displayOptions?.showQuestionScores ?? DEFAULT_PREVIEW_DISPLAY_OPTIONS.showQuestionScores,
+  };
 }
 
 type ResolvedPreviewImage =

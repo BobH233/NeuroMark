@@ -835,6 +835,12 @@ textarea {
   gap: 10px;
 }
 
+.result-panel-head--with-tools {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 14px;
+}
+
 .result-workspace-head {
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: start;
@@ -977,6 +983,56 @@ textarea {
   justify-content: flex-start;
 }
 
+.preview-overlay-controls {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.preview-overlay-toggle {
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 1px solid rgba(148, 163, 184, 0.26);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.88);
+  color: rgba(100, 116, 139, 0.78);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition:
+    color 160ms ease,
+    border-color 160ms ease,
+    background 160ms ease,
+    transform 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.preview-overlay-toggle:hover {
+  transform: translateY(-1px);
+  border-color: rgba(15, 139, 141, 0.3);
+}
+
+.preview-overlay-toggle.is-active {
+  color: #0f8b8d;
+  border-color: rgba(15, 139, 141, 0.34);
+  background: rgba(15, 139, 141, 0.1);
+  box-shadow: 0 8px 22px rgba(15, 139, 141, 0.08);
+}
+
+.preview-overlay-toggle svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
 .result-workspace-stack {
   display: grid;
   gap: 18px;
@@ -1083,6 +1139,47 @@ textarea {
 .question-score-editor {
   display: grid;
   gap: 10px;
+}
+
+.question-card-title--markdown {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px;
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.4;
+  min-width: 0;
+}
+
+.question-card-title-prefix {
+  flex: 0 0 auto;
+}
+
+.question-card-title-content {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.question-card-title-content.markdown-preview {
+  display: inline;
+}
+
+.question-card-title-content.markdown-preview > p {
+  display: inline;
+  margin: 0;
+}
+
+.question-card-title-content.markdown-preview,
+.question-card-title-content.markdown-preview :is(p, .katex) {
+  font-size: inherit;
+  line-height: inherit;
+}
+
+.question-card-title-content .katex-display {
+  display: inline-block;
+  margin: 0;
+  max-width: 100%;
 }
 
 .question-card-actions {
@@ -1297,6 +1394,12 @@ textarea {
   box-shadow: 0 0 0 1px rgba(154, 52, 18, 0.28);
 }
 
+.paper-stage-region--box-hidden,
+.preview-region--box-hidden {
+  border-color: transparent;
+  box-shadow: none;
+}
+
 .paper-stage-region {
   pointer-events: none;
   transition:
@@ -1308,8 +1411,8 @@ textarea {
 .paper-stage-region span,
 .preview-region span {
   position: absolute;
-  top: -24px;
-  left: 0;
+  top: 8px;
+  left: 8px;
   padding: 3px 8px;
   border-radius: 999px;
   background: #34d399;
@@ -1322,6 +1425,21 @@ textarea {
 .preview-region--active span {
   background: #f97316;
   color: #431407;
+}
+
+.paper-stage-region-score,
+.preview-region-score {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: rgba(255, 244, 244, 0.9);
+  box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.14);
+  color: #dc2626;
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1;
 }
 
 .status-pill {
