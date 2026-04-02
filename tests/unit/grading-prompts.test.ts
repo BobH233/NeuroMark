@@ -59,11 +59,15 @@ describe('grading prompt guards', () => {
     expect(gradingSystemPrompt).toContain('你必须更多参考【参考答案与评分标准开始】与【参考答案与评分标准结束】之间的原始标准内容');
     expect(gradingSystemPrompt).toContain('`scoreBreakdown.evidence`、`scoreBreakdown.criterion`');
     expect(gradingSystemPrompt).toContain('只要出现任何数学表达，都必须带数学定界符 `$`');
+    expect(gradingSystemPrompt).toContain('绝对禁止用反引号包裹任何数学表达');
+    expect(gradingSystemPrompt).toContain('把数学表达写成行内代码同样是格式错误');
     expect(gradingSystemPrompt).toContain('裸写 `\\frac{2}{3}`');
     expect(gradingUserPrompt).toContain('rubric 只提供固定评分单元、满分和采分点约束');
     expect(gradingUserPrompt).toContain('这里的内容是本次阅卷更主要的判分依据');
     expect(gradingUserPrompt).toContain('scoreBreakdown.evidence、scoreBreakdown.criterion');
     expect(gradingUserPrompt).toContain('只要出现任何数学表达，都必须带数学定界符 $');
+    expect(gradingUserPrompt).toContain('绝对禁止用反引号包裹任何数学表达');
+    expect(gradingUserPrompt).toContain('不得出现被反引号包裹的数学表达');
     expect(gradingUserPrompt).toContain('裸写 \\frac{2}{3}');
   });
 });
