@@ -60,6 +60,7 @@ const removingPaperId = ref('');
 const deletingResultPaperId = ref('');
 const activeQuestionId = ref('');
 const isReviewScrollActive = ref(false);
+const expandedQuestionIds = ref<string[]>([]);
 
 let lockedShellContent: HTMLElement | null = null;
 
@@ -329,6 +330,7 @@ watch(
   () => selectedResult.value,
   (value) => {
     editableResult.value = value?.finalResult ? cloneFinalResult(value.finalResult) : null;
+    expandedQuestionIds.value = [];
   },
   { immediate: true },
 );
@@ -690,6 +692,20 @@ function focusQuestion(questionId: string) {
   activeQuestionId.value = questionId;
 }
 
+function isQuestionExpanded(questionId: string) {
+  return expandedQuestionIds.value.includes(questionId);
+}
+
+function toggleQuestionExpanded(questionId: string) {
+  if (isQuestionExpanded(questionId)) {
+    expandedQuestionIds.value = expandedQuestionIds.value.filter((item) => item !== questionId);
+    return;
+  }
+
+  expandedQuestionIds.value = [...expandedQuestionIds.value, questionId];
+  focusQuestion(questionId);
+}
+
 function isResultOutdated(result: ResultRecord) {
   return result.referenceAnswerVersion !== latestReferenceAnswerVersion.value;
 }
@@ -745,6 +761,10 @@ function getTaskProgressLabel(progress: number, status: string) {
 
 function getTaskRuntimeLogs(task: { runtimeLogs?: string[] }, maxCount = 3) {
   return (task.runtimeLogs ?? []).slice(-maxCount).reverse();
+}
+
+function isErrorLogLine(line: string) {
+  return /^\[[^\]]+\]\s*ERROR:/.test(line) || line.includes('尝试失败：ERROR:');
 }
 
 function goBack() {
@@ -896,6 +916,7 @@ function goBack() {
                           v-for="line in getTaskRuntimeLogs(task)"
                           :key="`${task.id}-${line}`"
                           class="task-log-line"
+                          :class="{ 'task-log-line--error': isErrorLogLine(line) }"
                         >
                           {{ line }}
                         </div>
@@ -1268,36 +1289,61 @@ function goBack() {
                               <div class="question-card-title">{{ question.questionId }} · {{ question.questionTitle }}</div>
                               <div class="question-card-meta">满分 {{ question.maxScore }}</div>
                             </div>
-                            <n-input-number v-model:value="question.score" :min="0" :max="question.maxScore" />
-                          </div>
-                          <MarkdownRenderer :source="question.reasoning" />
-                          <div v-if="question.scoreBreakdown.length" class="issues-box">
-                            <strong>采分明细</strong>
-                            <ul class="score-breakdown-list">
-                              <li
-                                v-for="point in question.scoreBreakdown"
-                                :key="`${question.questionId}-${point.criterionId}`"
+                            <div class="question-card-actions">
+                              <div class="question-score-pill">
+                                当前得分 {{ formatScoreValue(question.score) }}/{{ formatScoreValue(question.maxScore) }}
+                              </div>
+                              <n-button
+                                text
+                                type="primary"
+                                class="question-toggle-button"
+                                @click.stop="toggleQuestionExpanded(question.questionId)"
                               >
-                                <div class="score-breakdown-head">
-                                  <span class="score-breakdown-criterion-id">{{ point.criterionId }} ·</span>
-                                  <span
-                                    class="score-breakdown-badge"
-                                    :class="getScoreBreakdownBadgeClass(point)"
-                                  >
-                                    {{ formatScoreBreakdownBadge(point) }}
-                                  </span>
-                                </div>
-                                <MarkdownRenderer :source="point.criterion" />
-                                <MarkdownRenderer :source="point.evidence" />
-                              </li>
-                            </ul>
+                                {{ isQuestionExpanded(question.questionId) ? '收起' : '展开' }}
+                              </n-button>
+                            </div>
                           </div>
                           <div v-if="question.issues.length" class="issues-box">
                             <strong>问题点</strong>
                             <ul>
-                              <li v-for="issue in question.issues" :key="issue">{{ issue }}</li>
+                              <li v-for="issue in question.issues" :key="issue">
+                                <MarkdownRenderer :source="issue" />
+                              </li>
                             </ul>
                           </div>
+                          <div v-else-if="!isQuestionExpanded(question.questionId)" class="detail-subtitle">
+                            当前没有模型标记的问题点。
+                          </div>
+                          <template v-if="isQuestionExpanded(question.questionId)">
+                            <div class="question-card-expanded">
+                              <div class="question-score-editor">
+                                <div class="detail-subtitle">手动调整本题分数，保存后会重新汇总总分。</div>
+                                <n-input-number v-model:value="question.score" :min="0" :max="question.maxScore" />
+                              </div>
+                              <MarkdownRenderer :source="question.reasoning" />
+                              <div v-if="question.scoreBreakdown.length" class="issues-box">
+                                <strong>采分明细</strong>
+                                <ul class="score-breakdown-list">
+                                  <li
+                                    v-for="point in question.scoreBreakdown"
+                                    :key="`${question.questionId}-${point.criterionId}`"
+                                  >
+                                    <div class="score-breakdown-head">
+                                      <span class="score-breakdown-criterion-id">{{ point.criterionId }} ·</span>
+                                      <span
+                                        class="score-breakdown-badge"
+                                        :class="getScoreBreakdownBadgeClass(point)"
+                                      >
+                                        {{ formatScoreBreakdownBadge(point) }}
+                                      </span>
+                                    </div>
+                                    <MarkdownRenderer :source="point.criterion" />
+                                    <MarkdownRenderer :source="point.evidence" />
+                                  </li>
+                                </ul>
+                              </div>
+                            </div>
+                          </template>
                         </div>
                       </div>
                     </div>
@@ -1313,14 +1359,16 @@ function goBack() {
                       <div class="question-list">
                         <div class="question-card question-card--advice">
                           <div class="question-card-title">总体判断</div>
-                          <div class="detail-subtitle">{{ editableResult.overallAdvice.summary }}</div>
+                          <MarkdownRenderer :source="editableResult.overallAdvice.summary" />
                         </div>
 
                         <div class="question-card question-card--advice">
                           <div class="question-card-title">表现较好的方面</div>
                           <div v-if="editableResult.overallAdvice.strengths.length" class="issues-box">
                             <ul>
-                              <li v-for="item in editableResult.overallAdvice.strengths" :key="item">{{ item }}</li>
+                              <li v-for="item in editableResult.overallAdvice.strengths" :key="item">
+                                <MarkdownRenderer :source="item" />
+                              </li>
                             </ul>
                           </div>
                           <div v-else class="detail-subtitle">暂无特别突出的优势总结。</div>
@@ -1334,7 +1382,7 @@ function goBack() {
                                 v-for="item in editableResult.overallAdvice.priorityKnowledgePoints"
                                 :key="item"
                               >
-                                {{ item }}
+                                <MarkdownRenderer :source="item" />
                               </li>
                             </ul>
                           </div>
@@ -1345,7 +1393,9 @@ function goBack() {
                           <div class="question-card-title">答题注意事项</div>
                           <div v-if="editableResult.overallAdvice.attentionPoints.length" class="issues-box">
                             <ul>
-                              <li v-for="item in editableResult.overallAdvice.attentionPoints" :key="item">{{ item }}</li>
+                              <li v-for="item in editableResult.overallAdvice.attentionPoints" :key="item">
+                                <MarkdownRenderer :source="item" />
+                              </li>
                             </ul>
                           </div>
                           <div v-else class="detail-subtitle">当前没有额外的答题习惯提醒。</div>
@@ -1353,7 +1403,7 @@ function goBack() {
 
                         <div class="question-card question-card--advice">
                           <div class="question-card-title">鼓励与提醒</div>
-                          <div class="detail-subtitle">{{ editableResult.overallAdvice.encouragement }}</div>
+                          <MarkdownRenderer :source="editableResult.overallAdvice.encouragement" />
                         </div>
                       </div>
                     </div>

@@ -127,6 +127,10 @@ function getTaskRuntimeLogs(task: BackgroundJob) {
     : task.runtimeLogs.slice(-4);
 }
 
+function isErrorLogLine(line: string) {
+  return /^\[[^\]]+\]\s*ERROR:/.test(line) || line.includes('尝试失败：ERROR:');
+}
+
 function isTaskExpanded(taskId: string) {
   return expandedTaskIds.value.has(taskId);
 }
@@ -308,11 +312,15 @@ async function archiveVisibleTasks() {
                 <div class="task-list-meta-label">
                   最近日志
                 </div>
-                <div class="task-log-list">
+                <div
+                  class="task-log-list"
+                  :class="{ 'task-log-list--scrollable': isTaskExpanded(task.id) }"
+                >
                   <div
                     v-for="line in getTaskRuntimeLogs(task)"
                     :key="`${task.id}-${line}`"
                     class="task-log-line"
+                    :class="{ 'task-log-line--error': isErrorLogLine(line) }"
                   >
                     {{ line }}
                   </div>

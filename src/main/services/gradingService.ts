@@ -112,6 +112,25 @@ function parseJsonObject(rawOutput: string): Record<string, unknown> {
   throw new Error('模型返回的内容不是合法 JSON 对象。');
 }
 
+function buildAttemptFailureMessage(error: Error, rawOutput: string): string {
+  const base = `ERROR: ${error.message}`;
+  if (!rawOutput.trim()) {
+    return base;
+  }
+
+  if (
+    error.message.includes('JSON') ||
+    error.message.includes('questionScores') ||
+    error.message.includes('studentInfo') ||
+    error.message.includes('overallAdvice') ||
+    error.message.includes('questionRegions')
+  ) {
+    return `${base}\n原始输出预览：${shortenText(rawOutput, 320)}`;
+  }
+
+  return base;
+}
+
 export function getReferenceAnswerFingerprint(markdown: string): string {
   return createHash('sha256').update(markdown.trim()).digest('hex');
 }
@@ -727,9 +746,11 @@ export class GradingService {
         };
       } catch (error) {
         lastError = error instanceof Error ? error : new Error('未知批阅错误');
+        await input.onLog?.(`第 ${attempt} 次尝试失败：${buildAttemptFailureMessage(lastError, lastRawOutput)}`);
         if (attempt >= attempts || /已取消/.test(lastError.message)) {
           break;
         }
+        await input.onLog?.(`准备开始第 ${attempt + 1} 次重试`);
       }
     }
 
