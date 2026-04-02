@@ -35,7 +35,13 @@ describe('grading prompt guards', () => {
 
     expect(GRADING_RUBRIC_SYSTEM_PROMPT).toContain('必须尽量保留原始写法');
     expect(GRADING_RUBRIC_SYSTEM_PROMPT).toContain('不得擅自删除、补全、改写公式中的上下标');
+    expect(GRADING_RUBRIC_SYSTEM_PROMPT).toContain('必须带数学定界符 `$`');
+    expect(GRADING_RUBRIC_SYSTEM_PROMPT).toContain('行内公式使用 `$...$`');
+    expect(GRADING_RUBRIC_SYSTEM_PROMPT).toContain('裸写 `\\frac{2}{3}`');
     expect(rubricUserPrompt).toContain('不得私自改掉上下标、括号、分式、符号');
+    expect(rubricUserPrompt).toContain('必须带数学定界符 $');
+    expect(rubricUserPrompt).toContain('行内公式使用 $...$');
+    expect(rubricUserPrompt).toContain('裸写 \\frac{2}{3}');
   });
 
   it('tells grading prompts to prioritize the original reference standard over rubric summaries', () => {
@@ -52,10 +58,12 @@ describe('grading prompt guards', () => {
 
     expect(gradingSystemPrompt).toContain('你必须更多参考【参考答案与评分标准开始】与【参考答案与评分标准结束】之间的原始标准内容');
     expect(gradingSystemPrompt).toContain('`scoreBreakdown.evidence`、`scoreBreakdown.criterion`');
-    expect(gradingSystemPrompt).toContain('所有行内公式必须使用 `$...$` 包裹');
+    expect(gradingSystemPrompt).toContain('只要出现任何数学表达，都必须带数学定界符 `$`');
+    expect(gradingSystemPrompt).toContain('裸写 `\\frac{2}{3}`');
     expect(gradingUserPrompt).toContain('rubric 只提供固定评分单元、满分和采分点约束');
     expect(gradingUserPrompt).toContain('这里的内容是本次阅卷更主要的判分依据');
     expect(gradingUserPrompt).toContain('scoreBreakdown.evidence、scoreBreakdown.criterion');
-    expect(gradingUserPrompt).toContain('所有行内公式必须使用 $...$ 包裹');
+    expect(gradingUserPrompt).toContain('只要出现任何数学表达，都必须带数学定界符 $');
+    expect(gradingUserPrompt).toContain('裸写 \\frac{2}{3}');
   });
 });

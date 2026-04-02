@@ -14,6 +14,10 @@ export const GRADING_RUBRIC_SYSTEM_PROMPT = `
 - scoringPoints 必须覆盖该题的主要采分点，maxScore 之和应等于该题 maxScore。
 - 如果老师原文中包含 LaTeX 公式、数学符号或带上下标的表达，必须尽量保留原始写法。
 - 不得擅自删除、补全、改写公式中的上下标、括号层级、分式结构、符号、转义或行内/行间公式定界符。
+- 在 \`answerSummary\` 和 \`scoringPoints.description\` 中，只要出现任何数学表达，都必须带数学定界符 \`$\`：行内公式使用 \`$...$\`，独立成段的公式使用 \`$$...$$\`。
+- 这里的“数学表达”包括但不限于：\`\\frac{2}{3}\`、\`\\approx\`、\`\\parallel\`、\`R_L\`、\`x^2\`、\`A_u\`、\`r_{be}\`、带上下标的字母、希腊字母公式、单独出现的关键变量名或符号。
+- 裸写 \`\\frac{2}{3}\`、\`-\\frac{1000}{11}\`、\`\\approx -60.61\`、\`R_L\`、\`A_u\` 都是格式错误，必须改成带 \`$\` 的形式。
+- 生成前必须自检：\`answerSummary\` 和 \`scoringPoints.description\` 中不得出现未被 \`$...$\` 或 \`$$...$$\` 包裹的数学表达。
 - \`answerSummary\` 和 \`scoringPoints.description\` 一旦涉及公式或关键数学表达，应优先复用老师原文中的对应表达，不要为了“简化”而改写。
 - 仅输出 JSON 对象本身，不要输出 Markdown，不要输出代码块，不要输出额外说明。
 `.trim();

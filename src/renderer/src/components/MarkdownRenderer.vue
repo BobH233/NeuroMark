@@ -12,17 +12,14 @@ config({
 </script>
 
 <script setup lang="ts">
-import { computed } from 'vue';
 import DOMPurify from 'dompurify';
 import { MdPreview } from 'md-editor-v3';
-import { normalizeMarkdownMath } from '@/utils/result';
 
 const props = defineProps<{
   source: string;
 }>();
 
 const previewId = `markdown-preview-${Math.random().toString(36).slice(2, 10)}`;
-const normalizedSource = computed(() => normalizeMarkdownMath(props.source || ''));
 
 function sanitize(html: string) {
   return DOMPurify.sanitize(html);
@@ -35,7 +32,7 @@ function sanitize(html: string) {
     class="markdown-preview"
     theme="light"
     preview-theme="default"
-    :model-value="normalizedSource"
+    :model-value="props.source || ''"
     :sanitize="sanitize"
     :no-highlight="true"
     :no-mermaid="true"
