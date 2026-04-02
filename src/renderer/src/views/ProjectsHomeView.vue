@@ -1,24 +1,49 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
-import { NButton, NCard, NEmpty } from 'naive-ui';
+import { NButton, NCard, NEmpty, useMessage } from 'naive-ui';
+import type { CreateProjectInput } from '@preload/contracts';
 import CreateProjectModal from '@/components/CreateProjectModal.vue';
 import StatusPill from '@/components/StatusPill.vue';
 import { useProjectsStore } from '@/stores/projects';
 
 const router = useRouter();
+const message = useMessage();
 const projectsStore = useProjectsStore();
 
 const showCreateModal = ref(false);
+const creatingProject = ref(false);
 
 onMounted(() => {
   projectsStore.clearSelection();
 });
 
-async function handleCreateProject(payload: any) {
-  const project = await projectsStore.createProject(payload);
-  showCreateModal.value = false;
-  router.push(`/projects/${project.id}`);
+async function handleCreateProject(payload: CreateProjectInput) {
+  if (creatingProject.value) {
+    return;
+  }
+
+  creatingProject.value = true;
+  try {
+    const validation = await projectsStore.validateCreateProject({
+      name: payload.name,
+      basePath: payload.basePath,
+    });
+
+    if (!validation.available) {
+      message.error(validation.message || '当前目录下无法创建这个项目。');
+      return;
+    }
+
+    const project = await projectsStore.createProject(payload);
+    showCreateModal.value = false;
+    message.success('项目已创建。');
+    router.push(`/projects/${project.id}`);
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : '创建项目失败。');
+  } finally {
+    creatingProject.value = false;
+  }
 }
 
 function openProject(projectId: string) {
@@ -71,6 +96,7 @@ function openProject(projectId: string) {
 
     <CreateProjectModal
       :show="showCreateModal"
+      :submitting="creatingProject"
       @close="showCreateModal = false"
       @submit="handleCreateProject"
     />

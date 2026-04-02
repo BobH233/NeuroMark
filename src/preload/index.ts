@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import type {
   AnswerGeneratorUpdateHandler,
+  DebugLogHandler,
   NeuromarkApi,
   TaskUpdateHandler,
 } from './contracts';
@@ -12,13 +13,28 @@ const api: NeuromarkApi = {
     selectDirectory: () => ipcRenderer.invoke('app:select-directory'),
     selectImages: () => ipcRenderer.invoke('app:select-images'),
     openPath: (targetPath) => ipcRenderer.invoke('app:open-path', targetPath),
+    openDevTools: () => ipcRenderer.invoke('app:open-devtools'),
+    enableDebugPanel: () => ipcRenderer.invoke('app:enable-debug-panel'),
     getPreviewSession: (token) => ipcRenderer.invoke('app:get-preview-session', token),
+    getDebugLogs: () => ipcRenderer.invoke('app:get-debug-logs'),
+    onDebugLog: (handler: DebugLogHandler) => {
+      const listener = (_event: Electron.IpcRendererEvent, entry: unknown) => {
+        handler(entry as any);
+      };
+      ipcRenderer.on('app:debug-log', listener);
+      return () => {
+        ipcRenderer.removeListener('app:debug-log', listener);
+      };
+    },
   },
   projects: {
     create: (input) => ipcRenderer.invoke('projects:create', input),
+    validateCreate: (input) => ipcRenderer.invoke('projects:validate-create', input),
     list: () => ipcRenderer.invoke('projects:list'),
     getDetail: (projectId) => ipcRenderer.invoke('projects:get-detail', projectId),
+    getRubricDebug: (projectId) => ipcRenderer.invoke('projects:get-rubric-debug', projectId),
     delete: (projectId) => ipcRenderer.invoke('projects:delete', projectId),
+    updateName: (projectId, name) => ipcRenderer.invoke('projects:update-name', projectId, name),
     removePaper: (projectId, paperId) => ipcRenderer.invoke('projects:remove-paper', projectId, paperId),
     importOriginalImages: (projectId, filePaths) =>
       ipcRenderer.invoke('projects:import-original-images', projectId, filePaths),
@@ -40,10 +56,26 @@ const api: NeuromarkApi = {
   results: {
     list: (projectId) => ipcRenderer.invoke('results:list', projectId),
     get: (projectId, paperId) => ipcRenderer.invoke('results:get', projectId, paperId),
-    saveFinal: (projectId, paperId, finalResult) =>
-      ipcRenderer.invoke('results:save-final', projectId, paperId, finalResult),
+    saveFinal: (projectId, paperId, finalResult, options) =>
+      ipcRenderer.invoke('results:save-final', projectId, paperId, finalResult, options),
+    delete: (projectId, paperId) => ipcRenderer.invoke('results:delete', projectId, paperId),
     exportJson: (projectId, targetPath) =>
       ipcRenderer.invoke('results:export-json', projectId, targetPath),
+    getSmartNameMatchSnapshot: (projectId) =>
+      ipcRenderer.invoke('results:get-smart-name-match-snapshot', projectId),
+    startSmartNameMatch: (projectId, rosterText) =>
+      ipcRenderer.invoke('results:start-smart-name-match', projectId, rosterText),
+    applySmartNameMatch: (projectId) =>
+      ipcRenderer.invoke('results:apply-smart-name-match', projectId),
+    onSmartNameMatchUpdated: (handler) => {
+      const listener = (_event: Electron.IpcRendererEvent, snapshot: unknown) => {
+        handler(snapshot as any);
+      };
+      ipcRenderer.on('results:smart-name-match-updated', listener);
+      return () => {
+        ipcRenderer.removeListener('results:smart-name-match-updated', listener);
+      };
+    },
   },
   settings: {
     get: () => ipcRenderer.invoke('settings:get'),
@@ -86,8 +118,38 @@ const api: NeuromarkApi = {
     },
   },
   preview: {
-    open: (images, initialIndex, title) =>
-      ipcRenderer.invoke('preview:open', images, initialIndex, title),
+    open: (images, initialIndex, title, activeQuestionId, displayOptions) =>
+      ipcRenderer.invoke(
+        'preview:open',
+        images,
+        initialIndex,
+        title,
+        activeQuestionId,
+        displayOptions,
+      ),
+    setActiveQuestion: (token, activeQuestionId) =>
+      ipcRenderer.invoke('preview:set-active-question', token, activeQuestionId),
+    setDisplayOptions: (token, displayOptions) =>
+      ipcRenderer.invoke('preview:set-display-options', token, displayOptions),
+    onActiveQuestionChanged: (handler) => {
+      const listener = (_event: Electron.IpcRendererEvent, payload: unknown) => {
+        handler(payload as any);
+      };
+      ipcRenderer.on('preview:active-question-changed', listener);
+      return () => {
+        ipcRenderer.removeListener('preview:active-question-changed', listener);
+      };
+    },
+    onDisplayOptionsChanged: (handler) => {
+      const listener = (_event: Electron.IpcRendererEvent, payload: unknown) => {
+        handler(payload as any);
+      };
+      ipcRenderer.on('preview:display-options-changed', listener);
+      return () => {
+        ipcRenderer.removeListener('preview:display-options-changed', listener);
+      };
+    },
+    copyImage: (source) => ipcRenderer.invoke('preview:copy-image', source),
     saveImage: (source, suggestedName) =>
       ipcRenderer.invoke('preview:save-image', source, suggestedName),
   },

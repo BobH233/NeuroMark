@@ -1,11 +1,14 @@
 import { defineStore } from 'pinia';
 import type {
+  CreateProjectValidationResult,
   CreateProjectInput,
   FinalResult,
   ProjectDetail,
   ProjectMeta,
+  ProjectRubricDebug,
   ProjectSettings,
   ResultRecord,
+  SaveFinalResultOptions,
 } from '@preload/contracts';
 
 export const useProjectsStore = defineStore('projects', {
@@ -13,6 +16,7 @@ export const useProjectsStore = defineStore('projects', {
     projects: [] as ProjectMeta[],
     selectedProjectId: '' as string,
     detail: null as ProjectDetail | null,
+    rubricDebug: null as ProjectRubricDebug | null,
     loading: false,
   }),
   getters: {
@@ -34,6 +38,7 @@ export const useProjectsStore = defineStore('projects', {
     clearSelection() {
       this.selectedProjectId = '';
       this.detail = null;
+      this.rubricDebug = null;
     },
     async selectProject(projectId: string) {
       this.selectedProjectId = projectId;
@@ -47,11 +52,20 @@ export const useProjectsStore = defineStore('projects', {
         this.loading = false;
       }
     },
+    async loadProjectRubricDebug(projectId: string) {
+      this.rubricDebug = await window.neuromark.projects.getRubricDebug(projectId);
+      return this.rubricDebug;
+    },
     async createProject(input: CreateProjectInput) {
       const project = await window.neuromark.projects.create(input);
       await this.loadProjects();
       await this.selectProject(project.id);
       return project;
+    },
+    async validateCreateProject(
+      input: Pick<CreateProjectInput, 'name' | 'basePath'>,
+    ): Promise<CreateProjectValidationResult> {
+      return window.neuromark.projects.validateCreate(input);
     },
     async deleteProject(projectId: string) {
       await window.neuromark.projects.delete(projectId);
@@ -59,6 +73,11 @@ export const useProjectsStore = defineStore('projects', {
       if (this.selectedProjectId === projectId) {
         this.clearSelection();
       }
+    },
+    async updateProjectName(projectId: string, name: string) {
+      await window.neuromark.projects.updateName(projectId, name);
+      await this.loadProjects();
+      await this.loadProjectDetail(projectId);
     },
     async removePaper(projectId: string, paperId: string) {
       this.detail = await window.neuromark.projects.removePaper(projectId, paperId);
@@ -85,11 +104,26 @@ export const useProjectsStore = defineStore('projects', {
       await this.loadProjects();
       await this.loadProjectDetail(projectId);
     },
-    async saveFinalResult(projectId: string, paperId: string, finalResult: FinalResult) {
-      const updated = await window.neuromark.results.saveFinal(projectId, paperId, finalResult);
+    async saveFinalResult(
+      projectId: string,
+      paperId: string,
+      finalResult: FinalResult,
+      options?: SaveFinalResultOptions,
+    ) {
+      const updated = await window.neuromark.results.saveFinal(
+        projectId,
+        paperId,
+        finalResult,
+        options,
+      );
       await this.loadProjects();
       await this.loadProjectDetail(projectId);
       return updated;
+    },
+    async deleteResult(projectId: string, paperId: string) {
+      await window.neuromark.results.delete(projectId, paperId);
+      await this.loadProjects();
+      await this.loadProjectDetail(projectId);
     },
     async exportResults(projectId: string) {
       return window.neuromark.results.exportJson(projectId);

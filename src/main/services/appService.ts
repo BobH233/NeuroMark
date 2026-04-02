@@ -1,15 +1,35 @@
 import { copyFile, writeFile } from 'node:fs/promises';
 import { basename, extname, join } from 'node:path';
-import { app, dialog, shell, type BrowserWindow, type OpenDialogOptions } from 'electron';
+import {
+  app,
+  clipboard,
+  dialog,
+  nativeImage,
+  shell,
+  type BrowserWindow,
+  type OpenDialogOptions,
+} from 'electron';
 import { nanoid } from 'nanoid';
-import type { PreviewImageItem, PreviewSession } from '@preload/contracts';
+import sharp from 'sharp';
+import type {
+  PreviewDisplayOptions,
+  PreviewImageItem,
+  PreviewSession,
+} from '@preload/contracts';
+
+const DEFAULT_PREVIEW_DISPLAY_OPTIONS: PreviewDisplayOptions = {
+  showQuestionTags: true,
+  showQuestionBoxes: true,
+  showQuestionScores: false,
+};
 
 export class AppService {
   private readonly previewSessions = new Map<string, PreviewSession>();
+  private readonly previewWindows = new Map<string, BrowserWindow>();
 
   constructor(
     private readonly getParentWindow: () => BrowserWindow | null,
-    private readonly openPreviewWindow: (token: string) => Promise<void>,
+    private readonly openPreviewWindow: (token: string) => Promise<BrowserWindow>,
   ) {}
 
   getDefaultProjectBasePath(): string {
@@ -51,27 +71,109 @@ export class AppService {
     await shell.openPath(targetPath);
   }
 
+  openDevTools(): void {
+    const parentWindow = this.getParentWindow();
+    if (!parentWindow || parentWindow.isDestroyed()) {
+      return;
+    }
+
+    parentWindow.webContents.openDevTools({ mode: 'detach' });
+  }
+
   async openPreview(
     images: PreviewImageItem[],
     initialIndex = 0,
     title = '图片预览',
-  ): Promise<void> {
+    activeQuestionId = '',
+    displayOptions: PreviewDisplayOptions = DEFAULT_PREVIEW_DISPLAY_OPTIONS,
+  ): Promise<string> {
     const token = nanoid();
     this.previewSessions.set(token, {
       token,
       title,
       initialIndex,
       images,
+      activeQuestionId,
+      displayOptions: normalizePreviewDisplayOptions(displayOptions),
     });
-    await this.openPreviewWindow(token);
+    const previewWindow = await this.openPreviewWindow(token);
+    this.previewWindows.set(token, previewWindow);
+    previewWindow.on('closed', () => {
+      this.previewWindows.delete(token);
+      this.previewSessions.delete(token);
+    });
+    return token;
   }
 
   async getPreviewSession(token: string): Promise<PreviewSession | null> {
     return this.previewSessions.get(token) ?? null;
   }
 
+  async setPreviewActiveQuestion(token: string | null, activeQuestionId: string): Promise<void> {
+    const targetTokens = token ? [token] : [...this.previewSessions.keys()];
+
+    for (const targetToken of targetTokens) {
+      const session = this.previewSessions.get(targetToken);
+      if (!session) {
+        continue;
+      }
+
+      session.activeQuestionId = activeQuestionId;
+      const previewWindow = this.previewWindows.get(targetToken);
+      if (!previewWindow || previewWindow.isDestroyed()) {
+        continue;
+      }
+
+      previewWindow.webContents.send('preview:active-question-changed', {
+        token: targetToken,
+        activeQuestionId,
+      });
+    }
+  }
+
+  async setPreviewDisplayOptions(
+    token: string | null,
+    displayOptions: PreviewDisplayOptions,
+  ): Promise<void> {
+    const targetTokens = token ? [token] : [...this.previewSessions.keys()];
+    const normalizedDisplayOptions = normalizePreviewDisplayOptions(displayOptions);
+
+    for (const targetToken of targetTokens) {
+      const session = this.previewSessions.get(targetToken);
+      if (!session) {
+        continue;
+      }
+
+      session.displayOptions = normalizedDisplayOptions;
+      const previewWindow = this.previewWindows.get(targetToken);
+      if (!previewWindow || previewWindow.isDestroyed()) {
+        continue;
+      }
+
+      previewWindow.webContents.send('preview:display-options-changed', {
+        token: targetToken,
+        displayOptions: normalizedDisplayOptions,
+      });
+    }
+  }
+
   async savePreviewImage(source: string, suggestedName?: string): Promise<string | null> {
     return this.savePreviewImageForWindow(this.getParentWindow(), source, suggestedName);
+  }
+
+  async copyPreviewImage(source: string): Promise<void> {
+    const image = await resolvePreviewImageSource(source);
+    const clipboardBuffer =
+      image.kind === 'file'
+        ? await sharp(image.path).rotate().png().toBuffer()
+        : await sharp(image.buffer).rotate().png().toBuffer();
+    const clipboardImage = nativeImage.createFromBuffer(clipboardBuffer);
+
+    if (clipboardImage.isEmpty()) {
+      throw new Error('当前图片暂时无法复制到剪贴板。');
+    }
+
+    clipboard.writeImage(clipboardImage);
   }
 
   async savePreviewImageForWindow(
@@ -105,6 +207,17 @@ export class AppService {
 
     return result.filePath;
   }
+}
+
+function normalizePreviewDisplayOptions(
+  displayOptions?: PreviewDisplayOptions,
+): PreviewDisplayOptions {
+  return {
+    showQuestionTags: displayOptions?.showQuestionTags ?? DEFAULT_PREVIEW_DISPLAY_OPTIONS.showQuestionTags,
+    showQuestionBoxes: displayOptions?.showQuestionBoxes ?? DEFAULT_PREVIEW_DISPLAY_OPTIONS.showQuestionBoxes,
+    showQuestionScores:
+      displayOptions?.showQuestionScores ?? DEFAULT_PREVIEW_DISPLAY_OPTIONS.showQuestionScores,
+  };
 }
 
 type ResolvedPreviewImage =

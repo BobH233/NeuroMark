@@ -14,6 +14,7 @@ import type { CreateProjectInput } from '@preload/contracts';
 
 const props = defineProps<{
   show: boolean;
+  submitting?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -62,7 +63,11 @@ async function chooseDirectory() {
 }
 
 function submit() {
-  emit('submit', { ...model });
+  emit('submit', {
+    ...model,
+    name: model.name.trim(),
+    basePath: model.basePath.trim(),
+  });
 }
 </script>
 
@@ -115,8 +120,13 @@ function submit() {
     </n-form>
     <template #footer>
       <div class="modal-footer">
-        <n-button @click="emit('close')">取消</n-button>
-        <n-button type="primary" :disabled="!model.name || !model.basePath" @click="submit">
+        <n-button :disabled="props.submitting" @click="emit('close')">取消</n-button>
+        <n-button
+          type="primary"
+          :disabled="!model.name.trim() || !model.basePath.trim() || props.submitting"
+          :loading="props.submitting"
+          @click="submit"
+        >
           创建项目
         </n-button>
       </div>

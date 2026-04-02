@@ -75,6 +75,7 @@ function ensureSchema(connection: Database.Database): void {
       abortable INTEGER NOT NULL,
       current_paper_label TEXT,
       summary TEXT NOT NULL,
+      runtime_logs_json TEXT NOT NULL DEFAULT '[]',
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
@@ -86,6 +87,8 @@ function ensureSchema(connection: Database.Database): void {
       api_key_encrypted TEXT NOT NULL,
       timeout_ms INTEGER NOT NULL,
       reasoning_effort TEXT NOT NULL DEFAULT 'medium',
+      answer_generation_temperature REAL NOT NULL DEFAULT 0.2,
+      grading_temperature REAL NOT NULL DEFAULT 0,
       storage_mode TEXT NOT NULL
     );
 
@@ -146,6 +149,12 @@ function ensureSchema(connection: Database.Database): void {
   ensureColumn(
     connection,
     'tasks',
+    'runtime_logs_json',
+    "runtime_logs_json TEXT NOT NULL DEFAULT '[]'",
+  );
+  ensureColumn(
+    connection,
+    'tasks',
     'archived_at',
     'archived_at TEXT',
   );
@@ -154,6 +163,18 @@ function ensureSchema(connection: Database.Database): void {
     'settings',
     'reasoning_effort',
     "reasoning_effort TEXT NOT NULL DEFAULT 'medium'",
+  );
+  ensureColumn(
+    connection,
+    'settings',
+    'answer_generation_temperature',
+    "answer_generation_temperature REAL NOT NULL DEFAULT 0.2",
+  );
+  ensureColumn(
+    connection,
+    'settings',
+    'grading_temperature',
+    "grading_temperature REAL NOT NULL DEFAULT 0",
   );
   ensureColumn(connection, 'answer_drafts', 'prompt_text', "prompt_text TEXT NOT NULL DEFAULT ''");
   ensureColumn(

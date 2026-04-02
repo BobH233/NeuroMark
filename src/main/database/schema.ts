@@ -49,6 +49,7 @@ export const tasksTable = sqliteTable('tasks', {
   abortable: integer('abortable', { mode: 'boolean' }).notNull(),
   currentPaperLabel: text('current_paper_label'),
   summary: text('summary').notNull(),
+  runtimeLogsJson: text('runtime_logs_json').notNull().default('[]'),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
 });
@@ -60,6 +61,8 @@ export const settingsTable = sqliteTable('settings', {
   apiKeyEncrypted: text('api_key_encrypted').notNull(),
   timeoutMs: integer('timeout_ms').notNull(),
   reasoningEffort: text('reasoning_effort').notNull(),
+  answerGenerationTemperature: real('answer_generation_temperature').notNull().default(0.2),
+  gradingTemperature: real('grading_temperature').notNull().default(0),
   storageMode: text('storage_mode').notNull(),
 });
 

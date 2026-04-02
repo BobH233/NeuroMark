@@ -3,7 +3,12 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router';
 import { NEmpty } from 'naive-ui';
 import type { ComponentPublicInstance } from 'vue';
-import type { PreviewSession } from '@preload/contracts';
+import type {
+  PreviewActiveQuestionPayload,
+  PreviewDisplayOptions,
+  PreviewDisplayOptionsPayload,
+  PreviewSession,
+} from '@preload/contracts';
 import { toImageSrc } from '@/utils/file';
 
 const route = useRoute();
@@ -16,8 +21,25 @@ const translate = ref({ x: 0, y: 0 });
 const dragging = ref(false);
 const dragOrigin = ref({ x: 0, y: 0 });
 const suppressTransformTransition = ref(false);
+const copying = ref(false);
 const saving = ref(false);
 const thumbnailRefs = ref<HTMLElement[]>([]);
+const railRef = ref<HTMLElement | null>(null);
+const loadedThumbnailIndexes = ref<Record<number, true>>({});
+const contextMenu = ref({
+  visible: false,
+  x: 0,
+  y: 0,
+});
+const activeQuestionId = ref('');
+const displayOptions = ref<PreviewDisplayOptions>({
+  showQuestionTags: true,
+  showQuestionBoxes: true,
+  showQuestionScores: false,
+});
+let thumbnailObserver: IntersectionObserver | null = null;
+let removePreviewQuestionListener: (() => void) | null = null;
+let removePreviewDisplayOptionsListener: (() => void) | null = null;
 
 const activeImage = computed(() => {
   if (!session.value) {
@@ -31,6 +53,12 @@ const hasMultipleImages = computed(() => (session.value?.images.length ?? 0) > 1
 const activeTitle = computed(() => activeImage.value?.title ?? '图片预览');
 const activeCaption = computed(() => activeImage.value?.caption ?? '');
 const activeRotation = computed(() => rotations.value[activeIndex.value] ?? 0);
+const hasVisibleRegionOverlay = computed(
+  () =>
+    displayOptions.value.showQuestionBoxes ||
+    displayOptions.value.showQuestionTags ||
+    displayOptions.value.showQuestionScores,
+);
 
 onMounted(async () => {
   const token = String(route.params.token ?? '');
@@ -38,25 +66,76 @@ onMounted(async () => {
     const previewSession = await window.neuromark.app.getPreviewSession(token);
     session.value = previewSession;
     activeIndex.value = previewSession?.initialIndex ?? 0;
+    activeQuestionId.value = previewSession?.activeQuestionId ?? '';
+    displayOptions.value = previewSession?.displayOptions ?? displayOptions.value;
   } finally {
     loading.value = false;
   }
   window.addEventListener('keydown', handleKeydown);
+  window.addEventListener('click', hideContextMenu);
+  window.addEventListener('blur', hideContextMenu);
+  window.addEventListener('resize', hideContextMenu);
+  initializeThumbnailObserver();
+  removePreviewQuestionListener = window.neuromark.preview.onActiveQuestionChanged(
+    (payload: PreviewActiveQuestionPayload) => {
+      if (payload.token !== token) {
+        return;
+      }
+      activeQuestionId.value = payload.activeQuestionId;
+    },
+  );
+  removePreviewDisplayOptionsListener = window.neuromark.preview.onDisplayOptionsChanged(
+    (payload: PreviewDisplayOptionsPayload) => {
+      if (payload.token !== token) {
+        return;
+      }
+      displayOptions.value = payload.displayOptions;
+    },
+  );
 });
 
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', handleKeydown);
+  window.removeEventListener('click', hideContextMenu);
+  window.removeEventListener('blur', hideContextMenu);
+  window.removeEventListener('resize', hideContextMenu);
+  thumbnailObserver?.disconnect();
+  thumbnailObserver = null;
+  removePreviewQuestionListener?.();
+  removePreviewQuestionListener = null;
+  removePreviewDisplayOptionsListener?.();
+  removePreviewDisplayOptionsListener = null;
 });
 
 watch(
   activeIndex,
   async (index) => {
+    markThumbnailRangeLoaded(index);
     await nextTick();
     thumbnailRefs.value[index]?.scrollIntoView({
       block: 'nearest',
       inline: 'nearest',
       behavior: 'smooth',
     });
+    observeThumbnail(index);
+  },
+  { flush: 'post' },
+);
+
+watch(
+  session,
+  async (nextSession) => {
+    loadedThumbnailIndexes.value = {};
+    thumbnailObserver?.disconnect();
+    thumbnailObserver = null;
+
+    if (!nextSession?.images.length) {
+      return;
+    }
+
+    markThumbnailRangeLoaded(nextSession.initialIndex ?? 0);
+    await nextTick();
+    initializeThumbnailObserver();
   },
   { flush: 'post' },
 );
@@ -72,6 +151,80 @@ function setThumbnailRef(
   thumbnailRefs.value[index] = (
     '$el' in el ? el.$el : el
   ) as HTMLElement;
+  observeThumbnail(index);
+}
+
+function initializeThumbnailObserver() {
+  if (!hasMultipleImages.value) {
+    return;
+  }
+
+  if (!('IntersectionObserver' in window)) {
+    markAllThumbnailsLoaded();
+    return;
+  }
+
+  thumbnailObserver = new IntersectionObserver(
+    (entries) => {
+      entries.forEach((entry) => {
+        if (!entry.isIntersecting) {
+          return;
+        }
+
+        const index = Number((entry.target as HTMLElement).dataset.thumbIndex ?? '-1');
+        if (index < 0) {
+          return;
+        }
+
+        loadedThumbnailIndexes.value[index] = true;
+        thumbnailObserver?.unobserve(entry.target);
+      });
+    },
+    {
+      root: railRef.value,
+      rootMargin: '240px 0px',
+    },
+  );
+
+  thumbnailRefs.value.forEach((_, index) => {
+    observeThumbnail(index);
+  });
+}
+
+function observeThumbnail(index: number) {
+  if (loadedThumbnailIndexes.value[index]) {
+    return;
+  }
+
+  const target = thumbnailRefs.value[index];
+  if (!target) {
+    return;
+  }
+
+  target.dataset.thumbIndex = String(index);
+  thumbnailObserver?.observe(target);
+}
+
+function markThumbnailRangeLoaded(centerIndex: number) {
+  const sessionImages = session.value?.images.length ?? 0;
+  for (let index = Math.max(0, centerIndex - 2); index <= Math.min(sessionImages - 1, centerIndex + 2); index += 1) {
+    loadedThumbnailIndexes.value[index] = true;
+  }
+}
+
+function markAllThumbnailsLoaded() {
+  const loaded: Record<number, true> = {};
+  const sessionImages = session.value?.images.length ?? 0;
+  for (let index = 0; index < sessionImages; index += 1) {
+    loaded[index] = true;
+  }
+  loadedThumbnailIndexes.value = loaded;
+}
+
+function getThumbnailSrc(index: number, source: string, cacheKey?: string | number) {
+  return loadedThumbnailIndexes.value[index]
+    ? toImageSrc(source, cacheKey == null ? undefined : String(cacheKey))
+    : undefined;
 }
 
 function fitView() {
@@ -130,6 +283,9 @@ function handleWheel(event: WheelEvent) {
 }
 
 function startDrag(event: MouseEvent) {
+  if (event.button !== 0) {
+    return;
+  }
   dragging.value = true;
   dragOrigin.value = {
     x: event.clientX - translate.value.x,
@@ -152,6 +308,12 @@ function endDrag() {
 }
 
 function handleKeydown(event: KeyboardEvent) {
+  if (contextMenu.value.visible && event.key === 'Escape') {
+    event.preventDefault();
+    hideContextMenu();
+    return;
+  }
+
   if (!session.value) {
     return;
   }
@@ -178,11 +340,49 @@ function handleKeydown(event: KeyboardEvent) {
   }
 }
 
+function openContextMenu(event: MouseEvent) {
+  if (!activeImage.value) {
+    return;
+  }
+
+  event.preventDefault();
+  const menuWidth = 176;
+  const menuHeight = 108;
+  contextMenu.value = {
+    visible: true,
+    x: Math.max(12, Math.min(event.clientX, window.innerWidth - menuWidth - 12)),
+    y: Math.max(12, Math.min(event.clientY, window.innerHeight - menuHeight - 12)),
+  };
+}
+
+function hideContextMenu() {
+  contextMenu.value.visible = false;
+}
+
+async function copyCurrentImage() {
+  if (!activeImage.value || copying.value) {
+    return;
+  }
+
+  hideContextMenu();
+  copying.value = true;
+  try {
+    await window.neuromark.preview.copyImage(activeImage.value.src);
+  } catch (error) {
+    window.alert(
+      `复制图片失败：${error instanceof Error ? error.message : String(error)}`,
+    );
+  } finally {
+    copying.value = false;
+  }
+}
+
 async function saveCurrentImage() {
   if (!activeImage.value || saving.value) {
     return;
   }
 
+  hideContextMenu();
   saving.value = true;
   try {
     await window.neuromark.preview.saveImage(
@@ -197,27 +397,59 @@ async function saveCurrentImage() {
     saving.value = false;
   }
 }
+
+function formatScoreValue(value: number): string {
+  return Number(value.toFixed(2)).toString();
+}
+
+function formatRegionScore(score?: number | null, maxScore?: number | null): string {
+  if (typeof score !== 'number' || typeof maxScore !== 'number') {
+    return '';
+  }
+
+  return `${formatScoreValue(score)}/${formatScoreValue(maxScore)}`;
+}
 </script>
 
 <template>
-  <div class="preview-page" @mousemove="moveDrag" @mouseup="endDrag" @mouseleave="endDrag">
+  <div
+    class="preview-page"
+    @mousemove="moveDrag"
+    @mouseup="endDrag"
+    @mouseleave="endDrag"
+    @contextmenu.prevent="openContextMenu"
+  >
     <template v-if="session && activeImage">
       <section class="preview-shell">
-        <div class="preview-window-drag-strip" aria-hidden="true" />
+        <div
+          class="preview-window-drag-strip"
+          aria-hidden="true"
+        />
         <div class="preview-header">
           <div>
-            <div class="preview-title">{{ session.title }}</div>
+            <div class="preview-title">
+              {{ session.title }}
+            </div>
             <div class="preview-subtitle">
               {{ activeTitle }}
               <span v-if="activeCaption"> · {{ activeCaption }}</span>
             </div>
           </div>
 
-          <div class="preview-counter">{{ activeIndex + 1 }} / {{ session.images.length }}</div>
+          <div class="preview-counter">
+            {{ activeIndex + 1 }} / {{ session.images.length }}
+          </div>
         </div>
 
-        <main class="preview-stage-shell" :class="{ 'preview-stage-shell--single': !hasMultipleImages }">
-          <aside v-if="hasMultipleImages" class="preview-rail">
+        <main
+          class="preview-stage-shell"
+          :class="{ 'preview-stage-shell--single': !hasMultipleImages }"
+        >
+          <aside
+            v-if="hasMultipleImages"
+            ref="railRef"
+            class="preview-rail"
+          >
             <button
               v-for="(image, index) in session.images"
               :key="`${image.title}-${index}`"
@@ -226,14 +458,38 @@ async function saveCurrentImage() {
               :class="{ active: index === activeIndex }"
               @click="selectImage(index)"
             >
-              <img :src="toImageSrc(image.src, image.cacheKey)" :alt="image.title" />
+              <div class="preview-thumb-media-shell">
+                <img
+                  v-if="getThumbnailSrc(index, image.src, image.cacheKey)"
+                  :src="getThumbnailSrc(index, image.src, image.cacheKey)"
+                  :alt="image.title"
+                  loading="lazy"
+                  decoding="async"
+                >
+                <div
+                  v-else
+                  class="preview-thumb-placeholder"
+                  aria-hidden="true"
+                />
+              </div>
               <span>{{ image.title }}</span>
             </button>
           </aside>
 
-          <div class="preview-stage" @wheel="handleWheel">
-            <button v-if="hasMultipleImages" class="preview-nav preview-nav-left" @click="showPrevious" aria-label="上一张">
-              <svg viewBox="0 0 24 24" aria-hidden="true">
+          <div
+            class="preview-stage"
+            @wheel="handleWheel"
+          >
+            <button
+              v-if="hasMultipleImages"
+              class="preview-nav preview-nav-left"
+              aria-label="上一张"
+              @click="showPrevious"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+              >
                 <path d="M14.5 5.5 8 12l6.5 6.5" />
               </svg>
             </button>
@@ -251,11 +507,16 @@ async function saveCurrentImage() {
                 :src="toImageSrc(activeImage.src, activeImage.cacheKey)"
                 :alt="activeImage.title"
                 draggable="false"
-              />
+              >
               <div
+                v-if="hasVisibleRegionOverlay"
                 v-for="region in activeImage.regions"
                 :key="`${activeImage.title}-${region.questionId}`"
                 class="preview-region"
+                :class="{
+                  'preview-region--active': region.questionId === activeQuestionId,
+                  'preview-region--box-hidden': !displayOptions.showQuestionBoxes
+                }"
                 :style="{
                   left: `${region.x * 100}%`,
                   top: `${region.y * 100}%`,
@@ -263,12 +524,26 @@ async function saveCurrentImage() {
                   height: `${region.height * 100}%`
                 }"
               >
-                <span>{{ region.questionId }}</span>
+                <span v-if="displayOptions.showQuestionTags">{{ region.questionId }}</span>
+                <strong
+                  v-if="displayOptions.showQuestionScores"
+                  class="preview-region-score"
+                >
+                  {{ formatRegionScore(region.score, region.maxScore) }}
+                </strong>
               </div>
             </div>
 
-            <button v-if="hasMultipleImages" class="preview-nav preview-nav-right" @click="showNext" aria-label="下一张">
-              <svg viewBox="0 0 24 24" aria-hidden="true">
+            <button
+              v-if="hasMultipleImages"
+              class="preview-nav preview-nav-right"
+              aria-label="下一张"
+              @click="showNext"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+              >
                 <path d="M9.5 5.5 16 12l-6.5 6.5" />
               </svg>
             </button>
@@ -276,19 +551,43 @@ async function saveCurrentImage() {
         </main>
 
         <footer class="preview-toolbar">
-          <button class="toolbar-icon-button" aria-label="缩小" @click="zoomOut">
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <circle cx="10.5" cy="10.5" r="6.5" />
+          <button
+            class="toolbar-icon-button"
+            aria-label="缩小"
+            @click="zoomOut"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              aria-hidden="true"
+            >
+              <circle
+                cx="10.5"
+                cy="10.5"
+                r="6.5"
+              />
               <path d="M16 16 21 21" />
               <path d="M7.5 10.5h6" />
             </svg>
           </button>
 
-          <div class="toolbar-readout">{{ zoomPercent }}%</div>
+          <div class="toolbar-readout">
+            {{ zoomPercent }}%
+          </div>
 
-          <button class="toolbar-icon-button" aria-label="放大" @click="zoomIn">
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <circle cx="10.5" cy="10.5" r="6.5" />
+          <button
+            class="toolbar-icon-button"
+            aria-label="放大"
+            @click="zoomIn"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              aria-hidden="true"
+            >
+              <circle
+                cx="10.5"
+                cy="10.5"
+                r="6.5"
+              />
               <path d="M16 16 21 21" />
               <path d="M7.5 10.5h6" />
               <path d="M10.5 7.5v6" />
@@ -297,17 +596,43 @@ async function saveCurrentImage() {
 
           <span class="toolbar-divider" />
 
-          <button class="toolbar-icon-button" aria-label="逆时针旋转" @click="rotateLeft">
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path class="rotate-icon-primary" d="M7 17.29A8 8 0 1 0 5.06 11" />
-              <polyline class="rotate-icon-accent" points="3 6 5 11 10 9" />
+          <button
+            class="toolbar-icon-button"
+            aria-label="逆时针旋转"
+            @click="rotateLeft"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              aria-hidden="true"
+            >
+              <path
+                class="rotate-icon-primary"
+                d="M7 17.29A8 8 0 1 0 5.06 11"
+              />
+              <polyline
+                class="rotate-icon-accent"
+                points="3 6 5 11 10 9"
+              />
             </svg>
           </button>
 
-          <button class="toolbar-icon-button" aria-label="顺时针旋转" @click="rotateRight">
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path class="rotate-icon-primary" d="M17 17.29A8 8 0 1 1 18.94 11" />
-              <polyline class="rotate-icon-accent" points="21 6 19 11 14 9" />
+          <button
+            class="toolbar-icon-button"
+            aria-label="顺时针旋转"
+            @click="rotateRight"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              aria-hidden="true"
+            >
+              <path
+                class="rotate-icon-primary"
+                d="M17 17.29A8 8 0 1 1 18.94 11"
+              />
+              <polyline
+                class="rotate-icon-accent"
+                points="21 6 19 11 14 9"
+              />
             </svg>
           </button>
 
@@ -319,24 +644,57 @@ async function saveCurrentImage() {
             aria-label="保存图片到本地"
             @click="saveCurrentImage"
           >
-            <svg viewBox="0 0 24 24" aria-hidden="true">
+            <svg
+              viewBox="0 0 24 24"
+              aria-hidden="true"
+            >
               <path d="M8 7h2" />
               <path d="M8 15h8v6H8z" />
               <path d="M20 7V20a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h11Z" />
             </svg>
           </button>
         </footer>
+
+        <div
+          v-if="contextMenu.visible"
+          class="preview-context-menu"
+          :style="{ left: `${contextMenu.x}px`, top: `${contextMenu.y}px` }"
+          @click.stop
+        >
+          <button
+            class="preview-context-menu__item"
+            :disabled="copying"
+            @click="copyCurrentImage"
+          >
+            复制
+          </button>
+          <button
+            class="preview-context-menu__item"
+            :disabled="saving"
+            @click="saveCurrentImage"
+          >
+            另存为
+          </button>
+        </div>
       </section>
     </template>
 
-    <div v-else-if="loading" class="preview-loading">
+    <div
+      v-else-if="loading"
+      class="preview-loading"
+    >
       <div class="preview-loading-shell">
         <div class="preview-loading-stage" />
-        <div class="preview-loading-copy">正在准备图片预览...</div>
+        <div class="preview-loading-copy">
+          正在准备图片预览...
+        </div>
       </div>
     </div>
 
-    <NEmpty v-else description="未找到预览数据，请从主界面重新打开图片预览。" />
+    <NEmpty
+      v-else
+      description="未找到预览数据，请从主界面重新打开图片预览。"
+    />
   </div>
 </template>
 
@@ -466,6 +824,32 @@ async function saveCurrentImage() {
   background: linear-gradient(180deg, rgba(13, 13, 13, 0.96), rgba(24, 24, 24, 0.9));
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
   overflow-y: auto;
+  color-scheme: dark;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.24) rgba(255, 255, 255, 0.06);
+  scrollbar-gutter: stable;
+}
+
+.preview-rail::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.preview-rail::-webkit-scrollbar-track {
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.preview-rail::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.24);
+  background-clip: padding-box;
+}
+
+.preview-rail::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.34);
+  background-clip: padding-box;
 }
 
 .preview-thumb {
@@ -499,6 +883,34 @@ async function saveCurrentImage() {
   aspect-ratio: 1 / 1;
   object-fit: cover;
   border-radius: 12px;
+}
+
+.preview-thumb-media-shell {
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  overflow: hidden;
+  border-radius: 12px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.04));
+}
+
+.preview-thumb-placeholder {
+  width: 100%;
+  height: 100%;
+  background:
+    linear-gradient(110deg, rgba(255, 255, 255, 0.08) 8%, rgba(255, 255, 255, 0.2) 18%, rgba(255, 255, 255, 0.08) 33%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.04));
+  background-size: 200% 100%, 100% 100%;
+  animation: preview-thumb-placeholder-shimmer 1.2s linear infinite;
+}
+
+@keyframes preview-thumb-placeholder-shimmer {
+  from {
+    background-position: 200% 0, 0 0;
+  }
+
+  to {
+    background-position: -200% 0, 0 0;
+  }
 }
 
 .preview-thumb span {
@@ -593,6 +1005,43 @@ async function saveCurrentImage() {
   align-items: center;
   gap: 10px;
   padding: 14px 24px 18px;
+}
+
+.preview-context-menu {
+  position: fixed;
+  z-index: 20;
+  min-width: 176px;
+  padding: 8px;
+  border-radius: 16px;
+  background: rgba(20, 20, 20, 0.96);
+  box-shadow:
+    0 18px 40px rgba(0, 0, 0, 0.34),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+  backdrop-filter: blur(18px);
+}
+
+.preview-context-menu__item {
+  width: 100%;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  padding: 0 14px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.92);
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.preview-context-menu__item:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.preview-context-menu__item:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .toolbar-icon-button {

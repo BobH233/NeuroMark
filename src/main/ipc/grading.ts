@@ -1,5 +1,5 @@
 import { ipcMain } from 'electron';
-import type { FinalResult } from '@preload/contracts';
+import type { FinalResult, SaveFinalResultOptions } from '@preload/contracts';
 import type { ServiceBundle } from '@main/services/types';
 
 export function registerGradingIpc(services: ServiceBundle): void {
@@ -18,11 +18,19 @@ export function registerGradingIpc(services: ServiceBundle): void {
   );
   ipcMain.handle(
     'results:save-final',
-    (_event, projectId: string, paperId: string, finalResult: FinalResult) =>
-      services.projects.saveFinalResult(projectId, paperId, finalResult),
+    (
+      _event,
+      projectId: string,
+      paperId: string,
+      finalResult: FinalResult,
+      options?: SaveFinalResultOptions,
+    ) =>
+      services.projects.saveFinalResult(projectId, paperId, finalResult, options),
+  );
+  ipcMain.handle('results:delete', (_event, projectId: string, paperId: string) =>
+    services.projects.deleteResult(projectId, paperId),
   );
   ipcMain.handle('results:export-json', (_event, projectId: string, targetPath?: string) =>
     services.projects.exportResults(projectId, targetPath),
   );
 }
-

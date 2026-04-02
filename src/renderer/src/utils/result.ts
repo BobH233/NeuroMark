@@ -13,4 +13,3 @@ export function computeDisplayedTotal(result: FinalResult): number {
 export function cloneFinalResult(result: FinalResult): FinalResult {
   return JSON.parse(JSON.stringify(result)) as FinalResult;
 }
-

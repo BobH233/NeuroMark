@@ -10,6 +10,8 @@ const settingsSchema = z.object({
   apiKey: z.string().optional(),
   timeoutMs: z.number().int().min(5000).max(600000),
   reasoningEffort: reasoningEffortSchema,
+  answerGenerationTemperature: z.number().min(0).max(2),
+  gradingTemperature: z.number().min(0).max(2),
 });
 
 export function registerSettingsIpc(services: ServiceBundle): void {

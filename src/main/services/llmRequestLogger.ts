@@ -51,6 +51,8 @@ export function logLlmRequest(
       timeoutMs: number;
       apiKey: string;
       reasoningEffort?: string;
+      answerGenerationTemperature?: number;
+      gradingTemperature?: number;
     };
     payload: unknown;
   },
@@ -60,6 +62,13 @@ export function logLlmRequest(
     apiKey: maskSecret(input.client.apiKey),
   })}`);
   console.info(`[llm:${label}] payload\n${stringifyForTerminal(input.payload)}`);
+}
+
+export function logLlmProgress(
+  label: string,
+  detail: unknown,
+): void {
+  console.info(`[llm:${label}] progress\n${stringifyForTerminal(detail)}`);
 }
 
 export function logLlmResult(
