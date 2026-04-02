@@ -14,6 +14,7 @@ const api: NeuromarkApi = {
     selectImages: () => ipcRenderer.invoke('app:select-images'),
     openPath: (targetPath) => ipcRenderer.invoke('app:open-path', targetPath),
     openDevTools: () => ipcRenderer.invoke('app:open-devtools'),
+    enableDebugPanel: () => ipcRenderer.invoke('app:enable-debug-panel'),
     getPreviewSession: (token) => ipcRenderer.invoke('app:get-preview-session', token),
     getDebugLogs: () => ipcRenderer.invoke('app:get-debug-logs'),
     onDebugLog: (handler: DebugLogHandler) => {

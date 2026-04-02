@@ -47,6 +47,13 @@ export const useDebugPanelStore = defineStore('debug-panel', {
 
       this.enabled = localStorage.getItem(ENABLED_STORAGE_KEY) === 'true';
     },
+    async syncEnabledStateToMain() {
+      if (!this.enabled) {
+        return;
+      }
+
+      await window.neuromark.app.enableDebugPanel();
+    },
     async initialize() {
       if (this.initialized) {
         return;
@@ -56,6 +63,7 @@ export const useDebugPanelStore = defineStore('debug-panel', {
         initializePromise = (async () => {
           try {
             this.hydrate();
+            await this.syncEnabledStateToMain();
             this.entries = await window.neuromark.app.getDebugLogs();
             this.trimEntries();
             window.neuromark.app.onDebugLog((entry) => {
@@ -89,6 +97,7 @@ export const useDebugPanelStore = defineStore('debug-panel', {
       this.enabled = true;
       localStorage.setItem(ENABLED_STORAGE_KEY, 'true');
       this.logoClickCount = 0;
+      void this.syncEnabledStateToMain();
       return true;
     },
     trimEntries() {

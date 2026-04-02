@@ -34,6 +34,7 @@ import JsonTreeView from '@/components/JsonTreeView.vue';
 import MarkdownRenderer from '@/components/MarkdownRenderer.vue';
 import MetricCard from '@/components/MetricCard.vue';
 import StatusPill from '@/components/StatusPill.vue';
+import { useDebugPanelStore } from '@/stores/debug-panel';
 import { useProjectsStore } from '@/stores/projects';
 import { useTasksStore } from '@/stores/tasks';
 import { toImageSrc } from '@/utils/file';
@@ -44,6 +45,7 @@ const router = useRouter();
 const message = useMessage();
 const projectsStore = useProjectsStore();
 const tasksStore = useTasksStore();
+const debugPanelStore = useDebugPanelStore();
 
 const DEFAULT_PREVIEW_DISPLAY_OPTIONS: PreviewDisplayOptions = {
   showQuestionTags: true,
@@ -256,6 +258,7 @@ const latestReferenceAnswerVersion = computed(() => selectedProject.value?.refer
 const rubricDebug = computed(() =>
   projectsStore.rubricDebug?.projectId === projectId.value ? projectsStore.rubricDebug : null,
 );
+const showRubricDebugTab = computed(() => debugPanelStore.enabled);
 const referenceAnswerDirty = computed(() =>
   detail.value ? referenceAnswerDraft.value !== detail.value.referenceAnswerMarkdown : false,
 );
@@ -477,14 +480,33 @@ watch(
   { immediate: true },
 );
 
+watch(
+  showRubricDebugTab,
+  async (visible) => {
+    if (!visible && activeTab.value === 'rubric-debug') {
+      activeTab.value = 'overview';
+      return;
+    }
+
+    if (visible && projectId.value) {
+      await loadRubricDebug();
+    }
+  },
+  { immediate: true },
+);
+
 onMounted(async () => {
+  await debugPanelStore.initialize();
+
   if (projectsStore.projects.length === 0) {
     await projectsStore.bootstrap();
   }
 
   if (projectId.value) {
     await projectsStore.selectProject(projectId.value);
-    await loadRubricDebug();
+    if (showRubricDebugTab.value) {
+      await loadRubricDebug();
+    }
   }
 });
 
@@ -498,7 +520,7 @@ onBeforeUnmount(() => {
 watch(
   () => [projectId.value, latestReferenceAnswerVersion.value] as const,
   async ([nextProjectId]) => {
-    if (!nextProjectId) {
+    if (!nextProjectId || !showRubricDebugTab.value) {
       return;
     }
     await loadRubricDebug();
@@ -1680,7 +1702,7 @@ function goBack() {
             <n-card class="surface-card" title="参考答案与评分标准">
               <div class="reference-editor-head">
                 <div class="project-section-copy">
-                  在这里维护当前项目使用的参考答案。点击保存后才会生效，并自动升级到下一版。
+                  在此处修改项目批改用的参考答案内容，保存后版本号自动递增。
                 </div>
                 <div class="reference-editor-actions">
                   <n-tag round :bordered="false">当前版本 v{{ latestReferenceAnswerVersion }}</n-tag>
@@ -1729,7 +1751,7 @@ function goBack() {
           </div>
         </n-tab-pane>
 
-        <n-tab-pane name="rubric-debug" tab="Rubric 调试">
+        <n-tab-pane v-if="showRubricDebugTab" name="rubric-debug" tab="Rubric 调试">
           <div class="project-settings-stack">
             <n-card class="surface-card" title="当前 Rubric 缓存">
               <div class="reference-editor-head">

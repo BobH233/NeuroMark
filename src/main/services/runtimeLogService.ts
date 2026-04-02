@@ -12,6 +12,7 @@ export class RuntimeLogService {
   private readonly maxEntries = 1500;
   private installed = false;
   private sequence = 0;
+  private enabled = false;
 
   install(): void {
     if (this.installed) {
@@ -24,23 +25,31 @@ export class RuntimeLogService {
   }
 
   getSnapshot(): DebugLogEntry[] {
+    if (!this.enabled) {
+      return [];
+    }
+
     return [...this.entries];
   }
 
-  getEventChannel(): string {
-    return DEBUG_LOG_EVENT;
+  enable(): void {
+    this.enabled = true;
   }
 
   private patchStream(target: WriteTarget, stream: DebugLogEntry['stream']): void {
     const originalWrite = target.write.bind(target);
 
     target.write = ((chunk: unknown, ...args: unknown[]) => {
-      this.append({
+      const entry: DebugLogEntry = {
         id: `${Date.now()}-${this.sequence += 1}`,
         text: this.normalizeChunk(chunk),
         timestamp: new Date().toISOString(),
         stream,
-      });
+      };
+
+      if (this.enabled) {
+        this.append(entry);
+      }
 
       return originalWrite(chunk, ...args);
     }) as typeof target.write;

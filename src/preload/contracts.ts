@@ -358,6 +358,7 @@ export interface NeuromarkApi {
     selectImages: () => Promise<string[]>;
     openPath: (targetPath: string) => Promise<void>;
     openDevTools: () => Promise<void>;
+    enableDebugPanel: () => Promise<void>;
     getPreviewSession: (token: string) => Promise<PreviewSession | null>;
     getDebugLogs: () => Promise<DebugLogEntry[]>;
     onDebugLog: (handler: DebugLogHandler) => () => void;

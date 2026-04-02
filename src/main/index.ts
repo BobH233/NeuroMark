@@ -88,6 +88,9 @@ function applyPlatformChrome(): void {
 async function bootstrap(): Promise<void> {
   const runtimeLogs = new RuntimeLogService();
   runtimeLogs.install();
+  if (!app.isPackaged) {
+    runtimeLogs.enable();
+  }
   const projects = new ProjectService();
   const settings = new SettingsService();
   const grading = new GradingService(projects, settings);
