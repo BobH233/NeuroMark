@@ -71,6 +71,15 @@ export class AppService {
     await shell.openPath(targetPath);
   }
 
+  openDevTools(): void {
+    const parentWindow = this.getParentWindow();
+    if (!parentWindow || parentWindow.isDestroyed()) {
+      return;
+    }
+
+    parentWindow.webContents.openDevTools({ mode: 'detach' });
+  }
+
   async openPreview(
     images: PreviewImageItem[],
     initialIndex = 0,

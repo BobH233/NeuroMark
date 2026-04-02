@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import type {
   AnswerGeneratorUpdateHandler,
+  DebugLogHandler,
   NeuromarkApi,
   TaskUpdateHandler,
 } from './contracts';
@@ -12,7 +13,18 @@ const api: NeuromarkApi = {
     selectDirectory: () => ipcRenderer.invoke('app:select-directory'),
     selectImages: () => ipcRenderer.invoke('app:select-images'),
     openPath: (targetPath) => ipcRenderer.invoke('app:open-path', targetPath),
+    openDevTools: () => ipcRenderer.invoke('app:open-devtools'),
     getPreviewSession: (token) => ipcRenderer.invoke('app:get-preview-session', token),
+    getDebugLogs: () => ipcRenderer.invoke('app:get-debug-logs'),
+    onDebugLog: (handler: DebugLogHandler) => {
+      const listener = (_event: Electron.IpcRendererEvent, entry: unknown) => {
+        handler(entry as any);
+      };
+      ipcRenderer.on('app:debug-log', listener);
+      return () => {
+        ipcRenderer.removeListener('app:debug-log', listener);
+      };
+    },
   },
   projects: {
     create: (input) => ipcRenderer.invoke('projects:create', input),

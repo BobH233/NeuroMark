@@ -22,6 +22,13 @@ export type DraftGenerationStatus =
   | 'completed'
   | 'failed';
 
+export interface DebugLogEntry {
+  id: string;
+  text: string;
+  timestamp: string;
+  stream: 'stdout' | 'stderr';
+}
+
 export interface ProjectSettings {
   gradingConcurrency: number;
   drawRegions: boolean;
@@ -341,6 +348,7 @@ export type TaskUpdateHandler = (tasks: BackgroundJob[]) => void;
 export type AnswerGeneratorUpdateHandler = (
   snapshot: AnswerGeneratorSnapshot,
 ) => void;
+export type DebugLogHandler = (entry: DebugLogEntry) => void;
 
 export interface NeuromarkApi {
   app: {
@@ -349,7 +357,10 @@ export interface NeuromarkApi {
     selectDirectory: () => Promise<string | null>;
     selectImages: () => Promise<string[]>;
     openPath: (targetPath: string) => Promise<void>;
+    openDevTools: () => Promise<void>;
     getPreviewSession: (token: string) => Promise<PreviewSession | null>;
+    getDebugLogs: () => Promise<DebugLogEntry[]>;
+    onDebugLog: (handler: DebugLogHandler) => () => void;
   };
   projects: {
     create: (input: CreateProjectInput) => Promise<ProjectMeta>;

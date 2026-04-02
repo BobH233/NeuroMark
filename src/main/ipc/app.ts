@@ -9,7 +9,9 @@ export function registerAppIpc(services: ServiceBundle): void {
   ipcMain.handle('app:select-directory', () => services.app.selectDirectory());
   ipcMain.handle('app:select-images', () => services.app.selectImages());
   ipcMain.handle('app:open-path', (_event, targetPath: string) => services.app.openPath(targetPath));
+  ipcMain.handle('app:open-devtools', () => services.app.openDevTools());
   ipcMain.handle('app:get-preview-session', (_event, token: string) =>
     services.app.getPreviewSession(token),
   );
+  ipcMain.handle('app:get-debug-logs', () => services.runtimeLogs.getSnapshot());
 }

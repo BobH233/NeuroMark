@@ -1,3 +1,5 @@
+/// <reference types="vite/client" />
+
 import type { NeuromarkApi } from '@preload/contracts';
 
 declare global {
@@ -7,4 +9,3 @@ declare global {
 }
 
 export {};
-

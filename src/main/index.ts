@@ -10,6 +10,7 @@ import { AppService } from './services/appService';
 import { AnswerGeneratorService } from './services/answerGeneratorService';
 import { GradingService } from './services/gradingService';
 import { ProjectService } from './services/projectService';
+import { RuntimeLogService } from './services/runtimeLogService';
 import { SettingsService } from './services/settingsService';
 import { TaskManager } from './services/taskManager';
 
@@ -85,6 +86,8 @@ function applyPlatformChrome(): void {
 }
 
 async function bootstrap(): Promise<void> {
+  const runtimeLogs = new RuntimeLogService();
+  runtimeLogs.install();
   const projects = new ProjectService();
   const settings = new SettingsService();
   const grading = new GradingService(projects, settings);
@@ -105,6 +108,7 @@ async function bootstrap(): Promise<void> {
     settings,
     answerGenerator,
     tasks,
+    runtimeLogs,
   });
 
   mainWindow = await createMainWindow();

@@ -18,6 +18,7 @@ import {
   NTabPane,
   NTag,
   NTabs,
+  NTooltip,
   useMessage,
 } from 'naive-ui';
 import type {
@@ -1293,52 +1294,65 @@ function goBack() {
                           <div class="detail-subtitle">用于对照当前小题对应的答题区域。</div>
                         </div>
                         <div class="preview-overlay-controls" aria-label="预览覆盖层开关">
-                          <button
-                            class="preview-overlay-toggle"
-                            :class="{ 'is-active': previewDisplayOptions.showQuestionTags }"
-                            :aria-pressed="previewDisplayOptions.showQuestionTags"
-                            aria-label="切换题目标号"
-                            title="显示题目标号"
-                            @click="togglePreviewDisplayOption('showQuestionTags')"
-                          >
-                            <svg viewBox="0 0 24 24" aria-hidden="true">
-                              <path d="M4 7h11" />
-                              <path d="M4 12h8" />
-                              <path d="M4 17h11" />
-                              <path d="M18 6v6" />
-                              <path d="M15 9h6" />
-                            </svg>
-                          </button>
-                          <button
-                            class="preview-overlay-toggle"
-                            :class="{ 'is-active': previewDisplayOptions.showQuestionBoxes }"
-                            :aria-pressed="previewDisplayOptions.showQuestionBoxes"
-                            aria-label="切换题目方框"
-                            title="显示题目方框"
-                            @click="togglePreviewDisplayOption('showQuestionBoxes')"
-                          >
-                            <svg viewBox="0 0 24 24" aria-hidden="true">
-                              <rect x="5" y="5" width="14" height="14" rx="3" ry="3" />
-                              <path d="M9 9h6" />
-                              <path d="M9 15h6" />
-                            </svg>
-                          </button>
-                          <button
-                            class="preview-overlay-toggle"
-                            :class="{ 'is-active': previewDisplayOptions.showQuestionScores }"
-                            :aria-pressed="previewDisplayOptions.showQuestionScores"
-                            aria-label="切换小题得分"
-                            title="显示小题得分"
-                            @click="togglePreviewDisplayOption('showQuestionScores')"
-                          >
-                            <svg viewBox="0 0 24 24" aria-hidden="true">
-                              <path d="M5 7h14" />
-                              <path d="M7 12h4" />
-                              <path d="M13 12h4" />
-                              <path d="M7 17h10" />
-                              <path d="M11.5 10.5 12.5 13.5" />
-                            </svg>
-                          </button>
+                          <n-tooltip trigger="hover">
+                            <template #trigger>
+                              <button
+                                class="preview-overlay-toggle"
+                                :class="{ 'is-active': previewDisplayOptions.showQuestionTags }"
+                                :aria-pressed="previewDisplayOptions.showQuestionTags"
+                                aria-label="切换题目标号"
+                                @click="togglePreviewDisplayOption('showQuestionTags')"
+                              >
+                                <svg viewBox="0 0 24 24" aria-hidden="true">
+                                  <path d="M8 8h10" />
+                                  <path d="M8 12h7" />
+                                  <path d="M8 16h10" />
+                                  <path d="M4.5 4.5 7.5 7.5" />
+                                  <path d="M7.5 4.5 4.5 7.5" />
+                                </svg>
+                              </button>
+                            </template>
+                            显示题目标号
+                          </n-tooltip>
+                          <n-tooltip trigger="hover">
+                            <template #trigger>
+                              <button
+                                class="preview-overlay-toggle"
+                                :class="{ 'is-active': previewDisplayOptions.showQuestionBoxes }"
+                                :aria-pressed="previewDisplayOptions.showQuestionBoxes"
+                                aria-label="切换题目方框"
+                                @click="togglePreviewDisplayOption('showQuestionBoxes')"
+                              >
+                                <svg viewBox="0 0 24 24" aria-hidden="true">
+                                  <rect x="5" y="5" width="14" height="14" rx="3" ry="3" />
+                                  <path d="M8 9h8" />
+                                  <path d="M8 12h6" />
+                                  <path d="M8 15h8" />
+                                </svg>
+                              </button>
+                            </template>
+                            显示题目方框
+                          </n-tooltip>
+                          <n-tooltip trigger="hover">
+                            <template #trigger>
+                              <button
+                                class="preview-overlay-toggle"
+                                :class="{ 'is-active': previewDisplayOptions.showQuestionScores }"
+                                :aria-pressed="previewDisplayOptions.showQuestionScores"
+                                aria-label="切换小题得分"
+                                @click="togglePreviewDisplayOption('showQuestionScores')"
+                              >
+                                <svg viewBox="0 0 24 24" aria-hidden="true">
+                                  <path d="M5 8h10" />
+                                  <path d="M5 12h7" />
+                                  <path d="M5 16h10" />
+                                  <path d="M16.5 5.5 19.5 8.5" />
+                                  <path d="M19.5 5.5 16.5 8.5" />
+                                </svg>
+                              </button>
+                            </template>
+                            显示小题得分
+                          </n-tooltip>
                         </div>
                       </div>
 

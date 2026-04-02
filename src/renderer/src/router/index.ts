@@ -62,6 +62,11 @@ const router = createRouter({
       component: () => import('@/views/SettingsView.vue'),
     },
     {
+      path: '/debug',
+      name: 'debug-panel',
+      component: () => import('@/views/DebugPanelView.vue'),
+    },
+    {
       path: '/preview/:token',
       name: 'preview',
       component: () => import('@/views/PreviewView.vue'),

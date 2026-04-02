@@ -4,6 +4,7 @@ import type { NeuromarkApi } from '@preload/contracts';
 import type { AppService } from './appService';
 import type { AnswerGeneratorService } from './answerGeneratorService';
 import type { ProjectService } from './projectService';
+import type { RuntimeLogService } from './runtimeLogService';
 import type { SettingsService } from './settingsService';
 import type { TaskManager } from './taskManager';
 
@@ -13,6 +14,7 @@ export interface ServiceBundle {
   settings: SettingsService;
   answerGenerator: AnswerGeneratorService;
   tasks: TaskManager;
+  runtimeLogs: RuntimeLogService;
 }
 
 export interface WindowRefs {
@@ -24,4 +26,3 @@ export interface RuntimeContext {
 }
 
 export type IpcApi = NeuromarkApi;
-
