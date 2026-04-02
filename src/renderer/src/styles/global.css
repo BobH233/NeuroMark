@@ -863,6 +863,16 @@ textarea {
   gap: 8px;
 }
 
+.result-sidebar-sort {
+  display: grid;
+  gap: 6px;
+}
+
+.result-sidebar-sort-label {
+  font-size: 12px;
+  color: var(--muted);
+}
+
 .result-nav-section + .result-nav-section {
   padding-top: 8px;
 }

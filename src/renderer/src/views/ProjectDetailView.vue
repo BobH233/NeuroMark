@@ -56,6 +56,8 @@ const PREVIEW_DISPLAY_OPTIONS_STORAGE_KEY_PREFIX = 'neuromark:preview-display-op
 
 const activeTab = ref('overview');
 const selectedResultId = ref('');
+type ResultSortMode = 'input-order' | 'score-desc' | 'score-asc' | 'student-id';
+const resultSortMode = ref<ResultSortMode>('input-order');
 const editableResult = ref<FinalResult | null>(null);
 const referenceAnswerDraft = ref('');
 const referenceAnswerSaving = ref(false);
@@ -184,20 +186,60 @@ const gradedPaperIds = computed(() => new Set(results.value.map((item) => item.p
 const ungradedPapers = computed(() =>
   papers.value.filter((paper) => !gradedPaperIds.value.has(paper.id)),
 );
+const paperOrderMap = computed(() => new Map(papers.value.map((paper, index) => [paper.id, index])));
+const resultSortOptions = [
+  { label: '按录入顺序', value: 'input-order' },
+  { label: '按分数由高到低', value: 'score-desc' },
+  { label: '按分数由低到高', value: 'score-asc' },
+  { label: '按学号排序', value: 'student-id' },
+];
 const gradedResultEntries = computed(() =>
-  results.value.map((item) => {
-    const paper = papers.value.find((paperItem) => paperItem.id === item.paperId) ?? null;
+  results.value
+    .map((item) => {
+      const paper = papers.value.find((paperItem) => paperItem.id === item.paperId) ?? null;
 
-    return {
-      result: item,
-      paper,
-      paperLabel: paper?.paperCode ?? '未命名答卷',
-      studentName: item.finalResult.studentInfo.name,
-      studentId: item.finalResult.studentInfo.studentId,
-      className: item.finalResult.studentInfo.className,
-      displayScore: computeDisplayedTotal(item.finalResult),
-    };
-  }),
+      return {
+        result: item,
+        paper,
+        paperLabel: paper?.paperCode ?? '未命名答卷',
+        studentName: item.finalResult.studentInfo.name,
+        studentId: item.finalResult.studentInfo.studentId,
+        className: item.finalResult.studentInfo.className,
+        displayScore: computeDisplayedTotal(item.finalResult),
+      };
+    })
+    .sort((left, right) => {
+      const leftPaperOrder = paperOrderMap.value.get(left.result.paperId) ?? Number.MAX_SAFE_INTEGER;
+      const rightPaperOrder = paperOrderMap.value.get(right.result.paperId) ?? Number.MAX_SAFE_INTEGER;
+      const fallback = leftPaperOrder - rightPaperOrder || left.paperLabel.localeCompare(right.paperLabel, 'zh-CN');
+
+      if (resultSortMode.value === 'score-desc') {
+        return right.displayScore - left.displayScore || fallback;
+      }
+
+      if (resultSortMode.value === 'score-asc') {
+        return left.displayScore - right.displayScore || fallback;
+      }
+
+      if (resultSortMode.value === 'student-id') {
+        const leftStudentId = left.studentId.trim();
+        const rightStudentId = right.studentId.trim();
+
+        if (leftStudentId && rightStudentId) {
+          return leftStudentId.localeCompare(rightStudentId, 'zh-CN', { numeric: true }) || fallback;
+        }
+
+        if (leftStudentId) {
+          return -1;
+        }
+
+        if (rightStudentId) {
+          return 1;
+        }
+      }
+
+      return fallback;
+    }),
 );
 
 function buildOriginalPreviewImage(
@@ -270,7 +312,11 @@ const selectedResultUsesLatestReference = computed(() => {
 });
 
 const selectedResult = computed<ResultRecord | null>(() => {
-  return results.value.find((item) => item.id === selectedResultId.value) ?? results.value[0] ?? null;
+  return (
+    results.value.find((item) => item.id === selectedResultId.value) ??
+    gradedResultEntries.value[0]?.result ??
+    null
+  );
 });
 
 const selectedPaper = computed(() => {
@@ -398,15 +444,15 @@ watch(
 );
 
 watch(
-  () => results.value,
+  () => gradedResultEntries.value,
   (value) => {
     if (!value.length) {
       selectedResultId.value = '';
       return;
     }
 
-    if (!value.some((item) => item.id === selectedResultId.value)) {
-      selectedResultId.value = value[0].id;
+    if (!value.some((item) => item.result.id === selectedResultId.value)) {
+      selectedResultId.value = value[0].result.id;
     }
   },
   { immediate: true },
@@ -1199,6 +1245,14 @@ function goBack() {
                 <div>
                   <div class="result-section-title">答卷导航</div>
                   <div class="detail-subtitle">浏览所有已批阅答卷。</div>
+                </div>
+                <div class="result-sidebar-sort">
+                  <span class="result-sidebar-sort-label">排序方式</span>
+                  <n-select
+                    v-model:value="resultSortMode"
+                    size="small"
+                    :options="resultSortOptions"
+                  />
                 </div>
                 <div class="result-sidebar-stats">
                   <n-tag size="small" round :bordered="false">已批改 {{ results.length }}</n-tag>
