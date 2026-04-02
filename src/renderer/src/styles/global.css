@@ -143,6 +143,11 @@ textarea {
     calc(var(--sidebar-footprint) + var(--shell-gutter));
 }
 
+.shell-content--scroll-locked {
+  overflow-y: hidden;
+  overscroll-behavior-y: none;
+}
+
 .glass-panel,
 .surface-card,
 .hero-panel,
@@ -785,6 +790,8 @@ textarea {
 .result-workspace-scroll {
   min-height: 0;
   overflow: auto;
+  overscroll-behavior: contain;
+  contain: layout paint;
   padding-right: 4px;
   padding-bottom: 4px;
   scrollbar-width: none;
@@ -973,6 +980,7 @@ textarea {
 .result-workspace-stack {
   display: grid;
   gap: 18px;
+  contain: layout;
 }
 
 .result-subsection-card {
@@ -985,6 +993,9 @@ textarea {
     radial-gradient(circle at top left, rgba(94, 234, 212, 0.08), transparent 34%),
     linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(248, 250, 252, 0.92));
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5);
+  contain: layout paint;
+  content-visibility: auto;
+  contain-intrinsic-size: 360px;
 }
 
 .result-version-row {
@@ -1045,6 +1056,9 @@ textarea {
   border: 1px solid var(--line);
   border-radius: 18px;
   background: rgba(255, 255, 255, 0.7);
+  contain: layout paint;
+  content-visibility: auto;
+  contain-intrinsic-size: 420px;
   transition:
     border-color 180ms ease,
     background 180ms ease,
@@ -1073,6 +1087,7 @@ textarea {
   border-radius: 16px;
   border: 1px solid rgba(217, 119, 6, 0.24);
   background: rgba(245, 158, 11, 0.08);
+  contain: layout paint;
 }
 
 .issues-box ul {

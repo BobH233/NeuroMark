@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, toRaw, watch } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, toRaw, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { MdEditor } from 'md-editor-v3';
 import {
@@ -59,6 +59,23 @@ const projectSettingsSaving = ref(false);
 const removingPaperId = ref('');
 const deletingResultPaperId = ref('');
 const activeQuestionId = ref('');
+const isReviewScrollActive = ref(false);
+
+let lockedShellContent: HTMLElement | null = null;
+
+function setShellScrollLocked(locked: boolean) {
+  if (typeof document === 'undefined') {
+    return;
+  }
+
+  const shellContent = document.querySelector<HTMLElement>('.shell-content');
+  if (!shellContent) {
+    return;
+  }
+
+  shellContent.classList.toggle('shell-content--scroll-locked', locked);
+  lockedShellContent = locked ? shellContent : null;
+}
 
 const projectId = computed(() => String(route.params.projectId ?? ''));
 const detail = computed(() =>
@@ -346,6 +363,14 @@ watch(
   { flush: 'post' },
 );
 
+watch(
+  () => [activeTab.value, isReviewScrollActive.value] as const,
+  ([tab, reviewScrollActive]) => {
+    setShellScrollLocked(tab === 'results' && reviewScrollActive);
+  },
+  { immediate: true },
+);
+
 onMounted(async () => {
   if (projectsStore.projects.length === 0) {
     await projectsStore.bootstrap();
@@ -354,6 +379,13 @@ onMounted(async () => {
   if (projectId.value) {
     await projectsStore.selectProject(projectId.value);
     await loadRubricDebug();
+  }
+});
+
+onBeforeUnmount(() => {
+  if (lockedShellContent) {
+    lockedShellContent.classList.remove('shell-content--scroll-locked');
+    lockedShellContent = null;
   }
 });
 
@@ -989,7 +1021,12 @@ function goBack() {
         </n-tab-pane>
 
         <n-tab-pane name="results" tab="批阅结果">
-          <div v-if="papers.length" class="result-review-layout">
+          <div
+            v-if="papers.length"
+            class="result-review-layout"
+            @mouseenter="isReviewScrollActive = true"
+            @mouseleave="isReviewScrollActive = false"
+          >
             <aside class="result-sidebar surface-card">
               <div class="result-sidebar-head">
                 <div>
