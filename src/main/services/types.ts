@@ -6,6 +6,7 @@ import type { AnswerGeneratorService } from './answerGeneratorService';
 import type { ProjectService } from './projectService';
 import type { RuntimeLogService } from './runtimeLogService';
 import type { SettingsService } from './settingsService';
+import type { SmartNameMatchService } from './smartNameMatchService';
 import type { TaskManager } from './taskManager';
 
 export interface ServiceBundle {
@@ -13,6 +14,7 @@ export interface ServiceBundle {
   projects: ProjectService;
   settings: SettingsService;
   answerGenerator: AnswerGeneratorService;
+  smartNameMatch: SmartNameMatchService;
   tasks: TaskManager;
   runtimeLogs: RuntimeLogService;
 }

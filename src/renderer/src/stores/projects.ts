@@ -8,6 +8,7 @@ import type {
   ProjectRubricDebug,
   ProjectSettings,
   ResultRecord,
+  SaveFinalResultOptions,
 } from '@preload/contracts';
 
 export const useProjectsStore = defineStore('projects', {
@@ -103,8 +104,18 @@ export const useProjectsStore = defineStore('projects', {
       await this.loadProjects();
       await this.loadProjectDetail(projectId);
     },
-    async saveFinalResult(projectId: string, paperId: string, finalResult: FinalResult) {
-      const updated = await window.neuromark.results.saveFinal(projectId, paperId, finalResult);
+    async saveFinalResult(
+      projectId: string,
+      paperId: string,
+      finalResult: FinalResult,
+      options?: SaveFinalResultOptions,
+    ) {
+      const updated = await window.neuromark.results.saveFinal(
+        projectId,
+        paperId,
+        finalResult,
+        options,
+      );
       await this.loadProjects();
       await this.loadProjectDetail(projectId);
       return updated;

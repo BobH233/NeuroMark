@@ -12,6 +12,7 @@ import { GradingService } from './services/gradingService';
 import { ProjectService } from './services/projectService';
 import { RuntimeLogService } from './services/runtimeLogService';
 import { SettingsService } from './services/settingsService';
+import { SmartNameMatchService } from './services/smartNameMatchService';
 import { TaskManager } from './services/taskManager';
 
 let mainWindow: BrowserWindow | null = null;
@@ -96,6 +97,7 @@ async function bootstrap(): Promise<void> {
   const grading = new GradingService(projects, settings);
   const tasks = new TaskManager(projects, grading);
   const answerGenerator = new AnswerGeneratorService(settings, tasks);
+  const smartNameMatch = new SmartNameMatchService(projects, settings);
   answerGeneratorService = answerGenerator;
   const appService = new AppService(
     () => mainWindow,
@@ -110,6 +112,7 @@ async function bootstrap(): Promise<void> {
     projects,
     settings,
     answerGenerator,
+    smartNameMatch,
     tasks,
     runtimeLogs,
   });

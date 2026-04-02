@@ -1,6 +1,7 @@
 export type ImageDetailLevel = 'low' | 'high' | 'auto';
 export type LlmReasoningEffort = 'low' | 'medium' | 'high';
 export type JobKind = 'scan' | 'grading' | 'answer-generation';
+export type NameMatchStatus = 'unverified' | 'verified';
 export type JobStatus =
   | 'queued'
   | 'running'
@@ -161,6 +162,70 @@ export interface ResultRecord {
   referenceAnswerVersion: number;
   modelResult: ModelResult | null;
   finalResult: FinalResult | null;
+  nameMatchStatus: NameMatchStatus;
+  nameMatchUpdatedAt?: string | null;
+  nameMatchSource?: string | null;
+  updatedAt: string;
+}
+
+export interface SaveFinalResultOptions {
+  nameMatchStatus?: NameMatchStatus;
+  nameMatchUpdatedAt?: string | null;
+  nameMatchSource?: string | null;
+}
+
+export type SmartNameMatchRunStatus = 'idle' | 'running' | 'completed' | 'failed';
+export type SmartNameMatchDecision =
+  | 'certain_update'
+  | 'certain_keep'
+  | 'uncertain'
+  | 'no_match';
+
+export interface SmartNameMatchSuggestion {
+  paperId: string;
+  paperCode: string;
+  currentStudentInfo: StudentInfo;
+  suggestedStudentInfo: StudentInfo | null;
+  decision: SmartNameMatchDecision;
+  confidence: number;
+  changedFields: Array<keyof StudentInfo>;
+  matchedRosterLine: string | null;
+  reason: string;
+  uncertaintyNotes: string[];
+}
+
+export interface SmartNameMatchDuplicateGroup {
+  paperIds: string[];
+  paperCodes: string[];
+  confidence: number;
+  reason: string;
+  evidence: string[];
+}
+
+export interface SmartNameMatchSummary {
+  totalPapers: number;
+  certainUpdateCount: number;
+  certainKeepCount: number;
+  uncertainCount: number;
+  noMatchCount: number;
+  duplicateGroupCount: number;
+}
+
+export interface SmartNameMatchResult {
+  summary: SmartNameMatchSummary;
+  suggestions: SmartNameMatchSuggestion[];
+  duplicateGroups: SmartNameMatchDuplicateGroup[];
+}
+
+export interface SmartNameMatchSnapshot {
+  projectId: string;
+  status: SmartNameMatchRunStatus;
+  rosterText: string;
+  stage: string | null;
+  reasoningText: string;
+  previewText: string;
+  errorMessage: string | null;
+  result: SmartNameMatchResult | null;
   updatedAt: string;
 }
 
@@ -349,6 +414,9 @@ export type AnswerGeneratorUpdateHandler = (
   snapshot: AnswerGeneratorSnapshot,
 ) => void;
 export type DebugLogHandler = (entry: DebugLogEntry) => void;
+export type SmartNameMatchUpdateHandler = (
+  snapshot: SmartNameMatchSnapshot,
+) => void;
 
 export interface NeuromarkApi {
   app: {
@@ -404,9 +472,17 @@ export interface NeuromarkApi {
       projectId: string,
       paperId: string,
       finalResult: FinalResult,
+      options?: SaveFinalResultOptions,
     ) => Promise<ResultRecord>;
     delete: (projectId: string, paperId: string) => Promise<void>;
     exportJson: (projectId: string, targetPath?: string) => Promise<string>;
+    getSmartNameMatchSnapshot: (projectId: string) => Promise<SmartNameMatchSnapshot>;
+    startSmartNameMatch: (
+      projectId: string,
+      rosterText: string,
+    ) => Promise<SmartNameMatchSnapshot>;
+    applySmartNameMatch: (projectId: string) => Promise<string[]>;
+    onSmartNameMatchUpdated: (handler: SmartNameMatchUpdateHandler) => () => void;
   };
   settings: {
     get: () => Promise<GlobalLlmSettings>;

@@ -14,6 +14,7 @@ import {
   NPopconfirm,
   NSelect,
   NSpace,
+  NSpin,
   NSwitch,
   NTabPane,
   NTag,
@@ -23,11 +24,14 @@ import {
 } from 'naive-ui';
 import type {
   FinalResult,
+  NameMatchStatus,
   PaperRecord,
   PreviewDisplayOptions,
   PreviewImageItem,
   ResultRecord,
   ScoreBreakdownItem,
+  SmartNameMatchSnapshot,
+  SmartNameMatchSuggestion,
 } from '@preload/contracts';
 import ImagePreviewTile from '@/components/ImagePreviewTile.vue';
 import JsonTreeView from '@/components/JsonTreeView.vue';
@@ -71,12 +75,28 @@ const gradingActionLoading = ref(false);
 const projectSettingsSaving = ref(false);
 const removingPaperId = ref('');
 const deletingResultPaperId = ref('');
+const smartNameMatchSnapshot = ref<SmartNameMatchSnapshot | null>(null);
+const smartNameRosterText = ref('');
+const smartNameSubmitting = ref(false);
+const smartNameApplying = ref(false);
+const smartNameKeepExpanded = ref(false);
+const smartNameWorkspaceMode = ref<'auto' | 'manual'>('auto');
+const smartNameManualPaperId = ref('');
+const smartNameContextMenu = ref({
+  visible: false,
+  x: 0,
+  y: 0,
+  paperId: '',
+});
+const smartNameReasoningRef = ref<HTMLElement | null>(null);
+const smartNamePreviewRef = ref<HTMLElement | null>(null);
 const activeQuestionId = ref('');
 const previewDisplayOptions = ref<PreviewDisplayOptions>({ ...DEFAULT_PREVIEW_DISPLAY_OPTIONS });
 const isReviewScrollActive = ref(false);
 const expandedQuestionIds = ref<string[]>([]);
 
 let lockedShellContent: HTMLElement | null = null;
+let smartNameMatchUnsubscribe: (() => void) | null = null;
 
 function setShellScrollLocked(locked: boolean) {
   if (typeof document === 'undefined') {
@@ -310,6 +330,84 @@ const selectedResultUsesLatestReference = computed(() => {
   }
   return selectedResult.value.referenceAnswerVersion === latestReferenceAnswerVersion.value;
 });
+const editableStudentInfoChanged = computed(() => {
+  if (!selectedResult.value?.finalResult || !editableResult.value) {
+    return false;
+  }
+
+  const current = selectedResult.value.finalResult.studentInfo;
+  const next = editableResult.value.studentInfo;
+  return (
+    current.className !== next.className ||
+    current.studentId !== next.studentId ||
+    current.name !== next.name
+  );
+});
+const smartNameManualResult = computed(() => {
+  const paperId = smartNameManualPaperId.value;
+  if (!paperId) {
+    return null;
+  }
+  return results.value.find((item) => item.paperId === paperId) ?? null;
+});
+const smartNameManualPaper = computed(() => {
+  const paperId = smartNameManualPaperId.value;
+  if (!paperId) {
+    return null;
+  }
+  return papers.value.find((item) => item.id === paperId) ?? null;
+});
+const manualSmartNameDraft = ref<FinalResult | null>(null);
+const manualSmartNameSaving = ref(false);
+const manualSmartNameChanged = computed(() => {
+  if (!smartNameManualResult.value?.finalResult || !manualSmartNameDraft.value) {
+    return false;
+  }
+
+  const current = smartNameManualResult.value.finalResult.studentInfo;
+  const next = manualSmartNameDraft.value.studentInfo;
+  return (
+    current.className !== next.className ||
+    current.studentId !== next.studentId ||
+    current.name !== next.name
+  );
+});
+const smartNameMatchState = computed<SmartNameMatchSnapshot>(() =>
+  smartNameMatchSnapshot.value?.projectId === projectId.value
+    ? smartNameMatchSnapshot.value
+    : {
+        projectId: projectId.value,
+        status: 'idle',
+        rosterText: '',
+        stage: null,
+        reasoningText: '',
+        previewText: '',
+        errorMessage: null,
+        result: null,
+        updatedAt: '',
+      },
+);
+const smartNameMatchIsRunning = computed(() => smartNameMatchState.value.status === 'running');
+const smartNameMatchSuggestions = computed<SmartNameMatchSuggestion[]>(
+  () => smartNameMatchState.value.result?.suggestions ?? [],
+);
+const smartNameMatchCertainSuggestions = computed(() =>
+  smartNameMatchSuggestions.value.filter(
+    (item) => item.decision === 'certain_update' || item.decision === 'certain_keep',
+  ),
+);
+const smartNameMatchCertainUpdateSuggestions = computed(() =>
+  smartNameMatchSuggestions.value.filter((item) => item.decision === 'certain_update'),
+);
+const smartNameMatchCertainKeepSuggestions = computed(() =>
+  smartNameMatchSuggestions.value.filter((item) => item.decision === 'certain_keep'),
+);
+const smartNameMatchUncertainSuggestions = computed(() =>
+  smartNameMatchSuggestions.value.filter(
+    (item) => item.decision === 'uncertain' || item.decision === 'no_match',
+  ),
+);
+const smartNameMatchHasPreview = computed(() => Boolean(smartNameMatchState.value.previewText.trim()));
 
 const selectedResult = computed<ResultRecord | null>(() => {
   return (
@@ -468,6 +566,14 @@ watch(
 );
 
 watch(
+  () => smartNameManualResult.value,
+  (value) => {
+    manualSmartNameDraft.value = value?.finalResult ? cloneFinalResult(value.finalResult) : null;
+  },
+  { immediate: true },
+);
+
+watch(
   () => editableResult.value,
   (value) => {
     activeQuestionId.value = value?.questionScores[0]?.questionId ?? '';
@@ -521,9 +627,37 @@ watch(
 watch(
   () => [activeTab.value, isReviewScrollActive.value] as const,
   ([tab, reviewScrollActive]) => {
-    setShellScrollLocked(tab === 'results' && reviewScrollActive);
+    setShellScrollLocked(
+      (tab === 'results' || tab === 'smart-name-match') && reviewScrollActive,
+    );
   },
   { immediate: true },
+);
+
+watch(
+  () => smartNameMatchState.value.reasoningText,
+  async () => {
+    if (!smartNameMatchIsRunning.value || smartNameMatchHasPreview.value) {
+      return;
+    }
+    await Promise.resolve();
+    if (smartNameReasoningRef.value) {
+      smartNameReasoningRef.value.scrollTop = smartNameReasoningRef.value.scrollHeight;
+    }
+  },
+);
+
+watch(
+  () => smartNameMatchState.value.previewText,
+  async () => {
+    if (!smartNameMatchIsRunning.value || !smartNameMatchHasPreview.value) {
+      return;
+    }
+    await Promise.resolve();
+    if (smartNamePreviewRef.value) {
+      smartNamePreviewRef.value.scrollTop = smartNamePreviewRef.value.scrollHeight;
+    }
+  },
 );
 
 watch(
@@ -543,6 +677,14 @@ watch(
 
 onMounted(async () => {
   await debugPanelStore.initialize();
+  smartNameMatchUnsubscribe = window.neuromark.results.onSmartNameMatchUpdated((snapshot) => {
+    if (snapshot.projectId === projectId.value) {
+      smartNameMatchSnapshot.value = snapshot;
+      if (!smartNameRosterText.value.trim() && snapshot.rosterText.trim()) {
+        smartNameRosterText.value = snapshot.rosterText;
+      }
+    }
+  });
 
   if (projectsStore.projects.length === 0) {
     await projectsStore.bootstrap();
@@ -550,6 +692,10 @@ onMounted(async () => {
 
   if (projectId.value) {
     await projectsStore.selectProject(projectId.value);
+    smartNameMatchSnapshot.value = await window.neuromark.results.getSmartNameMatchSnapshot(projectId.value);
+    if (smartNameMatchSnapshot.value.rosterText.trim()) {
+      smartNameRosterText.value = smartNameMatchSnapshot.value.rosterText;
+    }
     if (showRubricDebugTab.value) {
       await loadRubricDebug();
     }
@@ -557,6 +703,9 @@ onMounted(async () => {
 });
 
 onBeforeUnmount(() => {
+  smartNameMatchUnsubscribe?.();
+  smartNameMatchUnsubscribe = null;
+  smartNameContextMenu.value.visible = false;
   if (lockedShellContent) {
     lockedShellContent.classList.remove('shell-content--scroll-locked');
     lockedShellContent = null;
@@ -571,6 +720,24 @@ watch(
     }
     await loadRubricDebug();
   },
+);
+
+watch(
+  projectId,
+  async (nextProjectId) => {
+    if (!nextProjectId) {
+      smartNameMatchSnapshot.value = null;
+      smartNameRosterText.value = '';
+      return;
+    }
+
+    const snapshot = await window.neuromark.results.getSmartNameMatchSnapshot(nextProjectId);
+    smartNameMatchSnapshot.value = snapshot;
+    if (snapshot.rosterText.trim()) {
+      smartNameRosterText.value = snapshot.rosterText;
+    }
+  },
+  { immediate: false },
 );
 
 async function loadRubricDebug() {
@@ -722,11 +889,213 @@ async function saveResult() {
   }
   const nextResult = cloneFinalResult(editableResult.value);
   nextResult.manualTotalScore = editableAutoTotal.value;
+  const saveOptions = editableStudentInfoChanged.value
+    ? {
+        nameMatchStatus: 'verified' as NameMatchStatus,
+        nameMatchUpdatedAt: new Date().toISOString(),
+        nameMatchSource: 'manual-review',
+      }
+    : undefined;
   await projectsStore.saveFinalResult(
     selectedProject.value.id,
     selectedResult.value.paperId,
     nextResult,
+    saveOptions,
   );
+}
+
+async function startSmartNameMatch() {
+  if (!selectedProject.value || smartNameSubmitting.value || smartNameMatchIsRunning.value) {
+    return;
+  }
+
+  const rosterText = smartNameRosterText.value.trim();
+  if (!rosterText) {
+    message.error('请先输入班级名册。');
+    return;
+  }
+
+  smartNameSubmitting.value = true;
+  try {
+    smartNameMatchSnapshot.value = await window.neuromark.results.startSmartNameMatch(
+      selectedProject.value.id,
+      rosterText,
+    );
+    message.success('智能核名已开始。');
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : '启动智能核名失败。');
+  } finally {
+    smartNameSubmitting.value = false;
+  }
+}
+
+async function applySmartNameMatch() {
+  if (!selectedProject.value || smartNameApplying.value) {
+    return;
+  }
+
+  smartNameApplying.value = true;
+  try {
+    const updatedPaperIds = await window.neuromark.results.applySmartNameMatch(selectedProject.value.id);
+    await Promise.all([
+      projectsStore.loadProjectDetail(selectedProject.value.id),
+      window.neuromark.results.getSmartNameMatchSnapshot(selectedProject.value.id).then((snapshot) => {
+        smartNameMatchSnapshot.value = snapshot;
+      }),
+    ]);
+    message.success(`已应用 ${updatedPaperIds.length} 份确定核名结果。`);
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : '应用智能核名失败。');
+  } finally {
+    smartNameApplying.value = false;
+  }
+}
+
+function getSmartNameDecisionLabel(suggestion: SmartNameMatchSuggestion): string {
+  if (suggestion.decision === 'certain_update') {
+    return '确定修改';
+  }
+  if (suggestion.decision === 'certain_keep') {
+    return '确定无误';
+  }
+  if (suggestion.decision === 'uncertain') {
+    return '待确认';
+  }
+  return '未匹配';
+}
+
+function getSmartNameDecisionType(suggestion: SmartNameMatchSuggestion) {
+  if (suggestion.decision === 'certain_update') {
+    return 'warning' as const;
+  }
+  if (suggestion.decision === 'certain_keep') {
+    return 'success' as const;
+  }
+  if (suggestion.decision === 'uncertain') {
+    return 'warning' as const;
+  }
+  return 'default' as const;
+}
+
+function formatStudentInfo(studentInfo: { className: string; studentId: string; name: string } | null): string {
+  if (!studentInfo) {
+    return '未给出候选';
+  }
+
+  return [
+    studentInfo.name || '未识别姓名',
+    `学号 ${studentInfo.studentId || '未识别'}`,
+    `班级 ${studentInfo.className || '未识别'}`,
+  ].join(' · ');
+}
+
+function getSmartNameFieldLabel(field: 'className' | 'studentId' | 'name'): string {
+  if (field === 'className') {
+    return '班级';
+  }
+  if (field === 'studentId') {
+    return '学号';
+  }
+  return '姓名';
+}
+
+function isSmartNameFieldChanged(
+  suggestion: SmartNameMatchSuggestion,
+  field: 'className' | 'studentId' | 'name',
+): boolean {
+  return suggestion.changedFields.includes(field);
+}
+
+function getSmartNameFieldCurrentValue(
+  suggestion: SmartNameMatchSuggestion,
+  field: 'className' | 'studentId' | 'name',
+): string {
+  return suggestion.currentStudentInfo[field] || '未识别';
+}
+
+function getSmartNameFieldSuggestedValue(
+  suggestion: SmartNameMatchSuggestion,
+  field: 'className' | 'studentId' | 'name',
+): string {
+  const nextInfo = suggestion.suggestedStudentInfo || suggestion.currentStudentInfo;
+  return nextInfo[field] || '未识别';
+}
+
+function buildPaperPreviewImages(paperId: string): PreviewImageItem[] {
+  const paper = papers.value.find((item) => item.id === paperId);
+  if (!paper) {
+    return [];
+  }
+
+  return paper.originalPages.map((page, index) => ({
+    src: page.scannedPath || page.originalPath,
+    cacheKey: page.scannedPath ? page.scannedVersion : page.originalVersion,
+    title: `${paper.paperCode} · 第 ${index + 1} 页`,
+    caption: page.scannedPath ? '扫描答卷' : '原始答卷',
+  }));
+}
+
+async function openPaperPreviewByPaperId(paperId: string) {
+  const previewImages = buildPaperPreviewImages(paperId);
+  if (!previewImages.length) {
+    return;
+  }
+
+  await window.neuromark.preview.open(
+    previewImages,
+    0,
+    '答卷图片预览',
+  );
+}
+
+function hideSmartNameContextMenu() {
+  smartNameContextMenu.value.visible = false;
+}
+
+function openSmartNameContextMenu(event: MouseEvent, paperId: string) {
+  event.preventDefault();
+  smartNameContextMenu.value = {
+    visible: true,
+    x: event.clientX,
+    y: event.clientY,
+    paperId,
+  };
+}
+
+function startManualSmartName(paperId: string) {
+  smartNameWorkspaceMode.value = 'manual';
+  smartNameManualPaperId.value = paperId;
+  selectedResultId.value = results.value.find((item) => item.paperId === paperId)?.id ?? selectedResultId.value;
+  hideSmartNameContextMenu();
+}
+
+function backToAutoSmartName() {
+  smartNameWorkspaceMode.value = 'auto';
+}
+
+async function saveManualSmartName() {
+  if (!selectedProject.value || !smartNameManualResult.value || !manualSmartNameDraft.value) {
+    return;
+  }
+
+  manualSmartNameSaving.value = true;
+  try {
+    await projectsStore.saveFinalResult(
+      selectedProject.value.id,
+      smartNameManualResult.value.paperId,
+      cloneFinalResult(manualSmartNameDraft.value),
+      {
+        nameMatchStatus: 'verified',
+        nameMatchUpdatedAt: new Date().toISOString(),
+        nameMatchSource: 'manual-name-match',
+      },
+    );
+    message.success('手动核名已保存。');
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : '保存手动核名失败。');
+  } finally {
+    manualSmartNameSaving.value = false;
+  }
 }
 
 async function deleteSelectedResult() {
@@ -1285,6 +1654,15 @@ function goBack() {
                           参考答案 v{{ entry.result.referenceAnswerVersion }}
                         </n-tag>
                         <n-tag
+                          v-if="entry.result.nameMatchStatus === 'verified'"
+                          size="small"
+                          round
+                          type="success"
+                          :bordered="false"
+                        >
+                          已核名
+                        </n-tag>
+                        <n-tag
                           v-if="isResultOutdated(entry.result)"
                           size="small"
                           round
@@ -1525,6 +1903,9 @@ function goBack() {
                             <n-input v-model:value="editableResult.studentInfo.name" />
                           </n-form-item>
                         </div>
+                        <div v-if="editableStudentInfoChanged" class="smart-name-save-hint">
+                          保存后，这份答卷会被标记为已核名。
+                        </div>
                       </n-form>
 
                       <div class="result-score-summary-grid">
@@ -1704,6 +2085,555 @@ function goBack() {
             </section>
           </div>
           <n-empty v-else description="先导入答卷。批改后，这里会显示左侧导航与右侧核对工作区。" />
+        </n-tab-pane>
+
+        <n-tab-pane name="smart-name-match" tab="智能核名">
+          <div
+            v-if="results.length"
+            class="result-review-layout"
+            @mouseenter="isReviewScrollActive = true"
+            @mouseleave="isReviewScrollActive = false"
+            @click="hideSmartNameContextMenu"
+          >
+            <aside class="result-sidebar surface-card">
+              <div class="result-sidebar-head">
+                <div>
+                  <div class="result-section-title">已批阅答卷</div>
+                  <div class="detail-subtitle">核对当前项目的学生身份信息。</div>
+                </div>
+                <div class="result-sidebar-stats">
+                  <n-tag size="small" round :bordered="false">已批改 {{ results.length }}</n-tag>
+                  <n-tag size="small" round type="success" :bordered="false">
+                    已核名 {{ results.filter((item) => item.nameMatchStatus === 'verified').length }}
+                  </n-tag>
+                </div>
+              </div>
+
+              <div class="result-sidebar-scroll">
+                <div class="result-nav-section">
+                  <button
+                    v-for="entry in gradedResultEntries"
+                    :key="`smart-${entry.result.id}`"
+                    class="result-row"
+                    :class="{ active: entry.result.id === selectedResult?.id }"
+                    @click="selectedResultId = entry.result.id"
+                    @contextmenu="openSmartNameContextMenu($event, entry.result.paperId)"
+                  >
+                    <div class="result-row-main">
+                      <div class="result-row-topline">
+                        <div class="result-row-title">{{ entry.paperLabel }}</div>
+                        <div class="result-row-score">{{ entry.displayScore }}</div>
+                      </div>
+                      <div class="result-row-student">{{ entry.studentName || '未识别姓名' }}</div>
+                      <div class="result-row-student-meta">
+                        <span>学号 {{ entry.studentId || '未识别' }}</span>
+                        <span>班级 {{ entry.className || '未识别' }}</span>
+                      </div>
+                      <div class="result-version-tags">
+                        <n-tag size="small" round :bordered="false">
+                          参考答案 v{{ entry.result.referenceAnswerVersion }}
+                        </n-tag>
+                        <n-tag
+                          v-if="entry.result.nameMatchStatus === 'verified'"
+                          size="small"
+                          round
+                          type="success"
+                          :bordered="false"
+                        >
+                          已核名
+                        </n-tag>
+                      </div>
+                    </div>
+                  </button>
+                </div>
+              </div>
+            </aside>
+
+            <section class="result-workspace surface-card">
+              <div class="result-workspace-head">
+                <div>
+                  <div class="result-section-title">
+                    {{ smartNameWorkspaceMode === 'manual' ? '手动核名' : '智能核名' }}
+                  </div>
+                  <div class="detail-subtitle">
+                    {{
+                      smartNameWorkspaceMode === 'manual'
+                        ? '查看原卷并手动修正班级、学号、姓名。'
+                        : '提交班级名册后，系统会结合当前已批阅结果自动生成核名建议。'
+                    }}
+                  </div>
+                </div>
+                <n-space>
+                  <n-button
+                    v-if="smartNameWorkspaceMode === 'manual'"
+                    secondary
+                    @click="backToAutoSmartName"
+                  >
+                    返回智能核名
+                  </n-button>
+                  <n-button
+                    v-if="smartNameWorkspaceMode === 'auto'"
+                    :disabled="smartNameMatchCertainSuggestions.length === 0 || smartNameMatchIsRunning"
+                    :loading="smartNameApplying"
+                    type="primary"
+                    @click="applySmartNameMatch"
+                  >
+                    应用确定项
+                  </n-button>
+                </n-space>
+              </div>
+
+              <div class="result-workspace-scroll">
+                <div v-if="smartNameWorkspaceMode === 'manual' && smartNameManualResult && manualSmartNameDraft && smartNameManualPaper" class="result-workspace-stack">
+                  <div class="result-paper-summary">
+                    <div class="result-paper-title">{{ smartNameManualPaper.paperCode }}</div>
+                    <div class="result-paper-meta">
+                      {{ manualSmartNameDraft.studentInfo.name || '未识别姓名' }}
+                      <span>学号 {{ manualSmartNameDraft.studentInfo.studentId || '未识别' }}</span>
+                      <span>班级 {{ manualSmartNameDraft.studentInfo.className || '未识别' }}</span>
+                    </div>
+                  </div>
+
+                  <div class="result-subsection-card">
+                    <div class="result-panel-head result-panel-head--with-tools">
+                      <div>
+                        <div class="result-section-title">查看试卷</div>
+                      </div>
+                      <n-button secondary @click="openPaperPreviewByPaperId(smartNameManualResult.paperId)">
+                        查看原卷
+                      </n-button>
+                    </div>
+
+                    <div class="result-stage-stack result-stage-stack--embedded">
+                      <div
+                        v-for="(image, imageIndex) in buildPaperPreviewImages(smartNameManualResult.paperId)"
+                        :key="`manual-${image.title}`"
+                        class="stage-card"
+                      >
+                        <div class="stage-card-title">{{ image.title }}</div>
+                        <div class="paper-stage paper-stage--thumbnail" @click="openPaperPreviewByPaperId(smartNameManualResult.paperId)">
+                          <img
+                            class="paper-stage-image"
+                            :src="toImageSrc(image.src, image.cacheKey)"
+                            :alt="image.title"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="result-subsection-card">
+                    <div class="result-panel-head">
+                      <div>
+                        <div class="result-section-title">身份信息</div>
+                      </div>
+                    </div>
+                    <n-form label-placement="top">
+                      <div class="three-col">
+                        <n-form-item label="班级">
+                          <n-input v-model:value="manualSmartNameDraft.studentInfo.className" />
+                        </n-form-item>
+                        <n-form-item label="学号">
+                          <n-input v-model:value="manualSmartNameDraft.studentInfo.studentId" />
+                        </n-form-item>
+                        <n-form-item label="姓名">
+                          <n-input v-model:value="manualSmartNameDraft.studentInfo.name" />
+                        </n-form-item>
+                      </div>
+                      <div class="smart-name-save-hint">
+                        保存后，这份答卷会被标记为已核名。
+                      </div>
+                    </n-form>
+                    <div class="reference-editor-actions">
+                      <n-button
+                        type="primary"
+                        :loading="manualSmartNameSaving"
+                        @click="saveManualSmartName"
+                      >
+                        保存手动核名
+                      </n-button>
+                    </div>
+                  </div>
+                </div>
+
+                <div v-else class="result-workspace-stack">
+                  <div class="result-subsection-card">
+                    <div class="result-panel-head">
+                      <div>
+                        <div class="result-section-title">班级名册</div>
+                      </div>
+                    </div>
+
+                    <n-input
+                      v-model:value="smartNameRosterText"
+                      type="textarea"
+                      :autosize="{ minRows: 10, maxRows: 18 }"
+                      placeholder="逐行粘贴班级、姓名、学号等内容"
+                    />
+
+                    <div class="reference-editor-actions">
+                      <n-button
+                        type="primary"
+                        :loading="smartNameSubmitting"
+                        :disabled="smartNameMatchIsRunning"
+                        @click="startSmartNameMatch"
+                      >
+                        开始智能核名
+                      </n-button>
+                      <n-tag
+                        v-if="smartNameMatchState.stage"
+                        round
+                        :bordered="false"
+                      >
+                        {{ smartNameMatchState.stage }}
+                      </n-tag>
+                    </div>
+                  </div>
+
+                  <n-alert
+                    v-if="smartNameMatchState.status === 'failed' && smartNameMatchState.errorMessage"
+                    type="error"
+                    class="answer-generation-alert"
+                    :show-icon="false"
+                  >
+                    {{ smartNameMatchState.errorMessage }}
+                  </n-alert>
+
+                  <div v-if="smartNameMatchIsRunning" class="result-subsection-card">
+                    <div class="answer-generation-pending">
+                      <n-spin size="large" />
+                      <div class="answer-generation-pending-copy">
+                        <strong>正在智能核名</strong>
+                        <span>{{ smartNameMatchState.stage || '正在请求模型。' }}</span>
+                      </div>
+                      <div
+                        v-if="!smartNameMatchHasPreview"
+                        class="preset-panel preset-panel--stream"
+                      >
+                        <div class="preset-panel-title">模型思考过程（实时）</div>
+                        <div
+                          ref="smartNameReasoningRef"
+                          class="preset-panel-copy preset-panel-copy--log stream-output-box"
+                        >
+                          {{ smartNameMatchState.reasoningText || '当前还没有接收到模型推理文本。' }}
+                        </div>
+                      </div>
+                      <div
+                        v-else
+                        class="preset-panel preset-panel--stream"
+                      >
+                        <div class="preset-panel-title">模型实时输出（JSON 草稿）</div>
+                        <div
+                          ref="smartNamePreviewRef"
+                          class="preset-panel-copy preset-panel-copy--log stream-output-box"
+                        >
+                          {{ smartNameMatchState.previewText }}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <template v-if="smartNameMatchState.result">
+                    <div class="result-subsection-card">
+                      <div class="result-panel-head">
+                        <div>
+                          <div class="result-section-title">结果概览</div>
+                        </div>
+                      </div>
+
+                      <div class="smart-name-summary-grid">
+                        <div class="result-score-summary-card">
+                          <span>确定修改</span>
+                          <strong>{{ smartNameMatchState.result.summary.certainUpdateCount }}</strong>
+                        </div>
+                        <div class="result-score-summary-card">
+                          <span>确定无误</span>
+                          <strong>{{ smartNameMatchState.result.summary.certainKeepCount }}</strong>
+                        </div>
+                        <div class="result-score-summary-card">
+                          <span>待确认</span>
+                          <strong>{{ smartNameMatchState.result.summary.uncertainCount }}</strong>
+                        </div>
+                        <div class="result-score-summary-card">
+                          <span>未匹配</span>
+                          <strong>{{ smartNameMatchState.result.summary.noMatchCount }}</strong>
+                        </div>
+                        <div class="result-score-summary-card">
+                          <span>疑似重复卷</span>
+                          <strong>{{ smartNameMatchState.result.summary.duplicateGroupCount }}</strong>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div class="result-subsection-card">
+                      <div class="result-panel-head">
+                        <div>
+                          <div class="result-section-title">疑似重复录入</div>
+                        </div>
+                      </div>
+
+                      <div
+                        v-if="smartNameMatchState.result.duplicateGroups.length"
+                        class="question-list"
+                      >
+                        <div
+                          v-for="(group, groupIndex) in smartNameMatchState.result.duplicateGroups"
+                          :key="`duplicate-${groupIndex}`"
+                          class="question-card question-card--smart-name"
+                        >
+                          <div class="smart-name-card-head">
+                            <div>
+                              <div class="question-card-title">{{ group.paperCodes.join(' / ') }}</div>
+                              <div class="question-card-meta">
+                                置信度 {{ Math.round(group.confidence * 100) }}%
+                              </div>
+                            </div>
+                            <n-tag size="small" round :bordered="false" type="warning">
+                              疑似重复
+                            </n-tag>
+                          </div>
+                          <div class="detail-subtitle">{{ group.reason }}</div>
+                          <div v-if="group.evidence.length" class="issues-box">
+                            <strong>依据</strong>
+                            <ul>
+                              <li v-for="evidence in group.evidence" :key="evidence">
+                                {{ evidence }}
+                              </li>
+                            </ul>
+                          </div>
+                        </div>
+                      </div>
+                      <n-empty v-else description="当前没有发现疑似重复录入的卷子。" />
+                    </div>
+
+                    <div class="result-subsection-card">
+                      <div class="result-panel-head">
+                        <div>
+                          <div class="result-section-title">确定修改</div>
+                        </div>
+                      </div>
+
+                      <div v-if="smartNameMatchCertainUpdateSuggestions.length" class="question-list">
+                        <div
+                          v-for="suggestion in smartNameMatchCertainUpdateSuggestions"
+                          :key="`certain-update-${suggestion.paperId}`"
+                          class="question-card question-card--smart-name"
+                        >
+                          <div class="smart-name-card-head">
+                            <div>
+                              <div class="question-card-title">{{ suggestion.paperCode }}</div>
+                              <div class="question-card-meta">{{ formatStudentInfo(suggestion.currentStudentInfo) }}</div>
+                            </div>
+                            <n-tag
+                              size="small"
+                              round
+                              :bordered="false"
+                              :type="getSmartNameDecisionType(suggestion)"
+                            >
+                              {{ getSmartNameDecisionLabel(suggestion) }}
+                            </n-tag>
+                          </div>
+                          <div class="reference-editor-actions">
+                            <n-button secondary size="small" @click="openPaperPreviewByPaperId(suggestion.paperId)">
+                              查看原卷
+                            </n-button>
+                          </div>
+                          <div class="smart-name-diff-list">
+                            <div
+                              v-for="field in ['name', 'studentId', 'className']"
+                              :key="`${suggestion.paperId}-${field}`"
+                              class="smart-name-diff-row"
+                              :class="{ 'is-changed': isSmartNameFieldChanged(suggestion, field as 'className' | 'studentId' | 'name') }"
+                            >
+                              <div class="smart-name-diff-label">
+                                {{ getSmartNameFieldLabel(field as 'className' | 'studentId' | 'name') }}
+                              </div>
+                              <div class="smart-name-diff-values">
+                                <span
+                                  class="smart-name-diff-value smart-name-diff-value--before"
+                                  :class="{ 'is-muted': !isSmartNameFieldChanged(suggestion, field as 'className' | 'studentId' | 'name') }"
+                                >
+                                  {{ getSmartNameFieldCurrentValue(suggestion, field as 'className' | 'studentId' | 'name') }}
+                                </span>
+                                <span
+                                  class="smart-name-diff-arrow"
+                                  :class="{ 'is-hidden': !isSmartNameFieldChanged(suggestion, field as 'className' | 'studentId' | 'name') }"
+                                >
+                                  →
+                                </span>
+                                <span
+                                  class="smart-name-diff-value smart-name-diff-value--after"
+                                  :class="{ 'is-muted': !isSmartNameFieldChanged(suggestion, field as 'className' | 'studentId' | 'name') }"
+                                >
+                                  {{ getSmartNameFieldSuggestedValue(suggestion, field as 'className' | 'studentId' | 'name') }}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                          <div class="detail-subtitle">{{ suggestion.reason }}</div>
+                          <div v-if="suggestion.matchedRosterLine" class="preset-panel preset-panel--secondary">
+                            <div class="preset-panel-title">命中名册</div>
+                            <div class="preset-panel-copy">{{ suggestion.matchedRosterLine }}</div>
+                          </div>
+                        </div>
+                      </div>
+                      <n-empty v-else description="当前没有确定修改的核名结果。" />
+                    </div>
+
+                    <div class="result-subsection-card">
+                      <div class="result-panel-head">
+                        <div>
+                          <div class="result-section-title">待人工确认</div>
+                        </div>
+                      </div>
+
+                      <div v-if="smartNameMatchUncertainSuggestions.length" class="question-list">
+                        <div
+                          v-for="suggestion in smartNameMatchUncertainSuggestions"
+                          :key="`uncertain-${suggestion.paperId}`"
+                          class="question-card question-card--smart-name"
+                        >
+                          <div class="smart-name-card-head">
+                            <div>
+                              <div class="question-card-title">{{ suggestion.paperCode }}</div>
+                              <div class="question-card-meta">
+                                置信度 {{ Math.round(suggestion.confidence * 100) }}%
+                              </div>
+                            </div>
+                            <n-tag
+                              size="small"
+                              round
+                              :bordered="false"
+                              :type="getSmartNameDecisionType(suggestion)"
+                            >
+                              {{ getSmartNameDecisionLabel(suggestion) }}
+                            </n-tag>
+                          </div>
+                          <div class="reference-editor-actions">
+                            <n-button secondary size="small" @click="openPaperPreviewByPaperId(suggestion.paperId)">
+                              查看原卷
+                            </n-button>
+                          </div>
+                          <div class="smart-name-diff-list">
+                            <div
+                              v-for="field in ['name', 'studentId', 'className']"
+                              :key="`${suggestion.paperId}-${field}`"
+                              class="smart-name-diff-row"
+                              :class="{ 'is-changed': isSmartNameFieldChanged(suggestion, field as 'className' | 'studentId' | 'name') }"
+                            >
+                              <div class="smart-name-diff-label">
+                                {{ getSmartNameFieldLabel(field as 'className' | 'studentId' | 'name') }}
+                              </div>
+                              <div class="smart-name-diff-values">
+                                <span
+                                  class="smart-name-diff-value smart-name-diff-value--before"
+                                  :class="{ 'is-muted': !isSmartNameFieldChanged(suggestion, field as 'className' | 'studentId' | 'name') }"
+                                >
+                                  {{ getSmartNameFieldCurrentValue(suggestion, field as 'className' | 'studentId' | 'name') }}
+                                </span>
+                                <span
+                                  class="smart-name-diff-arrow"
+                                  :class="{ 'is-hidden': !isSmartNameFieldChanged(suggestion, field as 'className' | 'studentId' | 'name') }"
+                                >
+                                  →
+                                </span>
+                                <span
+                                  class="smart-name-diff-value smart-name-diff-value--after"
+                                  :class="{ 'is-muted': !isSmartNameFieldChanged(suggestion, field as 'className' | 'studentId' | 'name') }"
+                                >
+                                  {{ getSmartNameFieldSuggestedValue(suggestion, field as 'className' | 'studentId' | 'name') }}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                          <div class="detail-subtitle">{{ suggestion.reason }}</div>
+                          <div v-if="suggestion.uncertaintyNotes.length" class="issues-box">
+                            <strong>不确定原因</strong>
+                            <ul>
+                              <li v-for="note in suggestion.uncertaintyNotes" :key="note">
+                                {{ note }}
+                              </li>
+                            </ul>
+                          </div>
+                          <div v-if="suggestion.matchedRosterLine" class="preset-panel preset-panel--secondary">
+                            <div class="preset-panel-title">候选名册</div>
+                            <div class="preset-panel-copy">{{ suggestion.matchedRosterLine }}</div>
+                          </div>
+                        </div>
+                      </div>
+                      <n-empty v-else description="当前没有需要人工确认的条目。" />
+                    </div>
+
+                    <div class="result-subsection-card">
+                      <div class="result-panel-head result-panel-head--with-tools">
+                        <div>
+                          <div class="result-section-title">确定无误</div>
+                        </div>
+                        <n-button text type="primary" @click="smartNameKeepExpanded = !smartNameKeepExpanded">
+                          {{ smartNameKeepExpanded ? '收起' : `展开 ${smartNameMatchCertainKeepSuggestions.length} 项` }}
+                        </n-button>
+                      </div>
+
+                      <div v-if="smartNameKeepExpanded && smartNameMatchCertainKeepSuggestions.length" class="question-list">
+                        <div
+                          v-for="suggestion in smartNameMatchCertainKeepSuggestions"
+                          :key="`certain-keep-${suggestion.paperId}`"
+                          class="question-card question-card--smart-name"
+                        >
+                          <div class="smart-name-card-head">
+                            <div>
+                              <div class="question-card-title">{{ suggestion.paperCode }}</div>
+                              <div class="question-card-meta">{{ formatStudentInfo(suggestion.currentStudentInfo) }}</div>
+                            </div>
+                            <n-tag
+                              size="small"
+                              round
+                              :bordered="false"
+                              :type="getSmartNameDecisionType(suggestion)"
+                            >
+                              {{ getSmartNameDecisionLabel(suggestion) }}
+                            </n-tag>
+                          </div>
+                          <div class="reference-editor-actions">
+                            <n-button secondary size="small" @click="openPaperPreviewByPaperId(suggestion.paperId)">
+                              查看原卷
+                            </n-button>
+                          </div>
+                          <div class="detail-subtitle">{{ suggestion.reason }}</div>
+                          <div v-if="suggestion.matchedRosterLine" class="preset-panel preset-panel--secondary">
+                            <div class="preset-panel-title">命中名册</div>
+                            <div class="preset-panel-copy">{{ suggestion.matchedRosterLine }}</div>
+                          </div>
+                        </div>
+                      </div>
+                      <n-empty
+                        v-else-if="!smartNameMatchCertainKeepSuggestions.length"
+                        description="当前没有确定无误的条目。"
+                      />
+                      <div v-else class="detail-subtitle">
+                        已折叠 {{ smartNameMatchCertainKeepSuggestions.length }} 条确定无误结果。
+                      </div>
+                    </div>
+                  </template>
+                </div>
+              </div>
+            </section>
+
+            <div
+              v-if="smartNameContextMenu.visible"
+              class="preview-context-menu smart-name-context-menu"
+              :style="{ left: `${smartNameContextMenu.x}px`, top: `${smartNameContextMenu.y}px` }"
+              @click.stop
+            >
+              <button
+                class="preview-context-menu__item"
+                @click="startManualSmartName(smartNameContextMenu.paperId)"
+              >
+                手动核名
+              </button>
+            </div>
+          </div>
+          <n-empty v-else description="先完成批阅后再进行智能核名。" />
         </n-tab-pane>
 
         <n-tab-pane name="project-settings" tab="项目设置">

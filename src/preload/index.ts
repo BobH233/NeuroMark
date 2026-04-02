@@ -56,11 +56,26 @@ const api: NeuromarkApi = {
   results: {
     list: (projectId) => ipcRenderer.invoke('results:list', projectId),
     get: (projectId, paperId) => ipcRenderer.invoke('results:get', projectId, paperId),
-    saveFinal: (projectId, paperId, finalResult) =>
-      ipcRenderer.invoke('results:save-final', projectId, paperId, finalResult),
+    saveFinal: (projectId, paperId, finalResult, options) =>
+      ipcRenderer.invoke('results:save-final', projectId, paperId, finalResult, options),
     delete: (projectId, paperId) => ipcRenderer.invoke('results:delete', projectId, paperId),
     exportJson: (projectId, targetPath) =>
       ipcRenderer.invoke('results:export-json', projectId, targetPath),
+    getSmartNameMatchSnapshot: (projectId) =>
+      ipcRenderer.invoke('results:get-smart-name-match-snapshot', projectId),
+    startSmartNameMatch: (projectId, rosterText) =>
+      ipcRenderer.invoke('results:start-smart-name-match', projectId, rosterText),
+    applySmartNameMatch: (projectId) =>
+      ipcRenderer.invoke('results:apply-smart-name-match', projectId),
+    onSmartNameMatchUpdated: (handler) => {
+      const listener = (_event: Electron.IpcRendererEvent, snapshot: unknown) => {
+        handler(snapshot as any);
+      };
+      ipcRenderer.on('results:smart-name-match-updated', listener);
+      return () => {
+        ipcRenderer.removeListener('results:smart-name-match-updated', listener);
+      };
+    },
   },
   settings: {
     get: () => ipcRenderer.invoke('settings:get'),

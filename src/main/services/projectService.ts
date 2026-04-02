@@ -6,6 +6,7 @@ import type {
   CreateProjectInput,
   FinalResult,
   ModelResult,
+  NameMatchStatus,
   PaperPage,
   PaperRecord,
   ProjectDetail,
@@ -13,6 +14,7 @@ import type {
   ProjectSettings,
   ProjectStats,
   ResultRecord,
+  SaveFinalResultOptions,
   ProjectRubricDebug,
 } from '@preload/contracts';
 import { getDatabase } from '@main/database/client';
@@ -191,6 +193,9 @@ function normalizeResultPayload(payload: unknown): {
   modelResult: ModelResult;
   finalResult: FinalResult;
   referenceAnswerVersion: number;
+  nameMatchStatus: NameMatchStatus;
+  nameMatchUpdatedAt?: string | null;
+  nameMatchSource?: string | null;
 } | null {
   if (!payload || typeof payload !== 'object') {
     return null;
@@ -216,6 +221,11 @@ function normalizeResultPayload(payload: unknown): {
       modelResult: candidate.modelResult as ModelResult,
       finalResult: candidate.finalResult as FinalResult,
       referenceAnswerVersion,
+      nameMatchStatus: candidate.nameMatchStatus === 'verified' ? 'verified' : 'unverified',
+      nameMatchUpdatedAt:
+        typeof candidate.nameMatchUpdatedAt === 'string' ? candidate.nameMatchUpdatedAt : null,
+      nameMatchSource:
+        typeof candidate.nameMatchSource === 'string' ? candidate.nameMatchSource : null,
     };
   }
 
@@ -303,6 +313,9 @@ function normalizeResultPayload(payload: unknown): {
         ...modelResult,
       },
       referenceAnswerVersion: 1,
+      nameMatchStatus: 'unverified',
+      nameMatchUpdatedAt: null,
+      nameMatchSource: null,
     };
   }
 
@@ -958,6 +971,9 @@ export class ProjectService {
           referenceAnswerVersion: normalized.referenceAnswerVersion,
           modelResult: normalized.modelResult,
           finalResult: normalized.finalResult,
+          nameMatchStatus: normalized.nameMatchStatus,
+          nameMatchUpdatedAt: normalized.nameMatchUpdatedAt ?? null,
+          nameMatchSource: normalized.nameMatchSource ?? null,
           updatedAt: stat.mtime.toISOString(),
         });
       } catch {
@@ -999,11 +1015,11 @@ export class ProjectService {
       const normalized = normalizeResultPayload(payload);
       if (normalized) {
         return {
-          status: normalized.status,
-          referenceAnswerVersion: normalized.referenceAnswerVersion,
-          updatedAt: stat.mtime.toISOString(),
-          errorMessage: normalized.errorMessage ?? null,
-        };
+        status: normalized.status,
+        referenceAnswerVersion: normalized.referenceAnswerVersion,
+        updatedAt: stat.mtime.toISOString(),
+        errorMessage: normalized.errorMessage ?? null,
+      };
       }
     } catch {
       return {
@@ -1083,6 +1099,9 @@ export class ProjectService {
         referenceAnswerVersion: payload.referenceAnswerVersion,
         modelResult: payload.modelResult,
         finalResult: payload.finalResult,
+        nameMatchStatus: 'unverified',
+        nameMatchUpdatedAt: null,
+        nameMatchSource: null,
         updatedAt: new Date().toISOString(),
       },
       { spaces: 2 },
@@ -1138,6 +1157,7 @@ export class ProjectService {
     projectId: string,
     paperId: string,
     finalResult: FinalResult,
+    options?: SaveFinalResultOptions,
   ): Promise<ResultRecord> {
     const project = await this.getProjectById(projectId);
     const structure = getProjectStructure(project.rootPath);
@@ -1159,6 +1179,10 @@ export class ProjectService {
         referenceAnswerVersion: current.referenceAnswerVersion,
         modelResult: current.modelResult,
         finalResult,
+        nameMatchStatus: options?.nameMatchStatus ?? current.nameMatchStatus,
+        nameMatchUpdatedAt:
+          options?.nameMatchUpdatedAt ?? current.nameMatchUpdatedAt ?? null,
+        nameMatchSource: options?.nameMatchSource ?? current.nameMatchSource ?? null,
         updatedAt: new Date().toISOString(),
       },
       { spaces: 2 },
