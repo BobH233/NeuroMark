@@ -90,8 +90,19 @@ const api: NeuromarkApi = {
     },
   },
   preview: {
-    open: (images, initialIndex, title) =>
-      ipcRenderer.invoke('preview:open', images, initialIndex, title),
+    open: (images, initialIndex, title, activeQuestionId) =>
+      ipcRenderer.invoke('preview:open', images, initialIndex, title, activeQuestionId),
+    setActiveQuestion: (token, activeQuestionId) =>
+      ipcRenderer.invoke('preview:set-active-question', token, activeQuestionId),
+    onActiveQuestionChanged: (handler) => {
+      const listener = (_event: Electron.IpcRendererEvent, payload: unknown) => {
+        handler(payload as any);
+      };
+      ipcRenderer.on('preview:active-question-changed', listener);
+      return () => {
+        ipcRenderer.removeListener('preview:active-question-changed', listener);
+      };
+    },
     copyImage: (source) => ipcRenderer.invoke('preview:copy-image', source),
     saveImage: (source, suggestedName) =>
       ipcRenderer.invoke('preview:save-image', source, suggestedName),

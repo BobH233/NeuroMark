@@ -3,7 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router';
 import { NEmpty } from 'naive-ui';
 import type { ComponentPublicInstance } from 'vue';
-import type { PreviewSession } from '@preload/contracts';
+import type { PreviewActiveQuestionPayload, PreviewSession } from '@preload/contracts';
 import { toImageSrc } from '@/utils/file';
 
 const route = useRoute();
@@ -26,7 +26,9 @@ const contextMenu = ref({
   x: 0,
   y: 0,
 });
+const activeQuestionId = ref('');
 let thumbnailObserver: IntersectionObserver | null = null;
+let removePreviewQuestionListener: (() => void) | null = null;
 
 const activeImage = computed(() => {
   if (!session.value) {
@@ -47,6 +49,7 @@ onMounted(async () => {
     const previewSession = await window.neuromark.app.getPreviewSession(token);
     session.value = previewSession;
     activeIndex.value = previewSession?.initialIndex ?? 0;
+    activeQuestionId.value = previewSession?.activeQuestionId ?? '';
   } finally {
     loading.value = false;
   }
@@ -55,6 +58,14 @@ onMounted(async () => {
   window.addEventListener('blur', hideContextMenu);
   window.addEventListener('resize', hideContextMenu);
   initializeThumbnailObserver();
+  removePreviewQuestionListener = window.neuromark.preview.onActiveQuestionChanged(
+    (payload: PreviewActiveQuestionPayload) => {
+      if (payload.token !== token) {
+        return;
+      }
+      activeQuestionId.value = payload.activeQuestionId;
+    },
+  );
 });
 
 onBeforeUnmount(() => {
@@ -64,6 +75,8 @@ onBeforeUnmount(() => {
   window.removeEventListener('resize', hideContextMenu);
   thumbnailObserver?.disconnect();
   thumbnailObserver = null;
+  removePreviewQuestionListener?.();
+  removePreviewQuestionListener = null;
 });
 
 watch(
@@ -459,6 +472,7 @@ async function saveCurrentImage() {
                 v-for="region in activeImage.regions"
                 :key="`${activeImage.title}-${region.questionId}`"
                 class="preview-region"
+                :class="{ 'preview-region--active': region.questionId === activeQuestionId }"
                 :style="{
                   left: `${region.x * 100}%`,
                   top: `${region.y * 100}%`,

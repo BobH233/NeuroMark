@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { FinalResult } from '../../src/preload/contracts';
-import { computeDisplayedTotal } from '../../src/renderer/src/utils/result';
+import { computeDisplayedTotal, normalizeMarkdownMath } from '../../src/renderer/src/utils/result';
 
 const baseResult: FinalResult = {
   studentInfo: {
@@ -51,5 +51,23 @@ describe('computeDisplayedTotal', () => {
 
   it('falls back to sum of question scores when no manual total exists', () => {
     expect(computeDisplayedTotal(baseResult)).toBe(18);
+  });
+});
+
+describe('normalizeMarkdownMath', () => {
+  it('wraps bare latex equations so markdown preview can render them', () => {
+    expect(
+      normalizeMarkdownMath(
+        '正确写出电压增益表达式 A_u = -\\frac{\\beta (R_C \\parallel R_L)}{r_{be}}',
+      ),
+    ).toBe('正确写出电压增益表达式 $A_u = -\\frac{\\beta (R_C \\parallel R_L)}{r_{be}}$');
+  });
+
+  it('preserves formulas that already use math delimiters', () => {
+    expect(
+      normalizeMarkdownMath(
+        '试卷右上角有补充写出 $A_u = -\\frac{\\beta (R_C // R_L)}{r_{be}}$，公式正确。',
+      ),
+    ).toBe('试卷右上角有补充写出 $A_u = -\\frac{\\beta (R_C // R_L)}{r_{be}}$，公式正确。');
   });
 });

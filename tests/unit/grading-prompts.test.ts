@@ -51,9 +51,11 @@ describe('grading prompt guards', () => {
     });
 
     expect(gradingSystemPrompt).toContain('你必须更多参考【参考答案与评分标准开始】与【参考答案与评分标准结束】之间的原始标准内容');
-    expect(gradingSystemPrompt).toContain('如果你在 `reasoning`、`overallComment`、`scoreBreakdown.evidence` 等 Markdown 文本中写到公式，也必须使用严格的 LaTeX 表达');
+    expect(gradingSystemPrompt).toContain('`scoreBreakdown.evidence`、`scoreBreakdown.criterion`');
+    expect(gradingSystemPrompt).toContain('所有行内公式必须使用 `$...$` 包裹');
     expect(gradingUserPrompt).toContain('rubric 只提供固定评分单元、满分和采分点约束');
     expect(gradingUserPrompt).toContain('这里的内容是本次阅卷更主要的判分依据');
-    expect(gradingUserPrompt).toContain('如果在 reasoning、overallComment、scoreBreakdown.evidence 等 Markdown 文本里写到公式，必须严格使用 LaTeX 原样表达');
+    expect(gradingUserPrompt).toContain('scoreBreakdown.evidence、scoreBreakdown.criterion');
+    expect(gradingUserPrompt).toContain('所有行内公式必须使用 $...$ 包裹');
   });
 });

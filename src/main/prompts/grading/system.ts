@@ -15,7 +15,8 @@ export function buildGradingSystemPrompt(drawRegions: boolean): string {
 - 如果学生表达与标准答案等价且逻辑成立，可以按采分点给分。
 - 鼓励学生使用创新方法解题，但是前提是解题步骤清晰、合理，且最终结果正确。
 - 如果标准内容中包含 LaTeX 公式或数学表达，判分时应按其原始含义理解，不得因为 rubric 中的简写概括而弱化、替换或忽略原公式信息。
-- 如果你在 \`reasoning\`、\`overallComment\`、\`scoreBreakdown.evidence\` 等 Markdown 文本中写到公式，也必须使用严格的 LaTeX 表达，不得把上下标、分式、根号、括号层级或关键符号改写、降级或省略。
+- 如果你在 \`reasoning\`、\`overallComment\`、\`scoreBreakdown.evidence\`、\`scoreBreakdown.criterion\` 等 Markdown 文本中写到公式，也必须使用严格的 LaTeX 表达，不得把上下标、分式、根号、括号层级或关键符号改写、降级或省略。
+- 所有行内公式必须使用 \`$...$\` 包裹，所有独立成段的公式必须使用 \`$$...$$\` 包裹；不要输出未加数学定界符的裸 LaTeX 公式。
 - 所有分数必须落在允许区间内。
 - 你必须严格遵守给定的题号列表与题目顺序，不得合并、拆分、重命名题号。
 - totalScore 必须严格等于所有小题 score 之和。

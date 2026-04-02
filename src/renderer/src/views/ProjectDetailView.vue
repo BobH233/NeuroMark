@@ -338,6 +338,14 @@ watch(
   { deep: true, immediate: true },
 );
 
+watch(
+  activeQuestionId,
+  async (questionId) => {
+    await window.neuromark.preview.setActiveQuestion(null, questionId);
+  },
+  { flush: 'post' },
+);
+
 onMounted(async () => {
   if (projectsStore.projects.length === 0) {
     await projectsStore.bootstrap();
@@ -625,7 +633,12 @@ async function openStagePreview(initialIndex = 0) {
       ...toRaw(region),
     })),
   }));
-  await window.neuromark.preview.open(previewImages, safeIndex, '答卷图片预览');
+  await window.neuromark.preview.open(
+    previewImages,
+    safeIndex,
+    '答卷图片预览',
+    activeQuestionId.value,
+  );
 }
 
 function getPaperPagePreviewIndex(paperId: string, pageIndex: number) {
@@ -1096,9 +1109,7 @@ function goBack() {
                       <div class="result-panel-head">
                         <div>
                           <div class="result-section-title">扫描答卷与答题区域</div>
-                          <div class="detail-subtitle">
-                            点击任意缩略图即可打开预览窗口放大查看。
-                          </div>
+                          <div class="detail-subtitle">用于对照当前小题对应的答题区域。</div>
                         </div>
                       </div>
 
@@ -1115,13 +1126,13 @@ function goBack() {
                               v-for="region in image.regions"
                               :key="`${image.title}-${region.questionId}`"
                               class="paper-stage-region"
+                              :class="{ 'paper-stage-region--active': region.questionId === activeQuestionId }"
                               :style="{
                                 left: `${region.x * 100}%`,
                                 top: `${region.y * 100}%`,
                                 width: `${region.width * 100}%`,
                                 height: `${region.height * 100}%`
                               }"
-                              @click.stop="openStagePreview(imageIndex)"
                             >
                               <span>{{ region.questionId }}</span>
                             </div>
@@ -1239,8 +1250,8 @@ function goBack() {
                                     {{ formatScoreBreakdownBadge(point) }}
                                   </span>
                                 </div>
-                                <div class="score-breakdown-text">{{ point.criterion }}</div>
-                                <div class="score-breakdown-evidence">{{ point.evidence }}</div>
+                                <MarkdownRenderer :source="point.criterion" />
+                                <MarkdownRenderer :source="point.evidence" />
                               </li>
                             </ul>
                           </div>

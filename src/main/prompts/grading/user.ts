@@ -57,8 +57,9 @@ ${questionLines}
 15. 每个 scoreBreakdown 项的字段名必须严格使用：criterionId、criterion、maxScore、score、verdict、evidence。
 16. overallAdvice 的字段名必须严格使用：summary、strengths、priorityKnowledgePoints、attentionPoints、encouragement。
 17. 不要返回任何未在 schema 中出现的别名字段，不要自行改写字段名。
-18. 如果在 reasoning、overallComment、scoreBreakdown.evidence 等 Markdown 文本里写到公式，必须严格使用 LaTeX 原样表达，不得私自改掉上下标、分式、根号、括号层级、希腊字母或省略关键公式片段。
-19. 输出必须严格符合下面这份 JSON Schema：
+18. 如果在 reasoning、overallComment、scoreBreakdown.evidence、scoreBreakdown.criterion 等 Markdown 文本里写到公式，必须严格使用 LaTeX 原样表达，不得私自改掉上下标、分式、根号、括号层级、希腊字母或省略关键公式片段。
+19. 所有行内公式必须使用 $...$ 包裹，所有独立成段的公式必须使用 $$...$$ 包裹；不要输出未加数学定界符的裸 LaTeX 公式。
+20. 输出必须严格符合下面这份 JSON Schema：
 
 ${JSON.stringify(gradingSchema, null, 2)}
 

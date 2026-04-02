@@ -6,7 +6,7 @@
   "main": "dist-electron/main/index.js",
   "scripts": {
     "build:native": "node ./scripts/build-native.mjs",
-    "dev": "npm run build:native && node ./node_modules/electron-vite/bin/electron-vite.js dev",
+    "dev": "npm run build:native && node ./node_modules/electron-vite/bin/electron-vite.js dev -- --remote-debugging-port=9222",
     "build": "npm run build:native && vue-tsc --noEmit && node ./node_modules/electron-vite/bin/electron-vite.js build",
     "package": "npm exec electron-builder -- --publish never",
     "artifacts:ci": "node ./scripts/stage-electron-artifacts.mjs",

@@ -1239,13 +1239,17 @@ textarea {
   position: absolute;
   border: 3px solid #34d399;
   border-radius: 12px;
-  box-shadow:
-    0 0 0 1px rgba(12, 25, 36, 0.35),
-    0 0 0 9999px rgba(14, 116, 144, 0.03);
+  box-shadow: 0 0 0 1px rgba(12, 25, 36, 0.35);
+}
+
+.paper-stage-region--active,
+.preview-region--active {
+  border-color: #f97316;
+  box-shadow: 0 0 0 1px rgba(154, 52, 18, 0.28);
 }
 
 .paper-stage-region {
-  cursor: pointer;
+  pointer-events: none;
   transition:
     border-color 160ms ease,
     box-shadow 160ms ease,
@@ -1263,6 +1267,12 @@ textarea {
   color: #09222f;
   font-size: 12px;
   font-weight: 700;
+}
+
+.paper-stage-region--active span,
+.preview-region--active span {
+  background: #f97316;
+  color: #431407;
 }
 
 .status-pill {

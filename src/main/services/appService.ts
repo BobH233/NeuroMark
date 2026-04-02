@@ -15,10 +15,11 @@ import type { PreviewImageItem, PreviewSession } from '@preload/contracts';
 
 export class AppService {
   private readonly previewSessions = new Map<string, PreviewSession>();
+  private readonly previewWindows = new Map<string, BrowserWindow>();
 
   constructor(
     private readonly getParentWindow: () => BrowserWindow | null,
-    private readonly openPreviewWindow: (token: string) => Promise<void>,
+    private readonly openPreviewWindow: (token: string) => Promise<BrowserWindow>,
   ) {}
 
   getDefaultProjectBasePath(): string {
@@ -64,19 +65,49 @@ export class AppService {
     images: PreviewImageItem[],
     initialIndex = 0,
     title = '图片预览',
-  ): Promise<void> {
+    activeQuestionId = '',
+  ): Promise<string> {
     const token = nanoid();
     this.previewSessions.set(token, {
       token,
       title,
       initialIndex,
       images,
+      activeQuestionId,
     });
-    await this.openPreviewWindow(token);
+    const previewWindow = await this.openPreviewWindow(token);
+    this.previewWindows.set(token, previewWindow);
+    previewWindow.on('closed', () => {
+      this.previewWindows.delete(token);
+      this.previewSessions.delete(token);
+    });
+    return token;
   }
 
   async getPreviewSession(token: string): Promise<PreviewSession | null> {
     return this.previewSessions.get(token) ?? null;
+  }
+
+  async setPreviewActiveQuestion(token: string | null, activeQuestionId: string): Promise<void> {
+    const targetTokens = token ? [token] : [...this.previewSessions.keys()];
+
+    for (const targetToken of targetTokens) {
+      const session = this.previewSessions.get(targetToken);
+      if (!session) {
+        continue;
+      }
+
+      session.activeQuestionId = activeQuestionId;
+      const previewWindow = this.previewWindows.get(targetToken);
+      if (!previewWindow || previewWindow.isDestroyed()) {
+        continue;
+      }
+
+      previewWindow.webContents.send('preview:active-question-changed', {
+        token: targetToken,
+        activeQuestionId,
+      });
+    }
   }
 
   async savePreviewImage(source: string, suggestedName?: string): Promise<string | null> {

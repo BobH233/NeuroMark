@@ -93,9 +93,7 @@ async function bootstrap(): Promise<void> {
   answerGeneratorService = answerGenerator;
   const appService = new AppService(
     () => mainWindow,
-    async (token) => {
-      await createPreviewWindow(token);
-    },
+    (token) => createPreviewWindow(token),
   );
 
   await projects.ensureSeedData();

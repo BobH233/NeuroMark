@@ -301,6 +301,12 @@ export interface PreviewSession {
   title: string;
   initialIndex: number;
   images: PreviewImageItem[];
+  activeQuestionId?: string;
+}
+
+export interface PreviewActiveQuestionPayload {
+  token: string;
+  activeQuestionId: string;
 }
 
 export interface StartJobOptions {
@@ -403,7 +409,12 @@ export interface NeuromarkApi {
       images: PreviewImageItem[],
       initialIndex?: number,
       title?: string,
-    ) => Promise<void>;
+      activeQuestionId?: string,
+    ) => Promise<string>;
+    setActiveQuestion: (token: string | null, activeQuestionId: string) => Promise<void>;
+    onActiveQuestionChanged: (
+      handler: (payload: PreviewActiveQuestionPayload) => void,
+    ) => () => void;
     copyImage: (source: string) => Promise<void>;
     saveImage: (source: string, suggestedName?: string) => Promise<string | null>;
   };
