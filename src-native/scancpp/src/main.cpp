@@ -1,9 +1,11 @@
 #include <chrono>
 #include <exception>
 #include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <stdexcept>
 #include <string>
+#include <vector>
 
 #include <opencv2/dnn.hpp>
 #include <opencv2/imgcodecs.hpp>
@@ -20,6 +22,53 @@ double measureMilliseconds(Fn&& fn) {
     std::forward<Fn>(fn)();
     const auto end = std::chrono::steady_clock::now();
     return std::chrono::duration<double, std::milli>(end - begin).count();
+}
+
+std::vector<uchar> readBinaryFile(const fs::path& path) {
+    std::ifstream stream(path, std::ios::binary);
+    if (!stream) {
+        throw std::runtime_error("Failed to open file: " + path.u8string());
+    }
+
+    stream.seekg(0, std::ios::end);
+    const std::streamoff size = stream.tellg();
+    stream.seekg(0, std::ios::beg);
+
+    if (size < 0) {
+        throw std::runtime_error("Failed to determine file size: " + path.u8string());
+    }
+
+    std::vector<uchar> buffer(static_cast<std::size_t>(size));
+    if (size > 0) {
+        stream.read(reinterpret_cast<char*>(buffer.data()), size);
+        if (!stream) {
+            throw std::runtime_error("Failed to read file: " + path.u8string());
+        }
+    }
+
+    return buffer;
+}
+
+cv::Mat readImageFromPath(const fs::path& path, int flags) {
+    return cv::imdecode(readBinaryFile(path), flags);
+}
+
+void writeImageToPath(const fs::path& path, const cv::Mat& image) {
+    std::vector<uchar> buffer;
+    const std::string extension = path.extension().string().empty() ? ".png" : path.extension().string();
+    if (!cv::imencode(extension, image, buffer)) {
+        throw std::runtime_error("Failed to encode image for output: " + path.u8string());
+    }
+
+    std::ofstream stream(path, std::ios::binary);
+    if (!stream) {
+        throw std::runtime_error("Failed to open output file: " + path.u8string());
+    }
+
+    stream.write(reinterpret_cast<const char*>(buffer.data()), static_cast<std::streamsize>(buffer.size()));
+    if (!stream) {
+        throw std::runtime_error("Failed to write output file: " + path.u8string());
+    }
 }
 
 }  // namespace
@@ -56,18 +105,16 @@ int main(int argc, char** argv) {
 
             const double coldStartMs = measureMilliseconds([&]() {
                 scancpp::DocumentScanner coldScanner(modelPath);
-                const cv::Mat coldInput = cv::imread(imagePath, cv::IMREAD_COLOR);
+                const cv::Mat coldInput = readImageFromPath(fs::path(imagePath), cv::IMREAD_COLOR);
                 if (coldInput.empty()) {
                     throw std::runtime_error("Failed to read the input image during cold start.");
                 }
 
                 const scancpp::ScanArtifacts coldArtifacts = coldScanner.scan(coldInput);
-                if (!cv::imwrite(outputPath, coldArtifacts.scanned)) {
-                    throw std::runtime_error("Failed to write cold-start output image.");
-                }
+                writeImageToPath(fs::path(outputPath), coldArtifacts.scanned);
             });
 
-            cv::dnn::Net net = cv::dnn::readNetFromONNX(modelPath);
+            cv::dnn::Net net = cv::dnn::readNetFromONNX(readBinaryFile(fs::path(modelPath)));
             if (net.empty()) {
                 throw std::runtime_error("Failed to load the ONNX model.");
             }
