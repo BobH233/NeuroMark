@@ -13,6 +13,12 @@ import { fileURLToPath } from 'node:url';
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(scriptDir, '..');
 const releaseDir = path.join(projectRoot, 'release');
+const nativeArtifactDir = path.join(
+  projectRoot,
+  'build',
+  'native',
+  `${process.platform}-${process.arch}`,
+);
 const artifactRootDir = path.join(projectRoot, 'artifacts', 'github-actions');
 const artifactDir = path.join(
   artifactRootDir,
@@ -48,8 +54,13 @@ function collectFiles(targetDir, files = []) {
 function shouldStageArtifact(filePath) {
   const relativePath = path.relative(releaseDir, filePath);
   const fileName = path.basename(filePath);
+  const pathSegments = relativePath.split(path.sep).map((segment) => segment.toLowerCase());
   const lowerRelativePath = relativePath.toLowerCase();
   const lowerFileName = fileName.toLowerCase();
+
+  if (pathSegments.some((segment) => segment.endsWith('-unpacked'))) {
+    return false;
+  }
 
   if (lowerFileName.endsWith('.blockmap')) {
     return true;
@@ -98,6 +109,28 @@ for (const filePath of stagedFiles) {
     path: relativePath,
     size: statSync(filePath).size,
   });
+}
+
+if (existsSync(nativeArtifactDir)) {
+  const nativeDebugFiles = collectFiles(nativeArtifactDir)
+    .filter((filePath) => filePath.toLowerCase().endsWith('.pdb'))
+    .sort();
+
+  for (const filePath of nativeDebugFiles) {
+    const relativePath = path.join(
+      'native-debug',
+      path.relative(nativeArtifactDir, filePath),
+    );
+    const destinationPath = path.join(artifactDir, relativePath);
+
+    mkdirSync(path.dirname(destinationPath), { recursive: true });
+    cpSync(filePath, destinationPath);
+
+    manifest.files.push({
+      path: relativePath,
+      size: statSync(filePath).size,
+    });
+  }
 }
 
 writeFileSync(

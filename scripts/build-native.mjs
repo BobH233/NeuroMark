@@ -19,6 +19,7 @@ const artifactDir = `${process.platform}-${process.arch}`;
 const buildDir = path.join(sourceDir, 'build', 'node-addon', artifactDir);
 const outputDir = path.join(projectRoot, 'build', 'native', artifactDir);
 const outputAddonPath = path.join(outputDir, 'scancpp_node.node');
+const outputPdbPath = path.join(outputDir, 'scancpp_node.pdb');
 const buildStatePath = path.join(outputDir, 'build-state.json');
 const lockDirPath = path.join(outputDir, '.build-lock');
 const lockMetadataPath = path.join(lockDirPath, 'owner.json');
@@ -78,6 +79,18 @@ function resolveBuiltAddonPath() {
   }
 
   return matched;
+}
+
+function resolveBuiltPdbPath() {
+  const candidates = [
+    path.join(buildDir, 'pdb', 'scancpp_node.pdb'),
+    path.join(buildDir, 'scancpp_node.pdb'),
+    path.join(buildDir, 'Release', 'scancpp_node.pdb'),
+    path.join(buildDir, 'RelWithDebInfo', 'scancpp_node.pdb'),
+    path.join(buildDir, 'Debug', 'scancpp_node.pdb'),
+  ];
+
+  return candidates.find((candidate) => existsSync(candidate)) ?? null;
 }
 
 function walkFiles(targetPath, files = []) {
@@ -252,6 +265,10 @@ try {
   run('cmake', ['--build', buildDir, '--config', 'Release', '--target', 'scancpp_node']);
 
   cpSync(resolveBuiltAddonPath(), outputAddonPath);
+  const builtPdbPath = resolveBuiltPdbPath();
+  if (builtPdbPath) {
+    cpSync(builtPdbPath, outputPdbPath);
+  }
   writeFileSync(buildStatePath, `${JSON.stringify(snapshot, null, 2)}\n`);
 } finally {
   releaseBuildLock();
