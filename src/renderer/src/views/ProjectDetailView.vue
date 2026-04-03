@@ -11,7 +11,10 @@ import {
   NFormItem,
   NInput,
   NInputNumber,
+  NModal,
   NPopconfirm,
+  NRadio,
+  NRadioGroup,
   NSelect,
   NSpace,
   NSpin,
@@ -23,11 +26,13 @@ import {
   useMessage,
 } from 'naive-ui';
 import type {
+  ExportResultsOptions,
   FinalResult,
   NameMatchStatus,
   PaperRecord,
   PreviewDisplayOptions,
   PreviewImageItem,
+  ResultExportScope,
   ResultRecord,
   ScoreBreakdownItem,
   SmartNameMatchSnapshot,
@@ -72,6 +77,9 @@ const referenceAnswerDraftVersion = ref(0);
 const deletingProject = ref(false);
 const scanActionLoading = ref(false);
 const gradingActionLoading = ref(false);
+const exportDialogVisible = ref(false);
+const exportJsonLoading = ref(false);
+const exportScope = ref<ResultExportScope>('graded');
 const projectSettingsSaving = ref(false);
 const removingPaperId = ref('');
 const deletingResultPaperId = ref('');
@@ -880,7 +888,67 @@ async function exportResults() {
   if (!selectedProject.value) {
     return;
   }
-  await projectsStore.exportResults(selectedProject.value.id);
+
+  exportScope.value = 'graded';
+  exportDialogVisible.value = true;
+}
+
+function normalizeExportFileName(name: string): string {
+  const normalized = name
+    .trim()
+    .replace(/[\\/:*?"<>|]/g, '-')
+    .replace(/\s+/g, '-');
+
+  return normalized || 'neuromark-project';
+}
+
+function buildExportDefaultFileName(
+  projectName: string,
+  scope: ResultExportScope,
+): string {
+  const safeName = normalizeExportFileName(projectName);
+  return scope === 'graded-and-verified'
+    ? `${safeName}-verified-results.json`
+    : `${safeName}-results.json`;
+}
+
+const exportScopeOptions = [
+  {
+    label: '全部已经批改',
+    value: 'graded',
+    description: '导出所有已生成批阅结果的试卷，无论是否完成核名。',
+  },
+  {
+    label: '全部已经批改且核名',
+    value: 'graded-and-verified',
+    description: '只导出已批改且核名状态为“已核名”的试卷。',
+  },
+];
+
+async function confirmExportResults() {
+  if (!selectedProject.value || exportJsonLoading.value) {
+    return;
+  }
+
+  const defaultFileName = buildExportDefaultFileName(selectedProject.value.name, exportScope.value);
+  const targetPath = await window.neuromark.app.selectJsonSavePath(defaultFileName);
+  if (!targetPath) {
+    return;
+  }
+
+  exportJsonLoading.value = true;
+  try {
+    const outputPath = await projectsStore.exportResults(selectedProject.value.id, {
+      scope: exportScope.value,
+      targetPath,
+    } satisfies ExportResultsOptions);
+    exportDialogVisible.value = false;
+    message.success(`JSON 已导出到 ${outputPath}`);
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : '导出 JSON 失败。');
+  } finally {
+    exportJsonLoading.value = false;
+  }
 }
 
 async function saveResult() {
@@ -1335,6 +1403,41 @@ function goBack() {
 
 <template>
   <div class="page-stack">
+    <n-modal
+      :show="exportDialogVisible"
+      preset="card"
+      title="导出 JSON"
+      class="project-modal"
+      @close="exportDialogVisible = false"
+    >
+      <div class="stack-form create-project-form">
+        <div class="detail-subtitle">
+          请选择本次导出的试卷范围。导出的 JSON 会包含批阅结果面板可见的完整元数据、当前版本 rubric、参考答案原文，以及每页原始图片文件名。
+        </div>
+        <n-radio-group v-model:value="exportScope" class="export-scope-group">
+          <div
+            v-for="option in exportScopeOptions"
+            :key="option.value"
+            class="create-project-toggle-row export-scope-option"
+          >
+            <div class="create-project-toggle-copy">
+              <div class="field-label">{{ option.label }}</div>
+              <div class="field-hint">{{ option.description }}</div>
+            </div>
+            <n-radio :value="option.value" />
+          </div>
+        </n-radio-group>
+      </div>
+      <template #footer>
+        <div class="modal-footer">
+          <n-button :disabled="exportJsonLoading" @click="exportDialogVisible = false">取消</n-button>
+          <n-button type="primary" :loading="exportJsonLoading" @click="confirmExportResults">
+            选择保存位置并导出
+          </n-button>
+        </div>
+      </template>
+    </n-modal>
+
     <section class="hero-panel">
       <div>
         <div class="eyebrow">项目详情</div>

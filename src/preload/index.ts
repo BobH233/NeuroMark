@@ -12,6 +12,8 @@ const api: NeuromarkApi = {
     getDefaultProjectBasePath: () => ipcRenderer.invoke('app:get-default-project-base-path'),
     selectDirectory: () => ipcRenderer.invoke('app:select-directory'),
     selectImages: () => ipcRenderer.invoke('app:select-images'),
+    selectJsonSavePath: (defaultFileName) =>
+      ipcRenderer.invoke('app:select-json-save-path', defaultFileName),
     openPath: (targetPath) => ipcRenderer.invoke('app:open-path', targetPath),
     openDevTools: () => ipcRenderer.invoke('app:open-devtools'),
     enableDebugPanel: () => ipcRenderer.invoke('app:enable-debug-panel'),
@@ -59,8 +61,8 @@ const api: NeuromarkApi = {
     saveFinal: (projectId, paperId, finalResult, options) =>
       ipcRenderer.invoke('results:save-final', projectId, paperId, finalResult, options),
     delete: (projectId, paperId) => ipcRenderer.invoke('results:delete', projectId, paperId),
-    exportJson: (projectId, targetPath) =>
-      ipcRenderer.invoke('results:export-json', projectId, targetPath),
+    exportJson: (projectId, options) =>
+      ipcRenderer.invoke('results:export-json', projectId, options),
     getSmartNameMatchSnapshot: (projectId) =>
       ipcRenderer.invoke('results:get-smart-name-match-snapshot', projectId),
     startSmartNameMatch: (projectId, rosterText) =>

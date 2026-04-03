@@ -67,6 +67,29 @@ export class AppService {
     return result.canceled ? [] : result.filePaths;
   }
 
+  async selectJsonSavePath(defaultFileName: string): Promise<string | null> {
+    const parent = this.getParentWindow();
+    const result = parent
+      ? await dialog.showSaveDialog(parent, {
+          title: '导出 JSON 文件',
+          defaultPath: defaultFileName,
+          filters: [
+            { name: 'JSON 文件', extensions: ['json'] },
+            { name: '所有文件', extensions: ['*'] },
+          ],
+        })
+      : await dialog.showSaveDialog({
+          title: '导出 JSON 文件',
+          defaultPath: defaultFileName,
+          filters: [
+            { name: 'JSON 文件', extensions: ['json'] },
+            { name: '所有文件', extensions: ['*'] },
+          ],
+        });
+
+    return result.canceled ? null : result.filePath ?? null;
+  }
+
   async openPath(targetPath: string): Promise<void> {
     await shell.openPath(targetPath);
   }
