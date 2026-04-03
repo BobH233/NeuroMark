@@ -105,16 +105,16 @@ int main(int argc, char** argv) {
 
             const double coldStartMs = measureMilliseconds([&]() {
                 scancpp::DocumentScanner coldScanner(modelPath);
-                const cv::Mat coldInput = readImageFromPath(fs::path(imagePath), cv::IMREAD_COLOR);
+                const cv::Mat coldInput = readImageFromPath(fs::u8path(imagePath), cv::IMREAD_COLOR);
                 if (coldInput.empty()) {
                     throw std::runtime_error("Failed to read the input image during cold start.");
                 }
 
                 const scancpp::ScanArtifacts coldArtifacts = coldScanner.scan(coldInput);
-                writeImageToPath(fs::path(outputPath), coldArtifacts.scanned);
+                writeImageToPath(fs::u8path(outputPath), coldArtifacts.scanned);
             });
 
-            cv::dnn::Net net = cv::dnn::readNetFromONNX(readBinaryFile(fs::path(modelPath)));
+            cv::dnn::Net net = cv::dnn::readNetFromONNX(readBinaryFile(fs::u8path(modelPath)));
             if (net.empty()) {
                 throw std::runtime_error("Failed to load the ONNX model.");
             }
@@ -142,11 +142,11 @@ int main(int argc, char** argv) {
         const std::string outputPath = argv[3];
         const std::string debugPrefix = argc == 5 ? argv[4] : std::string();
 
-        scancpp::DocumentScanner scanner(modelPath);
+        scancpp::DocumentScanner scanner(fs::u8path(modelPath));
         scancpp::ScanRequest request;
-        request.inputPath = imagePath;
-        request.scannedOutputPath = outputPath;
-        request.debugOutputPrefix = debugPrefix;
+        request.inputPath = fs::u8path(imagePath);
+        request.scannedOutputPath = fs::u8path(outputPath);
+        request.debugOutputPrefix = fs::u8path(debugPrefix);
         request.writeDebugImages = !debugPrefix.empty();
         scanner.scanFile(request);
 

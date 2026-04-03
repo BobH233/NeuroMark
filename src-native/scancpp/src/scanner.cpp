@@ -431,8 +431,7 @@ double measureMilliseconds(Fn&& fn) {
 std::vector<fs::path> saveDebugOutputs(
     const cv::Mat& inputImage,
     const ScanArtifacts& artifacts,
-    const std::string& prefix) {
-    const fs::path prefixPath(prefix);
+    const fs::path& prefixPath) {
     if (!prefixPath.parent_path().empty()) {
         fs::create_directories(prefixPath.parent_path());
     }
@@ -440,13 +439,14 @@ std::vector<fs::path> saveDebugOutputs(
     cv::Mat saliency8u;
     artifacts.saliencyMask.convertTo(saliency8u, CV_8U, 255.0);
     const cv::Mat overlay = drawDocumentOverlay(inputImage, artifacts.corners);
+    const std::string prefixUtf8 = prefixPath.u8string();
 
     const std::vector<fs::path> paths{
-        fs::path(prefix + "_mask.png"),
-        fs::path(prefix + "_binary.png"),
-        fs::path(prefix + "_overlay.png"),
-        fs::path(prefix + "_warped.png"),
-        fs::path(prefix + "_scan.png"),
+        fs::u8path(prefixUtf8 + "_mask.png"),
+        fs::u8path(prefixUtf8 + "_binary.png"),
+        fs::u8path(prefixUtf8 + "_overlay.png"),
+        fs::u8path(prefixUtf8 + "_warped.png"),
+        fs::u8path(prefixUtf8 + "_scan.png"),
     };
 
     writeImageToPath(paths[0], saliency8u);
@@ -460,8 +460,8 @@ std::vector<fs::path> saveDebugOutputs(
 
 }  // namespace
 
-DocumentScanner::DocumentScanner(const std::string& modelPath)
-    : net_(cv::dnn::readNetFromONNX(readBinaryFile(fs::path(modelPath)))) {
+DocumentScanner::DocumentScanner(fs::path modelPath)
+    : net_(cv::dnn::readNetFromONNX(readBinaryFile(modelPath))) {
     if (net_.empty()) {
         throw std::runtime_error("Failed to load the ONNX model.");
     }
@@ -544,7 +544,7 @@ BenchmarkSummary benchmarkScanDocument(
         const auto totalBegin = std::chrono::steady_clock::now();
 
         run.readMs = measureMilliseconds([&]() {
-            input = readImageFromPath(fs::path(imagePath), cv::IMREAD_COLOR);
+            input = readImageFromPath(fs::u8path(imagePath), cv::IMREAD_COLOR);
             if (input.empty()) {
                 throw std::runtime_error("Failed to read the input image during benchmark.");
             }
@@ -563,7 +563,7 @@ BenchmarkSummary benchmarkScanDocument(
         });
 
         run.writeMs = measureMilliseconds([&]() {
-            writeImageToPath(fs::path(outputPath), artifacts.scanned);
+            writeImageToPath(fs::u8path(outputPath), artifacts.scanned);
         });
 
         const auto totalEnd = std::chrono::steady_clock::now();

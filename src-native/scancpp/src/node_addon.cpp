@@ -1,4 +1,5 @@
 #include <memory>
+#include <filesystem>
 #include <optional>
 #include <string>
 #include <utility>
@@ -8,6 +9,8 @@
 #include "scanner.hpp"
 
 namespace {
+
+namespace fs = std::filesystem;
 
 class ScannerWrap final : public Napi::ObjectWrap<ScannerWrap> {
   public:
@@ -30,7 +33,8 @@ class ScannerWrap final : public Napi::ObjectWrap<ScannerWrap> {
             throw Napi::TypeError::New(info.Env(), "modelPath is required.");
         }
 
-        scanner_ = std::make_shared<scancpp::DocumentScanner>(info[0].As<Napi::String>().Utf8Value());
+        scanner_ = std::make_shared<scancpp::DocumentScanner>(
+            fs::u8path(info[0].As<Napi::String>().Utf8Value()));
     }
 
   private:
@@ -56,10 +60,10 @@ class ScannerWrap final : public Napi::ObjectWrap<ScannerWrap> {
 
         void Execute() override {
             scancpp::ScanRequest request;
-            request.inputPath = request_.inputPath;
-            request.scannedOutputPath = request_.scannedOutputPath;
-            request.overlayOutputPath = request_.overlayOutputPath;
-            request.debugOutputPrefix = request_.debugOutputPrefix;
+            request.inputPath = fs::u8path(request_.inputPath);
+            request.scannedOutputPath = fs::u8path(request_.scannedOutputPath);
+            request.overlayOutputPath = fs::u8path(request_.overlayOutputPath);
+            request.debugOutputPrefix = fs::u8path(request_.debugOutputPrefix);
             request.writeOverlay = !request_.overlayOutputPath.empty();
             request.writeDebugImages = request_.writeDebugImages;
             request.applyPostProcess = request_.applyPostProcess;
@@ -73,8 +77,8 @@ class ScannerWrap final : public Napi::ObjectWrap<ScannerWrap> {
             result.Set("sourceHeight", result_.sourceHeight);
             result.Set("scannedWidth", result_.scannedWidth);
             result.Set("scannedHeight", result_.scannedHeight);
-            result.Set("scannedOutputPath", result_.scannedOutputPath.string());
-            result.Set("overlayOutputPath", result_.overlayOutputPath.string());
+            result.Set("scannedOutputPath", result_.scannedOutputPath.u8string());
+            result.Set("overlayOutputPath", result_.overlayOutputPath.u8string());
 
             Napi::Array corners = Napi::Array::New(env, result_.corners.size());
             for (std::size_t index = 0; index < result_.corners.size(); index += 1) {
@@ -87,7 +91,7 @@ class ScannerWrap final : public Napi::ObjectWrap<ScannerWrap> {
 
             Napi::Array debugPaths = Napi::Array::New(env, result_.debugOutputPaths.size());
             for (std::size_t index = 0; index < result_.debugOutputPaths.size(); index += 1) {
-                debugPaths.Set(index, result_.debugOutputPaths[index].string());
+                debugPaths.Set(index, result_.debugOutputPaths[index].u8string());
             }
             result.Set("debugOutputPaths", debugPaths);
 
