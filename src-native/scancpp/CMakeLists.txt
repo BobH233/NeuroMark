@@ -15,6 +15,12 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 if(MSVC)
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
+    if(POLICY CMP0141)
+        cmake_policy(SET CMP0141 NEW)
+        set(CMAKE_MSVC_DEBUG_INFORMATION_FORMAT
+            "$<$<CONFIG:Debug,RelWithDebInfo>:ProgramDatabase>"
+        )
+    endif()
 endif()
 
 option(SCANCPP_BUILD_CLI "Build the scancpp CLI executable" ON)
@@ -217,9 +223,13 @@ if(SCANCPP_BUILD_NODE_ADDON)
         src/node_addon.cpp
     )
 
+    if(MSVC)
+        target_sources(scancpp_node PRIVATE src/win_delay_load_hook.cc)
+    endif()
+
     target_link_libraries(scancpp_node PRIVATE scancpp_core ${SCANCPP_OPENCV_TARGETS})
     if(MSVC)
-        target_link_libraries(scancpp_node PRIVATE "${NODE_LIBRARY}")
+        target_link_libraries(scancpp_node PRIVATE "${NODE_LIBRARY}" delayimp.lib)
     endif()
     target_include_directories(scancpp_node
         PRIVATE
@@ -235,7 +245,30 @@ if(SCANCPP_BUILD_NODE_ADDON)
     endif()
 
     if(MSVC)
-        target_compile_options(scancpp_node PRIVATE /W4 /permissive- /EHsc)
+        target_compile_options(
+            scancpp_node
+            PRIVATE
+                /W4
+                /permissive-
+                /EHsc
+                "$<$<CONFIG:Release>:/Zi>"
+                "$<$<CONFIG:MinSizeRel>:/Zi>"
+        )
+        target_link_options(
+            scancpp_node
+            PRIVATE
+                /DELAYLOAD:node.exe
+                "$<$<CONFIG:Release>:/DEBUG:FULL>"
+                "$<$<CONFIG:MinSizeRel>:/DEBUG:FULL>"
+        )
+        set_target_properties(
+            scancpp_node
+            PROPERTIES
+                PDB_NAME "scancpp_node"
+                PDB_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/pdb"
+                COMPILE_PDB_NAME "scancpp_node"
+                COMPILE_PDB_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/pdb"
+        )
     else()
         target_compile_options(scancpp_node PRIVATE -Wall -Wextra -Wpedantic)
     endif()

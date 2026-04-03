@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <fstream>
 #include <iostream>
 #include <limits>
 #include <stdexcept>
@@ -16,6 +17,54 @@ namespace {
 
 constexpr int kModelInputSize = 320;
 constexpr int kMaxEnhancementDimension = 1280;
+
+std::vector<uchar> readBinaryFile(const fs::path& path) {
+    std::ifstream stream(path, std::ios::binary);
+    if (!stream) {
+        throw std::runtime_error("Failed to open file: " + path.u8string());
+    }
+
+    stream.seekg(0, std::ios::end);
+    const std::streamoff size = stream.tellg();
+    stream.seekg(0, std::ios::beg);
+
+    if (size < 0) {
+        throw std::runtime_error("Failed to determine file size: " + path.u8string());
+    }
+
+    std::vector<uchar> buffer(static_cast<std::size_t>(size));
+    if (size > 0) {
+        stream.read(reinterpret_cast<char*>(buffer.data()), size);
+        if (!stream) {
+            throw std::runtime_error("Failed to read file: " + path.u8string());
+        }
+    }
+
+    return buffer;
+}
+
+cv::Mat readImageFromPath(const fs::path& path, int flags) {
+    const std::vector<uchar> buffer = readBinaryFile(path);
+    return cv::imdecode(buffer, flags);
+}
+
+void writeImageToPath(const fs::path& path, const cv::Mat& image) {
+    std::vector<uchar> buffer;
+    const std::string extension = path.extension().string().empty() ? ".png" : path.extension().string();
+    if (!cv::imencode(extension, image, buffer)) {
+        throw std::runtime_error("Failed to encode image for output: " + path.u8string());
+    }
+
+    std::ofstream stream(path, std::ios::binary);
+    if (!stream) {
+        throw std::runtime_error("Failed to open output file: " + path.u8string());
+    }
+
+    stream.write(reinterpret_cast<const char*>(buffer.data()), static_cast<std::streamsize>(buffer.size()));
+    if (!stream) {
+        throw std::runtime_error("Failed to write output file: " + path.u8string());
+    }
+}
 
 int makeOdd(int value) {
     const int clamped = std::max(3, value);
@@ -382,8 +431,7 @@ double measureMilliseconds(Fn&& fn) {
 std::vector<fs::path> saveDebugOutputs(
     const cv::Mat& inputImage,
     const ScanArtifacts& artifacts,
-    const std::string& prefix) {
-    const fs::path prefixPath(prefix);
+    const fs::path& prefixPath) {
     if (!prefixPath.parent_path().empty()) {
         fs::create_directories(prefixPath.parent_path());
     }
@@ -391,30 +439,29 @@ std::vector<fs::path> saveDebugOutputs(
     cv::Mat saliency8u;
     artifacts.saliencyMask.convertTo(saliency8u, CV_8U, 255.0);
     const cv::Mat overlay = drawDocumentOverlay(inputImage, artifacts.corners);
+    const std::string prefixUtf8 = prefixPath.u8string();
 
     const std::vector<fs::path> paths{
-        fs::path(prefix + "_mask.png"),
-        fs::path(prefix + "_binary.png"),
-        fs::path(prefix + "_overlay.png"),
-        fs::path(prefix + "_warped.png"),
-        fs::path(prefix + "_scan.png"),
+        fs::u8path(prefixUtf8 + "_mask.png"),
+        fs::u8path(prefixUtf8 + "_binary.png"),
+        fs::u8path(prefixUtf8 + "_overlay.png"),
+        fs::u8path(prefixUtf8 + "_warped.png"),
+        fs::u8path(prefixUtf8 + "_scan.png"),
     };
 
-    if (!cv::imwrite(paths[0].string(), saliency8u) ||
-        !cv::imwrite(paths[1].string(), artifacts.binaryMask) ||
-        !cv::imwrite(paths[2].string(), overlay) ||
-        !cv::imwrite(paths[3].string(), artifacts.warpedColor) ||
-        !cv::imwrite(paths[4].string(), artifacts.scanned)) {
-        throw std::runtime_error("Failed to write one or more debug images.");
-    }
+    writeImageToPath(paths[0], saliency8u);
+    writeImageToPath(paths[1], artifacts.binaryMask);
+    writeImageToPath(paths[2], overlay);
+    writeImageToPath(paths[3], artifacts.warpedColor);
+    writeImageToPath(paths[4], artifacts.scanned);
 
     return paths;
 }
 
 }  // namespace
 
-DocumentScanner::DocumentScanner(const std::string& modelPath)
-    : net_(cv::dnn::readNetFromONNX(modelPath)) {
+DocumentScanner::DocumentScanner(fs::path modelPath)
+    : net_(cv::dnn::readNetFromONNX(readBinaryFile(modelPath))) {
     if (net_.empty()) {
         throw std::runtime_error("Failed to load the ONNX model.");
     }
@@ -438,7 +485,7 @@ ScanArtifacts DocumentScanner::scan(const cv::Mat& image, bool applyPostProcess)
 }
 
 ScanResult DocumentScanner::scanFile(const ScanRequest& request) {
-    const cv::Mat input = cv::imread(request.inputPath.string(), cv::IMREAD_COLOR);
+    const cv::Mat input = readImageFromPath(request.inputPath, cv::IMREAD_COLOR);
     if (input.empty()) {
         throw std::runtime_error("Failed to read the input image.");
     }
@@ -449,9 +496,7 @@ ScanResult DocumentScanner::scanFile(const ScanRequest& request) {
         if (!request.scannedOutputPath.parent_path().empty()) {
             fs::create_directories(request.scannedOutputPath.parent_path());
         }
-        if (!cv::imwrite(request.scannedOutputPath.string(), artifacts.scanned)) {
-            throw std::runtime_error("Failed to write the output image.");
-        }
+        writeImageToPath(request.scannedOutputPath, artifacts.scanned);
     }
 
     if (request.writeOverlay && !request.overlayOutputPath.empty()) {
@@ -459,9 +504,7 @@ ScanResult DocumentScanner::scanFile(const ScanRequest& request) {
             fs::create_directories(request.overlayOutputPath.parent_path());
         }
         const cv::Mat overlay = drawDocumentOverlay(input, artifacts.corners);
-        if (!cv::imwrite(request.overlayOutputPath.string(), overlay)) {
-            throw std::runtime_error("Failed to write the overlay image.");
-        }
+        writeImageToPath(request.overlayOutputPath, overlay);
     }
 
     ScanResult result;
@@ -501,7 +544,7 @@ BenchmarkSummary benchmarkScanDocument(
         const auto totalBegin = std::chrono::steady_clock::now();
 
         run.readMs = measureMilliseconds([&]() {
-            input = cv::imread(imagePath, cv::IMREAD_COLOR);
+            input = readImageFromPath(fs::u8path(imagePath), cv::IMREAD_COLOR);
             if (input.empty()) {
                 throw std::runtime_error("Failed to read the input image during benchmark.");
             }
@@ -520,9 +563,7 @@ BenchmarkSummary benchmarkScanDocument(
         });
 
         run.writeMs = measureMilliseconds([&]() {
-            if (!cv::imwrite(outputPath, artifacts.scanned)) {
-                throw std::runtime_error("Failed to write benchmark output image.");
-            }
+            writeImageToPath(fs::u8path(outputPath), artifacts.scanned);
         });
 
         const auto totalEnd = std::chrono::steady_clock::now();

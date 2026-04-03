@@ -60,13 +60,16 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $nodeVersion = node -p "process.versions.node"
+          $electronVersion = node -p "JSON.parse(require('node:fs').readFileSync('package.json', 'utf8')).devDependencies.electron.replace(/^[^0-9]*/, '')"
           $devDir = Join-Path $env:LOCALAPPDATA "node-gyp\Cache"
-          $nodeLibDir = Join-Path (Join-Path $devDir $nodeVersion) "x64"
-          npm exec --yes --package=node-gyp@latest -- node-gyp install --target=$nodeVersion --devdir="$devDir"
-          "npm_config_nodedir=$devDir\$nodeVersion" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          "NODE_API_INCLUDE_DIR_HINT=$devDir\$nodeVersion\include\node" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          "NODE_LIBRARY_HINT=$nodeLibDir\node.lib" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          $electronLibDir = Join-Path (Join-Path $devDir $electronVersion) "x64"
+          npm exec --yes --package=node-gyp@latest -- node-gyp install --target=$electronVersion --runtime=electron --dist-url=https://electronjs.org/headers --devdir="$devDir"
+          "npm_config_runtime=electron" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "npm_config_disturl=https://electronjs.org/headers" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "npm_config_target=$electronVersion" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "npm_config_nodedir=$devDir\$electronVersion" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "NODE_API_INCLUDE_DIR_HINT=$devDir\$electronVersion\include\node" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "NODE_LIBRARY_HINT=$electronLibDir\node.lib" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Restore Electron and native build caches
         uses: actions/cache@v5
