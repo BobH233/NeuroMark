@@ -11,6 +11,7 @@ import {
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(scriptDir, '..');
@@ -139,7 +140,7 @@ function createStateSnapshot() {
       return {
         path: path.relative(projectRoot, filePath),
         size: stats.size,
-        mtimeMs: stats.mtimeMs,
+        sha256: createHash('sha256').update(readFileSync(filePath)).digest('hex'),
       };
     }),
   };
@@ -243,9 +244,13 @@ mkdirSync(outputDir, { recursive: true });
 
 const snapshot = createStateSnapshot();
 if (shouldSkipBuild(snapshot)) {
-  console.log(`[build-native] Native addon is up to date: ${path.relative(projectRoot, outputAddonPath)}`);
+  console.log(
+    `[build-native] Cache hit: native addon is up to date, reusing ${path.relative(projectRoot, outputAddonPath)}`,
+  );
   process.exit(0);
 }
+
+console.log(`[build-native] Cache miss or inputs changed: rebuilding native addon for ${artifactDir}`);
 
 acquireBuildLock();
 
