@@ -67,10 +67,8 @@
 
 ## 界面预览
 
-> 当前演示视频位置先预留，后续可直接替换为 YouTube 链接。
-
 <!-- demo-video:start -->
-> Demo Video: Coming soon
+> 演示视频：[点击查看小红书演示视频](http://xhslink.com/o/5nvUNA3bDYg)
 <!-- demo-video:end -->
 
 | 项目总览 | 项目详情 |
