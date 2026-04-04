@@ -2,6 +2,7 @@ import { defineStore } from 'pinia';
 import type {
   CreateProjectValidationResult,
   CreateProjectInput,
+  ExportResultsOptions,
   FinalResult,
   ProjectDetail,
   ProjectMeta,
@@ -125,8 +126,8 @@ export const useProjectsStore = defineStore('projects', {
       await this.loadProjects();
       await this.loadProjectDetail(projectId);
     },
-    async exportResults(projectId: string) {
-      return window.neuromark.results.exportJson(projectId);
+    async exportResults(projectId: string, options?: ExportResultsOptions) {
+      return window.neuromark.results.exportJson(projectId, options);
     },
     getResultByPaperId(paperId: string): ResultRecord | null {
       return this.detail?.results.find((item) => item.paperId === paperId) ?? null;

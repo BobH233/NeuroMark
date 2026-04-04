@@ -8,6 +8,9 @@ export function registerAppIpc(services: ServiceBundle): void {
   );
   ipcMain.handle('app:select-directory', () => services.app.selectDirectory());
   ipcMain.handle('app:select-images', () => services.app.selectImages());
+  ipcMain.handle('app:select-json-save-path', (_event, defaultFileName: string) =>
+    services.app.selectJsonSavePath(defaultFileName),
+  );
   ipcMain.handle('app:open-path', (_event, targetPath: string) => services.app.openPath(targetPath));
   ipcMain.handle('app:open-devtools', () => services.app.openDevTools());
   ipcMain.handle('app:enable-debug-panel', () => services.runtimeLogs.enable());

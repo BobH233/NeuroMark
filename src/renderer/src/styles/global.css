@@ -2113,6 +2113,11 @@ textarea {
   gap: 4px;
 }
 
+.export-scope-group {
+  display: grid;
+  gap: 12px;
+}
+
 .settings-foot,
 .detail-panel-head,
 .generator-layout {

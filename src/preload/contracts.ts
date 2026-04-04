@@ -350,6 +350,13 @@ export interface ProjectRubricDebug {
   rubricData: unknown | null;
 }
 
+export type ResultExportScope = 'graded' | 'graded-and-verified';
+
+export interface ExportResultsOptions {
+  scope?: ResultExportScope;
+  targetPath?: string;
+}
+
 export interface CreateProjectInput {
   name: string;
   basePath: string;
@@ -424,6 +431,7 @@ export interface NeuromarkApi {
     getDefaultProjectBasePath: () => Promise<string>;
     selectDirectory: () => Promise<string | null>;
     selectImages: () => Promise<string[]>;
+    selectJsonSavePath: (defaultFileName: string) => Promise<string | null>;
     openPath: (targetPath: string) => Promise<void>;
     openDevTools: () => Promise<void>;
     enableDebugPanel: () => Promise<void>;
@@ -475,7 +483,7 @@ export interface NeuromarkApi {
       options?: SaveFinalResultOptions,
     ) => Promise<ResultRecord>;
     delete: (projectId: string, paperId: string) => Promise<void>;
-    exportJson: (projectId: string, targetPath?: string) => Promise<string>;
+    exportJson: (projectId: string, options?: ExportResultsOptions) => Promise<string>;
     getSmartNameMatchSnapshot: (projectId: string) => Promise<SmartNameMatchSnapshot>;
     startSmartNameMatch: (
       projectId: string,

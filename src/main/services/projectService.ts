@@ -4,6 +4,7 @@ import { and, desc, eq, isNull } from 'drizzle-orm';
 import type {
   CreateProjectValidationResult,
   CreateProjectInput,
+  ExportResultsOptions,
   FinalResult,
   ModelResult,
   NameMatchStatus,
@@ -14,6 +15,7 @@ import type {
   ProjectSettings,
   ProjectStats,
   ResultRecord,
+  ResultExportScope,
   SaveFinalResultOptions,
   ProjectRubricDebug,
 } from '@preload/contracts';
@@ -328,6 +330,21 @@ function getFileNameWithoutExtension(filePath: string): string {
 
 function getResultFilePath(rootPath: string, paperId: string): string {
   return path.join(getProjectStructure(rootPath).resultsDir, `${paperId}.json`);
+}
+
+function toRelativeAssetName(filePath?: string): string | null {
+  if (!filePath) {
+    return null;
+  }
+
+  return path.basename(filePath);
+}
+
+function buildExportFileName(projectName: string, scope: ResultExportScope): string {
+  const safeName = toSafeFolderName(projectName);
+  return scope === 'graded-and-verified'
+    ? `${safeName}-verified-results.json`
+    : `${safeName}-results.json`;
 }
 
 interface PaperGradingSnapshot {
@@ -1230,22 +1247,90 @@ export class ProjectService {
     await this.recomputeStats(projectId);
   }
 
-  async exportResults(projectId: string, targetPath?: string): Promise<string> {
+  async exportResults(projectId: string, options?: ExportResultsOptions): Promise<string> {
     const project = await this.getProjectById(projectId);
-    const results = await this.listResults(projectId);
+    const scope = options?.scope ?? 'graded';
+    const [results, papers, referenceAnswerMarkdown, rubricDebug] = await Promise.all([
+      this.listResults(projectId),
+      this.listProjectPapers(projectId),
+      this.getReferenceAnswerMarkdown(projectId),
+      this.getProjectRubricDebug(projectId),
+    ]);
     const structure = getProjectStructure(project.rootPath);
     const outputPath =
-      targetPath ??
-      path.join(structure.exportsDir, `${toSafeFolderName(project.name)}-results.json`);
+      options?.targetPath ??
+      path.join(structure.exportsDir, buildExportFileName(project.name, scope));
+
+    const filteredResults = results.filter((item) =>
+      scope === 'graded-and-verified' ? item.nameMatchStatus === 'verified' : true,
+    );
+    const paperMap = new Map(papers.map((paper) => [paper.id, paper]));
+    const exportedPapers = filteredResults.map((result) => {
+      const paper = paperMap.get(result.paperId);
+
+      return {
+        paperId: result.paperId,
+        paperCode: paper?.paperCode ?? result.paperId,
+        paper:
+          paper
+            ? {
+                id: paper.id,
+                projectId: paper.projectId,
+                paperCode: paper.paperCode,
+                pageCount: paper.pageCount,
+                scanStatus: paper.scanStatus,
+                gradingStatus: paper.gradingStatus,
+                gradingReferenceAnswerVersion: paper.gradingReferenceAnswerVersion,
+                gradingUpdatedAt: paper.gradingUpdatedAt,
+                gradingError: paper.gradingError ?? null,
+                originalPages: paper.originalPages.map((page) => ({
+                  pageIndex: page.pageIndex,
+                  originalFileName: toRelativeAssetName(page.originalPath),
+                  scannedFileName: toRelativeAssetName(page.scannedPath),
+                  debugPreviewFileName: toRelativeAssetName(page.debugPreviewPath),
+                  corners: page.corners ?? null,
+                })),
+              }
+            : null,
+        result: {
+          projectId: result.projectId,
+          paperId: result.paperId,
+          status: result.status,
+          errorMessage: result.errorMessage ?? null,
+          referenceAnswerVersion: result.referenceAnswerVersion,
+          modelResult: result.modelResult,
+          finalResult: result.finalResult,
+          nameMatchStatus: result.nameMatchStatus,
+          nameMatchUpdatedAt: result.nameMatchUpdatedAt ?? null,
+          nameMatchSource: result.nameMatchSource ?? null,
+          updatedAt: result.updatedAt,
+        },
+      };
+    });
 
     await fs.ensureDir(path.dirname(outputPath));
     await fs.writeJson(
       outputPath,
-      results.map((item) => ({
-        paperId: item.paperId,
-        referenceAnswerVersion: item.referenceAnswerVersion,
-        finalResult: item.finalResult,
-      })),
+      {
+        exportFormat: 'neuromark-project-results',
+        exportVersion: 1,
+        exportedAt: new Date().toISOString(),
+        scope,
+        project: {
+          id: project.id,
+          name: project.name,
+          referenceAnswerVersion: project.referenceAnswerVersion,
+          settings: project.settings,
+          stats: project.stats,
+        },
+        referenceAnswer: {
+          version: project.referenceAnswerVersion,
+          markdown: referenceAnswerMarkdown,
+          rubric: rubricDebug.rubricData,
+          rubricUpdatedAt: rubricDebug.updatedAt,
+        },
+        papers: exportedPapers,
+      },
       { spaces: 2 },
     );
     return outputPath;

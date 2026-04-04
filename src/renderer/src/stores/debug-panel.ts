@@ -1,7 +1,6 @@
 import { defineStore } from 'pinia';
 import type { DebugLogEntry } from '@preload/contracts';
 
-const ENABLED_STORAGE_KEY = 'neuromark.debug-panel-enabled';
 const CLICK_WINDOW_MS = 1800;
 const REQUIRED_LOGO_CLICKS = 5;
 const MAX_RENDER_ENTRIES = 1500;
@@ -40,12 +39,7 @@ export const useDebugPanelStore = defineStore('debug-panel', {
   },
   actions: {
     hydrate() {
-      if (import.meta.env.DEV) {
-        this.enabled = true;
-        return;
-      }
-
-      this.enabled = localStorage.getItem(ENABLED_STORAGE_KEY) === 'true';
+      this.enabled = import.meta.env.DEV;
     },
     async syncEnabledStateToMain() {
       if (!this.enabled) {
@@ -95,7 +89,6 @@ export const useDebugPanelStore = defineStore('debug-panel', {
       }
 
       this.enabled = true;
-      localStorage.setItem(ENABLED_STORAGE_KEY, 'true');
       this.logoClickCount = 0;
       void this.syncEnabledStateToMain();
       return true;
