@@ -82,6 +82,10 @@ function getSecondsPerPaper(progress: number, elapsedSeconds: number, totalPaper
   return Number((elapsedSeconds / completedPaperEquivalent).toFixed(2));
 }
 
+function isArchivableStatus(status: JobStatus): boolean {
+  return status === 'completed' || status === 'failed' || status === 'cancelled';
+}
+
 export function shouldGradePaper(
   paper: Pick<PaperRecord, 'scanStatus' | 'gradingStatus' | 'gradingReferenceAnswerVersion'>,
   referenceAnswerVersion: number,
@@ -340,14 +344,22 @@ export class TaskManager {
   async archiveVisible(): Promise<void> {
     const db = getDatabase();
     const now = new Date().toISOString();
-
-    db.update(tasksTable)
-      .set({
-        archivedAt: now,
-        updatedAt: now,
-      })
+    const visibleTasks = db
+      .select()
+      .from(tasksTable)
       .where(isNull(tasksTable.archivedAt))
-      .run();
+      .all()
+      .filter((task) => isArchivableStatus(task.status as JobStatus));
+
+    for (const task of visibleTasks) {
+      db.update(tasksTable)
+        .set({
+          archivedAt: now,
+          updatedAt: now,
+        })
+        .where(eq(tasksTable.id, task.id))
+        .run();
+    }
 
     await this.emit();
   }

@@ -12,6 +12,11 @@ const tasksStore = useTasksStore();
 const expandedTaskIds = ref<Set<string>>(new Set());
 const showArchived = computed(() => route.name === 'tasks-archived');
 const tasks = computed(() => (showArchived.value ? tasksStore.archivedTasks : tasksStore.tasks));
+const archivableTasks = computed(() =>
+  tasksStore.tasks.filter((task) =>
+    task.status === 'completed' || task.status === 'failed' || task.status === 'cancelled'
+  ),
+);
 const pageEyebrow = computed(() => (showArchived.value ? '已归档后台任务' : '后台任务可持续运行'));
 const pageTitle = computed(() => (showArchived.value ? '已删除后台任务' : '后台任务页面'));
 const pageCopy = computed(() =>
@@ -180,17 +185,17 @@ async function archiveVisibleTasks() {
           查看已删除后台任务
         </n-button>
         <n-popconfirm
-          v-if="!showArchived && tasks.length"
+          v-if="!showArchived && archivableTasks.length"
           positive-text="确认清空"
           negative-text="取消"
           @positive-click="archiveVisibleTasks"
         >
           <template #trigger>
             <n-button tertiary type="warning">
-              清空后台任务
+              清空已结束任务
             </n-button>
           </template>
-          清空后这些任务只会从默认列表中隐藏，并移动到“已删除后台任务”页面，不会真正删除任务记录。确认继续吗？
+          只会清空已经结束的任务记录。正在进行中的任务会继续保留在当前列表，不会被隐藏。确认继续吗？
         </n-popconfirm>
       </div>
     </section>
