@@ -10,6 +10,7 @@ import type {
 } from '@preload/contracts';
 import { getDatabase } from '@main/database/client';
 import { settingsTable } from '@main/database/schema';
+import { LlmUsageService, normalizeLlmUsage } from './llmUsageService';
 import { logLlmProgress, logLlmRequest, logLlmResult } from './llmRequestLogger';
 import {
   compactErrorMessage,
@@ -40,6 +41,10 @@ function normalizeTemperature(value: number | null | undefined, fallback: number
 }
 
 export class SettingsService {
+  constructor(
+    private readonly llmUsage: LlmUsageService | null = null,
+  ) {}
+
   async getSettings(): Promise<GlobalLlmSettings> {
     const db = getDatabase();
     const current = db
@@ -251,12 +256,17 @@ export class SettingsService {
     const stream = await input.client.chat.completions.create({
       ...input.requestPayload,
       stream: true,
+      stream_options: {
+        include_usage: true,
+      },
     });
 
     let rawText = '';
     let reasoningText = '';
+    let usage = null;
 
     for await (const chunk of stream) {
+      usage = normalizeLlmUsage(chunk.usage) ?? usage;
       const delta = chunk.choices[0]?.delta;
       rawText += extractStreamingDeltaText(delta?.content);
       reasoningText += extractReasoningText(delta);
@@ -270,6 +280,13 @@ export class SettingsService {
       reasoningChars: reasoningText.length,
       textPreview: formatStreamPreview(rawText),
       reasoningPreview: formatStreamPreview(reasoningText),
+    });
+
+    await this.llmUsage?.recordUsage({
+      source: 'settings-test',
+      label: '连接测试',
+      model: input.requestPayload.model,
+      usage,
     });
 
     return {
@@ -291,6 +308,7 @@ export class SettingsService {
     const response = await input.client.chat.completions.create(input.requestPayload);
     const rawText = readAssistantText(response);
     const reasoningText = extractReasoningText(response.choices[0]?.message);
+    const usage = normalizeLlmUsage(response.usage);
 
     logLlmProgress('settings-test', {
       mode: 'non-stream',
@@ -300,6 +318,13 @@ export class SettingsService {
       reasoningChars: reasoningText.length,
       textPreview: formatStreamPreview(rawText),
       reasoningPreview: formatStreamPreview(reasoningText),
+    });
+
+    await this.llmUsage?.recordUsage({
+      source: 'settings-test',
+      label: '连接测试',
+      model: input.requestPayload.model,
+      usage,
     });
 
     return {

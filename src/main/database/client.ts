@@ -89,7 +89,27 @@ function ensureSchema(connection: Database.Database): void {
       reasoning_effort TEXT NOT NULL DEFAULT 'medium',
       answer_generation_temperature REAL NOT NULL DEFAULT 0.2,
       grading_temperature REAL NOT NULL DEFAULT 0,
+      pricing_input_per_million REAL NOT NULL DEFAULT 2,
+      pricing_output_per_million REAL NOT NULL DEFAULT 12,
+      pricing_cache_read_per_million REAL NOT NULL DEFAULT 0.2,
+      pricing_cache_write_per_million REAL NOT NULL DEFAULT 0,
+      pricing_reasoning_per_million REAL NOT NULL DEFAULT 0,
+      pricing_currency TEXT NOT NULL DEFAULT 'USD',
       storage_mode TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS llm_usage_records (
+      id TEXT PRIMARY KEY,
+      source TEXT NOT NULL,
+      label TEXT NOT NULL,
+      model TEXT NOT NULL,
+      input_tokens INTEGER NOT NULL,
+      output_tokens INTEGER NOT NULL,
+      cache_read_tokens INTEGER NOT NULL,
+      cache_write_tokens INTEGER NOT NULL,
+      reasoning_tokens INTEGER NOT NULL,
+      total_tokens INTEGER NOT NULL,
+      created_at TEXT NOT NULL
     );
 
     CREATE TABLE IF NOT EXISTS answer_drafts (
@@ -175,6 +195,42 @@ function ensureSchema(connection: Database.Database): void {
     'settings',
     'grading_temperature',
     "grading_temperature REAL NOT NULL DEFAULT 0",
+  );
+  ensureColumn(
+    connection,
+    'settings',
+    'pricing_input_per_million',
+    "pricing_input_per_million REAL NOT NULL DEFAULT 2",
+  );
+  ensureColumn(
+    connection,
+    'settings',
+    'pricing_output_per_million',
+    "pricing_output_per_million REAL NOT NULL DEFAULT 12",
+  );
+  ensureColumn(
+    connection,
+    'settings',
+    'pricing_cache_read_per_million',
+    "pricing_cache_read_per_million REAL NOT NULL DEFAULT 0.2",
+  );
+  ensureColumn(
+    connection,
+    'settings',
+    'pricing_cache_write_per_million',
+    "pricing_cache_write_per_million REAL NOT NULL DEFAULT 0",
+  );
+  ensureColumn(
+    connection,
+    'settings',
+    'pricing_reasoning_per_million',
+    "pricing_reasoning_per_million REAL NOT NULL DEFAULT 0",
+  );
+  ensureColumn(
+    connection,
+    'settings',
+    'pricing_currency',
+    "pricing_currency TEXT NOT NULL DEFAULT 'USD'",
   );
   ensureColumn(connection, 'answer_drafts', 'prompt_text', "prompt_text TEXT NOT NULL DEFAULT ''");
   ensureColumn(

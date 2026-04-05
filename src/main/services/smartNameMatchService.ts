@@ -12,6 +12,7 @@ import type {
 import { SMART_NAME_MATCH_SYSTEM_PROMPT } from '@main/prompts/smart-name-match/system';
 import { buildSmartNameMatchUserPrompt } from '@main/prompts/smart-name-match/user';
 import { logLlmRequest, logLlmResult } from './llmRequestLogger';
+import { LlmUsageService, normalizeLlmUsage } from './llmUsageService';
 import {
   compactErrorMessage,
   extractReasoningText,
@@ -238,6 +239,7 @@ export class SmartNameMatchService {
   constructor(
     private readonly projects: ProjectService,
     private readonly settings: SettingsService,
+    private readonly llmUsage: LlmUsageService,
   ) {}
 
   onUpdated(listener: SmartNameMatchListener): () => void {
@@ -374,10 +376,10 @@ export class SmartNameMatchService {
           baseURL: settings.baseUrl,
           model: settings.model,
           timeoutMs: settings.timeoutMs,
+          apiKey: settings.apiKey,
+          reasoningEffort: settings.reasoningEffort,
+          gradingTemperature: settings.gradingTemperature,
         },
-        apiKey: settings.apiKey,
-        reasoningEffort: settings.reasoningEffort,
-        gradingTemperature: settings.gradingTemperature,
         payload: requestPayload,
       });
 
@@ -387,11 +389,12 @@ export class SmartNameMatchService {
         timeout: settings.timeoutMs,
       });
 
-      const rawText = await this.collectModelResponseText({
+      const response = await this.collectModelResponseText({
         client,
         requestPayload,
         projectId,
       });
+      const rawText = response.rawText;
       const parsed = this.parseSuggestions(rawText, results);
 
       this.patchSnapshot(projectId, {
@@ -428,7 +431,10 @@ export class SmartNameMatchService {
     client: OpenAI;
     requestPayload: ChatCompletionCreateParamsNonStreaming;
     projectId: string;
-  }): Promise<string> {
+  }): Promise<{
+    rawText: string;
+    mode: 'stream' | 'non-stream';
+  }> {
     try {
       return await this.collectStreamingResponseText(input);
     } catch (error) {
@@ -447,19 +453,27 @@ export class SmartNameMatchService {
     client: OpenAI;
     requestPayload: ChatCompletionCreateParamsNonStreaming;
     projectId: string;
-  }): Promise<string> {
+  }): Promise<{
+    rawText: string;
+    mode: 'stream';
+  }> {
     const stream = await input.client.chat.completions.create({
       ...input.requestPayload,
       stream: true,
+      stream_options: {
+        include_usage: true,
+      },
     });
 
     let rawText = '';
     let reasoningText = '';
+    let usage = null;
     let lastFlushedLength = 0;
     let lastReasoningFlushedLength = 0;
     let lastFlushAt = 0;
 
     for await (const chunk of stream) {
+      usage = normalizeLlmUsage(chunk.usage) ?? usage;
       const delta = chunk.choices[0]?.delta;
       const chunkText = extractStreamingDeltaText(delta?.content);
       const chunkReasoningText = extractReasoningText(delta);
@@ -496,17 +510,31 @@ export class SmartNameMatchService {
       reasoningText,
     });
 
-    return rawText;
+    await this.llmUsage.recordUsage({
+      source: 'smart-name-match',
+      label: '智能核名',
+      model: input.requestPayload.model,
+      usage,
+    });
+
+    return {
+      rawText,
+      mode: 'stream',
+    };
   }
 
   private async collectNonStreamingResponseText(input: {
     client: OpenAI;
     requestPayload: ChatCompletionCreateParamsNonStreaming;
     projectId: string;
-  }): Promise<string> {
+  }): Promise<{
+    rawText: string;
+    mode: 'non-stream';
+  }> {
     const response = await input.client.chat.completions.create(input.requestPayload);
     const rawText = readAssistantText(response);
     const reasoningText = extractReasoningText(response.choices[0]?.message);
+    const usage = normalizeLlmUsage(response.usage);
 
     this.patchSnapshot(input.projectId, {
       previewText: rawText,
@@ -514,7 +542,17 @@ export class SmartNameMatchService {
       stage: '模型已返回完整结果，正在解析',
     });
 
-    return rawText;
+    await this.llmUsage.recordUsage({
+      source: 'smart-name-match',
+      label: '智能核名',
+      model: input.requestPayload.model,
+      usage,
+    });
+
+    return {
+      rawText,
+      mode: 'non-stream',
+    };
   }
 
   private parseSuggestions(

@@ -12,6 +12,7 @@ const navItems = [
   { key: 'projects', label: '项目页面', subtitle: '项目、答卷与结果中心', path: '/projects' },
   { key: 'tasks', label: '后台任务', subtitle: '扫描与批阅进度', path: '/tasks' },
   { key: 'answer-generator', label: '参考答案生成', subtitle: '模板、生成与历史记录', path: '/answer-generator' },
+  { key: 'llm-usage', label: '模型计费', subtitle: 'Token 用量与费用估算', path: '/llm-usage' },
   { key: 'settings', label: '全局设置', subtitle: '模型后端与连接测试', path: '/settings' },
 ];
 
@@ -49,6 +50,10 @@ const activeKey = computed(() => {
 
   if (routeNames.includes('debug-panel')) {
     return 'debug-panel';
+  }
+
+  if (routeNames.includes('llm-usage')) {
+    return 'llm-usage';
   }
 
   return String(route.name ?? 'projects');

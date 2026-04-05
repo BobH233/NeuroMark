@@ -19,6 +19,7 @@ import type {
   ScoreBreakdownItem,
 } from '@preload/contracts';
 import { logLlmProgress, logLlmRequest, logLlmResult } from './llmRequestLogger';
+import { LlmUsageService, normalizeLlmUsage } from './llmUsageService';
 import {
   compactErrorMessage,
   extractReasoningText,
@@ -492,6 +493,7 @@ export class GradingService {
   constructor(
     private readonly projects: ProjectService,
     private readonly settingsService: SettingsService,
+    private readonly llmUsage: LlmUsageService,
   ) {}
 
   async getRuntimeSettings(imageDetail: GradingServiceSettings['imageDetail']) {
@@ -812,6 +814,9 @@ export class GradingService {
       {
         ...input.requestPayload,
         stream: true,
+        stream_options: {
+          include_usage: true,
+        },
       },
       {
         signal: input.signal,
@@ -820,12 +825,14 @@ export class GradingService {
 
     let rawText = '';
     let reasoningText = '';
+    let usage = null;
     let lastFlushedLength = 0;
     let lastReasoningFlushedLength = 0;
     let lastFlushAt = 0;
 
     for await (const chunk of stream) {
       ensureAbort(input.signal);
+      usage = normalizeLlmUsage(chunk.usage) ?? usage;
       const delta = chunk.choices[0]?.delta;
       const chunkText = extractStreamingDeltaText(delta?.content);
       const chunkReasoningText = extractReasoningText(delta);
@@ -868,6 +875,13 @@ export class GradingService {
       onLog: input.onLog,
     });
 
+    await this.llmUsage.recordUsage({
+      source: 'grading-paper',
+      label: `答卷 ${input.paperCode}`,
+      model: input.requestPayload.model,
+      usage,
+    });
+
     return rawText;
   }
 
@@ -886,6 +900,7 @@ export class GradingService {
     ensureAbort(input.signal);
     const rawText = readAssistantText(response);
     const reasoningText = extractReasoningText(response.choices[0]?.message);
+    const usage = normalizeLlmUsage(response.usage);
     await this.logPaperStreamProgress(input.paperCode, {
       attempt: input.attempt,
       rawText,
@@ -895,6 +910,14 @@ export class GradingService {
       mode: 'non-stream',
       onLog: input.onLog,
     });
+
+    await this.llmUsage.recordUsage({
+      source: 'grading-paper',
+      label: `答卷 ${input.paperCode}`,
+      model: input.requestPayload.model,
+      usage,
+    });
+
     return rawText;
   }
 
@@ -986,6 +1009,9 @@ export class GradingService {
       {
         ...input.requestPayload,
         stream: true,
+        stream_options: {
+          include_usage: true,
+        },
       },
       {
         signal: input.signal,
@@ -994,12 +1020,14 @@ export class GradingService {
 
     let rawText = '';
     let reasoningText = '';
+    let usage = null;
     let lastFlushedLength = 0;
     let lastReasoningFlushedLength = 0;
     let lastFlushAt = 0;
 
     for await (const chunk of stream) {
       ensureAbort(input.signal);
+      usage = normalizeLlmUsage(chunk.usage) ?? usage;
       const delta = chunk.choices[0]?.delta;
       const chunkText = extractStreamingDeltaText(delta?.content);
       const chunkReasoningText = extractReasoningText(delta);
@@ -1040,6 +1068,13 @@ export class GradingService {
       onLog: input.onLog,
     });
 
+    await this.llmUsage.recordUsage({
+      source: 'grading-rubric',
+      label: '评分标准整理',
+      model: input.requestPayload.model,
+      usage,
+    });
+
     return {
       rawText,
       reasoningText,
@@ -1064,6 +1099,7 @@ export class GradingService {
     ensureAbort(input.signal);
     const rawText = readAssistantText(response);
     const reasoningText = extractReasoningText(response.choices[0]?.message);
+    const usage = normalizeLlmUsage(response.usage);
     await this.logRubricStreamProgress({
       rawText,
       reasoningText,
@@ -1072,6 +1108,14 @@ export class GradingService {
       mode: 'non-stream',
       onLog: input.onLog,
     });
+
+    await this.llmUsage.recordUsage({
+      source: 'grading-rubric',
+      label: '评分标准整理',
+      model: input.requestPayload.model,
+      usage,
+    });
+
     return {
       rawText,
       reasoningText,

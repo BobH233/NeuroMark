@@ -20,6 +20,7 @@ import { ANSWER_GENERATION_SYSTEM_PROMPT } from '@main/prompts/answer-generator/
 import { buildAnswerGenerationUserPrompt } from '@main/prompts/answer-generator/user';
 import { getDatabase } from '@main/database/client';
 import { answerDraftsTable, promptPresetsTable, tasksTable } from '@main/database/schema';
+import { LlmUsageService, normalizeLlmUsage } from './llmUsageService';
 import { logLlmRequest, logLlmResult } from './llmRequestLogger';
 import {
   readAssistantText,
@@ -255,6 +256,7 @@ export class AnswerGeneratorService {
   constructor(
     private readonly settings: SettingsService,
     private readonly tasks: TaskManager,
+    private readonly llmUsage: LlmUsageService,
   ) {}
 
   async getState(): Promise<AnswerGeneratorSnapshot> {
@@ -719,7 +721,7 @@ export class AnswerGeneratorService {
         void this.updateWaitingHeartbeat(draft.id, taskId, elapsedSeconds, timeoutSeconds);
       }, 10000);
 
-      const rawText = await this.collectModelResponseText({
+      const response = await this.collectModelResponseText({
         client,
         requestPayload,
         draftId: draft.id,
@@ -727,6 +729,7 @@ export class AnswerGeneratorService {
         startedAtMs,
         signal: requestAbortController.signal,
       });
+      const rawText = response.rawText;
 
       if (waitingHeartbeat) {
         clearInterval(waitingHeartbeat);
@@ -993,7 +996,10 @@ export class AnswerGeneratorService {
     taskId: string;
     startedAtMs: number;
     signal: AbortSignal;
-  }): Promise<string> {
+  }): Promise<{
+    rawText: string;
+    mode: 'stream' | 'non-stream';
+  }> {
     try {
       await this.appendDraftLog(input.draftId, '尝试以流式模式接收模型输出', {
         generationStage: '已发起模型请求，等待流式输出',
@@ -1022,21 +1028,29 @@ export class AnswerGeneratorService {
     taskId: string;
     startedAtMs: number;
     signal: AbortSignal;
-  }): Promise<string> {
+  }): Promise<{
+    rawText: string;
+    mode: 'stream';
+  }> {
     const stream = await input.client.chat.completions.create({
       ...input.requestPayload,
       stream: true,
+      stream_options: {
+        include_usage: true,
+      },
     }, {
       signal: input.signal,
     });
 
     let rawText = '';
     let reasoningText = '';
+    let usage = null;
     let lastFlushedLength = 0;
     let lastReasoningFlushedLength = 0;
     let lastFlushAt = 0;
 
     for await (const chunk of stream) {
+      usage = normalizeLlmUsage(chunk.usage) ?? usage;
       const delta = chunk.choices[0]?.delta;
       const chunkText = extractStreamingDeltaText(delta?.content);
       const chunkReasoningText = extractReasoningText(delta);
@@ -1076,13 +1090,24 @@ export class AnswerGeneratorService {
       detail: {
         elapsedMs: Date.now() - input.startedAtMs,
         mode: 'stream',
+        usage,
         reasoningTextLength: reasoningText.length,
         responseTextLength: rawText.length,
         preview: rawText.slice(0, 400),
       },
     });
 
-    return rawText;
+    await this.llmUsage.recordUsage({
+      source: 'answer-generation',
+      label: '参考答案生成',
+      model: input.requestPayload.model,
+      usage,
+    });
+
+    return {
+      rawText,
+      mode: 'stream',
+    };
   }
 
   private async collectNonStreamingResponseText(input: {
@@ -1092,12 +1117,16 @@ export class AnswerGeneratorService {
     taskId: string;
     startedAtMs: number;
     signal: AbortSignal;
-  }): Promise<string> {
+  }): Promise<{
+    rawText: string;
+    mode: 'non-stream';
+  }> {
     const completion = await input.client.chat.completions.create(input.requestPayload, {
       signal: input.signal,
     });
     const rawText = readAssistantText(completion);
     const reasoningText = extractReasoningText(completion.choices[0]?.message);
+    const usage = normalizeLlmUsage(completion.usage);
 
     await this.flushStreamingPreview(input.draftId, input.taskId, {
       rawText,
@@ -1109,12 +1138,23 @@ export class AnswerGeneratorService {
       detail: {
         elapsedMs: Date.now() - input.startedAtMs,
         mode: 'non-stream',
+        usage,
         reasoningTextLength: reasoningText.length,
         response: completion,
       },
     });
 
-    return rawText;
+    await this.llmUsage.recordUsage({
+      source: 'answer-generation',
+      label: '参考答案生成',
+      model: input.requestPayload.model,
+      usage,
+    });
+
+    return {
+      rawText,
+      mode: 'non-stream',
+    };
   }
 
   private async flushStreamingPreview(

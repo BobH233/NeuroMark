@@ -84,6 +84,11 @@ const api: NeuromarkApi = {
     save: (input) => ipcRenderer.invoke('settings:save', input),
     testLlmConnection: (payload) => ipcRenderer.invoke('settings:test', payload),
   },
+  llmUsage: {
+    getSummary: () => ipcRenderer.invoke('llm-usage:get-summary'),
+    getRecordPage: (page, pageSize) => ipcRenderer.invoke('llm-usage:get-record-page', page, pageSize),
+    savePricing: (input) => ipcRenderer.invoke('llm-usage:save-pricing', input),
+  },
   answerGenerator: {
     getState: () => ipcRenderer.invoke('answer-generator:get-state'),
     listDrafts: () => ipcRenderer.invoke('answer-generator:list-drafts'),

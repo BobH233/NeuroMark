@@ -286,6 +286,74 @@ export interface TestLlmConnectionResult {
   latencyMs: number;
 }
 
+export type LlmUsageSource =
+  | 'answer-generation'
+  | 'grading-paper'
+  | 'grading-rubric'
+  | 'settings-test'
+  | 'smart-name-match';
+
+export interface LlmPricingSettings {
+  currency: string;
+  inputPerMillion: number;
+  outputPerMillion: number;
+  cacheReadPerMillion: number;
+  cacheWritePerMillion: number;
+  reasoningPerMillion: number;
+}
+
+export interface LlmUsageRecord {
+  id: string;
+  source: LlmUsageSource;
+  label: string;
+  model: string;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+  reasoningTokens: number;
+  billableInputTokens: number;
+  billableOutputTokens: number;
+  totalTokens: number;
+  estimatedCost: number;
+  createdAt: string;
+}
+
+export interface LlmUsageRecordPage {
+  page: number;
+  pageSize: number;
+  total: number;
+  records: LlmUsageRecord[];
+}
+
+export interface LlmUsageBreakdownItem {
+  source: LlmUsageSource;
+  label: string;
+  requestCount: number;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+  reasoningTokens: number;
+  totalTokens: number;
+  estimatedCost: number;
+}
+
+export interface LlmUsageSummary {
+  pricing: LlmPricingSettings;
+  requestCount: number;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+  reasoningTokens: number;
+  billableInputTokens: number;
+  billableOutputTokens: number;
+  totalTokens: number;
+  estimatedCost: number;
+  breakdown: LlmUsageBreakdownItem[];
+}
+
 export interface AnswerSourceImage {
   src: string;
   name: string;
@@ -498,6 +566,11 @@ export interface NeuromarkApi {
     testLlmConnection: (
       payload: TestLlmConnectionPayload,
     ) => Promise<TestLlmConnectionResult>;
+  };
+  llmUsage: {
+    getSummary: () => Promise<LlmUsageSummary>;
+    getRecordPage: (page?: number, pageSize?: number) => Promise<LlmUsageRecordPage>;
+    savePricing: (input: LlmPricingSettings) => Promise<LlmPricingSettings>;
   };
   answerGenerator: {
     getState: () => Promise<AnswerGeneratorSnapshot>;

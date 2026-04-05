@@ -62,6 +62,11 @@ const router = createRouter({
       component: () => import('@/views/SettingsView.vue'),
     },
     {
+      path: '/llm-usage',
+      name: 'llm-usage',
+      component: () => import('@/views/LlmUsageView.vue'),
+    },
+    {
       path: '/debug',
       name: 'debug-panel',
       component: () => import('@/views/DebugPanelView.vue'),

@@ -63,7 +63,27 @@ export const settingsTable = sqliteTable('settings', {
   reasoningEffort: text('reasoning_effort').notNull(),
   answerGenerationTemperature: real('answer_generation_temperature').notNull().default(0.2),
   gradingTemperature: real('grading_temperature').notNull().default(0),
+  pricingInputPerMillion: real('pricing_input_per_million').notNull().default(2),
+  pricingOutputPerMillion: real('pricing_output_per_million').notNull().default(12),
+  pricingCacheReadPerMillion: real('pricing_cache_read_per_million').notNull().default(0.2),
+  pricingCacheWritePerMillion: real('pricing_cache_write_per_million').notNull().default(0),
+  pricingReasoningPerMillion: real('pricing_reasoning_per_million').notNull().default(0),
+  pricingCurrency: text('pricing_currency').notNull().default('USD'),
   storageMode: text('storage_mode').notNull(),
+});
+
+export const llmUsageRecordsTable = sqliteTable('llm_usage_records', {
+  id: text('id').primaryKey(),
+  source: text('source').notNull(),
+  label: text('label').notNull(),
+  model: text('model').notNull(),
+  inputTokens: integer('input_tokens').notNull(),
+  outputTokens: integer('output_tokens').notNull(),
+  cacheReadTokens: integer('cache_read_tokens').notNull(),
+  cacheWriteTokens: integer('cache_write_tokens').notNull(),
+  reasoningTokens: integer('reasoning_tokens').notNull(),
+  totalTokens: integer('total_tokens').notNull(),
+  createdAt: text('created_at').notNull(),
 });
 
 export const answerDraftsTable = sqliteTable('answer_drafts', {
@@ -101,6 +121,7 @@ export type Schema = {
   resultRecordsTable: typeof resultRecordsTable;
   tasksTable: typeof tasksTable;
   settingsTable: typeof settingsTable;
+  llmUsageRecordsTable: typeof llmUsageRecordsTable;
   answerDraftsTable: typeof answerDraftsTable;
   promptPresetsTable: typeof promptPresetsTable;
 };

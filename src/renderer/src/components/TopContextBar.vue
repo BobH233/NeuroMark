@@ -10,13 +10,19 @@ const currentTitle = computed(() => {
     return '参考答案生成';
   }
   if (name.startsWith('projects') || name === 'project-detail') {
-    return '项目工作台';
+    return '项目页面';
   }
   if (name === 'tasks' || name === 'tasks-archived') {
-    return '后台任务中心';
+    return '后台任务';
+  }
+  if (name === 'llm-usage') {
+    return '模型计费';
   }
   if (name === 'settings') {
     return '全局设置';
+  }
+  if (name === 'debug-panel') {
+    return '调试面板';
   }
   return 'NeuroMark';
 });

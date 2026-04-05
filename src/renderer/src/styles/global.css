@@ -319,6 +319,124 @@ textarea {
   gap: 18px;
 }
 
+.llm-usage-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+}
+
+.llm-usage-stat-card {
+  padding: 20px;
+}
+
+.llm-usage-stat-label,
+.llm-usage-record-label,
+.llm-usage-breakdown-copy {
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.llm-usage-stat-value {
+  margin-top: 10px;
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.llm-usage-stat-hint {
+  margin-top: 8px;
+  color: var(--text-tertiary);
+  font-size: 13px;
+}
+
+.llm-usage-layout {
+  display: grid;
+  grid-template-columns: minmax(320px, 420px) minmax(0, 1fr);
+  gap: 20px;
+}
+
+.llm-usage-breakdown,
+.llm-usage-record-list {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.llm-usage-breakdown-row,
+.llm-usage-record {
+  border: 1px solid rgba(63, 122, 224, 0.12);
+  background: rgba(255, 255, 255, 0.74);
+  border-radius: 18px;
+  padding: 16px 18px;
+}
+
+.llm-usage-breakdown-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.llm-usage-breakdown-title,
+.llm-usage-record-title {
+  color: var(--text-primary);
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.llm-usage-breakdown-meta,
+.llm-usage-record-cost {
+  color: #2457c5;
+  font-size: 18px;
+  font-weight: 700;
+  text-align: right;
+}
+
+.llm-usage-record-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.llm-usage-record-subtitle {
+  margin-top: 4px;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.llm-usage-record-grid {
+  margin-top: 16px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px;
+}
+
+.llm-usage-record-item {
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: rgba(244, 247, 255, 0.92);
+}
+
+.llm-usage-record-value {
+  margin-top: 6px;
+  color: var(--text-primary);
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.llm-usage-pagination {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 8px;
+}
+
+@media (max-width: 1080px) {
+  .llm-usage-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
 .hero-panel {
   padding: 24px 28px;
   display: flex;

@@ -5,6 +5,7 @@ import { registerGradingIpc } from './grading';
 import { registerPreviewIpc } from './preview';
 import { registerProjectIpc } from './projects';
 import { registerScanIpc } from './scan';
+import { registerLlmUsageIpc } from './llmUsage';
 import { registerSettingsIpc } from './settings';
 import { registerSmartNameMatchIpc } from './smartNameMatch';
 import { registerTasksIpc } from './tasks';
@@ -15,6 +16,7 @@ export function registerIpcHandlers(services: ServiceBundle): void {
   registerScanIpc(services);
   registerGradingIpc(services);
   registerSettingsIpc(services);
+  registerLlmUsageIpc(services);
   registerAnswerGeneratorIpc(services);
   registerSmartNameMatchIpc(services);
   registerTasksIpc(services);
