@@ -303,8 +303,14 @@ function validateScoreBreakdown(
       parsed.criterion,
       `${question.questionId}.scoreBreakdown[${index}].criterion`,
     );
+    if (!criterion.trim()) {
+      throw new Error(`${question.questionId} 的第 ${index + 1} 个采分点描述不能为空。`);
+    }
     if (criterion !== point.description) {
-      throw new Error(`${question.questionId} 的第 ${index + 1} 个采分点描述不匹配。`);
+      console.warn(
+        `[grading] normalized criterion text for ${question.questionId}#${point.criterionId}:` +
+          ` model=${JSON.stringify(criterion)} rubric=${JSON.stringify(point.description)}`,
+      );
     }
 
     const maxScore = asNumber(
@@ -330,7 +336,8 @@ function validateScoreBreakdown(
 
     return {
       criterionId,
-      criterion,
+      // Keep the rubric wording stable even if the model paraphrases the criterion text.
+      criterion: point.description,
       maxScore,
       score,
       verdict,

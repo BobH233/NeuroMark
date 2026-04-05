@@ -2098,8 +2098,18 @@ function goBack() {
                                         {{ formatScoreBreakdownBadge(point) }}
                                       </span>
                                     </div>
-                                    <MarkdownRenderer :source="point.criterion" />
-                                    <MarkdownRenderer :source="point.evidence" />
+                                    <div class="score-breakdown-line">
+                                      <span class="score-breakdown-logo score-breakdown-logo--standard">
+                                        标准
+                                      </span>
+                                      <MarkdownRenderer :source="point.criterion" />
+                                    </div>
+                                    <div class="score-breakdown-line">
+                                      <span class="score-breakdown-logo score-breakdown-logo--evidence">
+                                        判定
+                                      </span>
+                                      <MarkdownRenderer :source="point.evidence" />
+                                    </div>
                                   </li>
                                 </ul>
                               </div>

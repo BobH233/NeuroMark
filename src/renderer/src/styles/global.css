@@ -1429,12 +1429,56 @@ textarea {
   line-height: 1.7;
 }
 
+.score-breakdown-line {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 10px;
+}
+
+.score-breakdown-head + .score-breakdown-line {
+  margin-top: 8px;
+}
+
 .score-breakdown-text {
   margin-top: 6px;
 }
 
 .score-breakdown-evidence {
   margin-top: 4px;
+}
+
+.score-breakdown-line + .score-breakdown-line {
+  margin-top: 6px;
+}
+
+.score-breakdown-line .markdown-preview {
+  min-width: 0;
+}
+
+.score-breakdown-line .markdown-preview > :first-child {
+  margin-top: 0;
+}
+
+.score-breakdown-line .markdown-preview > :last-child {
+  margin-bottom: 0;
+}
+
+.score-breakdown-logo {
+  display: inline-block;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.7;
+  padding-top: 1px;
+  white-space: nowrap;
+}
+
+.score-breakdown-logo--standard {
+  color: #155e75;
+}
+
+.score-breakdown-logo--evidence {
+  color: #9a3412;
 }
 
 .paper-stage {
