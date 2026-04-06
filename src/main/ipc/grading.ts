@@ -1,5 +1,9 @@
 import { ipcMain } from 'electron';
-import type { ExportResultsOptions, FinalResult, SaveFinalResultOptions } from '@preload/contracts';
+import type {
+  ExportResultsOptions,
+  FinalResult,
+  SaveFinalResultOptions,
+} from '@preload/contracts';
 import type { ServiceBundle } from '@main/services/types';
 
 export function registerGradingIpc(services: ServiceBundle): void {

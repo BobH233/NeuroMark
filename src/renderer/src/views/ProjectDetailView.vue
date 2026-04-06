@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, toRaw, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, toRaw, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { MdEditor } from 'md-editor-v3';
 import {
@@ -79,6 +79,7 @@ const scanActionLoading = ref(false);
 const gradingActionLoading = ref(false);
 const exportDialogVisible = ref(false);
 const exportJsonLoading = ref(false);
+const printResultLoading = ref(false);
 const exportScope = ref<ResultExportScope>('graded');
 const projectSettingsSaving = ref(false);
 const removingPaperId = ref('');
@@ -102,6 +103,8 @@ const activeQuestionId = ref('');
 const previewDisplayOptions = ref<PreviewDisplayOptions>({ ...DEFAULT_PREVIEW_DISPLAY_OPTIONS });
 const isReviewScrollActive = ref(false);
 const expandedQuestionIds = ref<string[]>([]);
+const isResultPrintMode = ref(false);
+const expandedQuestionIdsBeforePrint = ref<string[] | null>(null);
 
 let lockedShellContent: HTMLElement | null = null;
 let smartNameMatchUnsubscribe: (() => void) | null = null;
@@ -684,6 +687,7 @@ watch(
 );
 
 onMounted(async () => {
+  window.addEventListener('afterprint', restoreResultPrintMode);
   await debugPanelStore.initialize();
   smartNameMatchUnsubscribe = window.neuromark.results.onSmartNameMatchUpdated((snapshot) => {
     if (snapshot.projectId === projectId.value) {
@@ -711,6 +715,8 @@ onMounted(async () => {
 });
 
 onBeforeUnmount(() => {
+  window.removeEventListener('afterprint', restoreResultPrintMode);
+  restoreResultPrintMode();
   smartNameMatchUnsubscribe?.();
   smartNameMatchUnsubscribe = null;
   smartNameContextMenu.value.visible = false;
@@ -948,6 +954,38 @@ async function confirmExportResults() {
     message.error(error instanceof Error ? error.message : '导出 JSON 失败。');
   } finally {
     exportJsonLoading.value = false;
+  }
+}
+
+function restoreResultPrintMode() {
+  if (!isResultPrintMode.value) {
+    return;
+  }
+
+  isResultPrintMode.value = false;
+  if (expandedQuestionIdsBeforePrint.value) {
+    expandedQuestionIds.value = [...expandedQuestionIdsBeforePrint.value];
+  }
+  expandedQuestionIdsBeforePrint.value = null;
+  printResultLoading.value = false;
+}
+
+async function printSelectedResult() {
+  if (!selectedProject.value || !selectedResult.value || !editableResult.value || printResultLoading.value) {
+    return;
+  }
+
+  printResultLoading.value = true;
+  try {
+    expandedQuestionIdsBeforePrint.value = [...expandedQuestionIds.value];
+    expandedQuestionIds.value = editableResult.value.questionScores.map((question) => question.questionId);
+    isResultPrintMode.value = true;
+    await nextTick();
+    await new Promise((resolve) => window.setTimeout(resolve, 80));
+    window.print();
+  } catch (error) {
+    restoreResultPrintMode();
+    message.error(error instanceof Error ? error.message : '打印导出失败。');
   }
 }
 
@@ -1403,7 +1441,7 @@ function goBack() {
 </script>
 
 <template>
-  <div class="page-stack">
+  <div class="page-stack" :class="{ 'page-stack--result-print': isResultPrintMode }">
     <n-modal
       :show="exportDialogVisible"
       preset="card"
@@ -1710,6 +1748,7 @@ function goBack() {
           <div
             v-if="papers.length"
             class="result-review-layout"
+            :class="{ 'result-review-layout--print-host': isResultPrintMode }"
             @mouseenter="isReviewScrollActive = true"
             @mouseleave="isReviewScrollActive = false"
           >
@@ -1813,7 +1852,11 @@ function goBack() {
               </div>
             </aside>
 
-            <section class="result-workspace surface-card" v-if="selectedResult && editableResult && selectedPaper">
+            <section
+              class="result-workspace surface-card"
+              :class="{ 'result-workspace--print-mode': isResultPrintMode }"
+              v-if="selectedResult && editableResult && selectedPaper"
+            >
               <div class="result-workspace-head">
                 <div>
                   <div class="result-section-title">手工核对工作区</div>
@@ -1821,7 +1864,10 @@ function goBack() {
                     可以在此处查看学生扫描卷信息，手动修改每一小题的得分情况。
                   </div>
                 </div>
-                <n-space>
+                <n-space class="result-print-actions">
+                  <n-button secondary :loading="printResultLoading" @click="printSelectedResult">
+                    打印 / 导出 PDF
+                  </n-button>
                   <n-popconfirm
                     positive-text="确认删除"
                     negative-text="取消"
