@@ -10,6 +10,7 @@ const createProjectSchema = z.object({
   drawRegions: z.boolean().optional(),
   defaultImageDetail: z.enum(['low', 'high', 'auto']).optional(),
   enableScanPostProcess: z.boolean().optional(),
+  skipScanProcessing: z.boolean().optional(),
 });
 
 const projectNameSchema = z.string().trim().min(1);
@@ -19,6 +20,7 @@ const projectSettingsSchema = z.object({
   drawRegions: z.boolean(),
   defaultImageDetail: z.enum(['low', 'high', 'auto']),
   enableScanPostProcess: z.boolean(),
+  skipScanProcessing: z.boolean(),
 });
 
 const referenceAnswerSchema = z.string().trim().min(1);

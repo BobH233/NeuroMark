@@ -1204,6 +1204,7 @@ async function saveProjectSettings() {
     drawRegions: selectedProject.value.settings.drawRegions,
     defaultImageDetail: selectedProject.value.settings.defaultImageDetail,
     enableScanPostProcess: selectedProject.value.settings.enableScanPostProcess,
+    skipScanProcessing: selectedProject.value.settings.skipScanProcessing,
   };
   const projectIdToSave = selectedProject.value.id;
   const nameChanged = nextName !== selectedProject.value.name;
@@ -2778,10 +2779,20 @@ function goBack() {
                 </div>
                 <div class="create-project-toggle-row">
                   <div class="create-project-toggle-copy">
+                    <div class="field-label">跳过扫描处理</div>
+                    <div class="field-hint">开启后不再识别边界，直接将原始答卷图片作为扫描结果使用。</div>
+                  </div>
+                  <n-switch v-model:value="selectedProject.settings.skipScanProcessing" />
+                </div>
+                <div class="create-project-toggle-row">
+                  <div class="create-project-toggle-copy">
                     <div class="field-label">扫描后处理</div>
                     <div class="field-hint">关闭后只做边界识别、透视拉平与裁剪，不做增强和二值化。</div>
                   </div>
-                  <n-switch v-model:value="selectedProject.settings.enableScanPostProcess" />
+                  <n-switch
+                    v-model:value="selectedProject.settings.enableScanPostProcess"
+                    :disabled="selectedProject.settings.skipScanProcessing"
+                  />
                 </div>
                 <div class="create-project-toggle-row">
                   <div class="create-project-toggle-copy">

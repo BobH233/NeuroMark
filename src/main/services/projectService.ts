@@ -44,6 +44,7 @@ const DEFAULT_PROJECT_SETTINGS: ProjectSettings = {
   drawRegions: false,
   defaultImageDetail: 'high',
   enableScanPostProcess: true,
+  skipScanProcessing: false,
 };
 
 function createEmptyStats(): ProjectStats {
@@ -87,6 +88,8 @@ function normalizeProjectSettings(
       settings?.defaultImageDetail ?? DEFAULT_PROJECT_SETTINGS.defaultImageDetail,
     enableScanPostProcess:
       settings?.enableScanPostProcess ?? DEFAULT_PROJECT_SETTINGS.enableScanPostProcess,
+    skipScanProcessing:
+      settings?.skipScanProcessing ?? DEFAULT_PROJECT_SETTINGS.skipScanProcessing,
   };
 }
 
@@ -894,6 +897,7 @@ export class ProjectService {
           assets.cornersPath,
           {
             applyPostProcess: project.settings.enableScanPostProcess,
+            skipScanProcessing: project.settings.skipScanProcessing,
           },
         );
         processedPageCount += 1;

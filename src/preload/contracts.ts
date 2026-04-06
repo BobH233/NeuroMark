@@ -35,6 +35,7 @@ export interface ProjectSettings {
   drawRegions: boolean;
   defaultImageDetail: ImageDetailLevel;
   enableScanPostProcess: boolean;
+  skipScanProcessing: boolean;
 }
 
 export interface ProjectStats {
@@ -432,6 +433,7 @@ export interface CreateProjectInput {
   drawRegions?: boolean;
   defaultImageDetail?: ImageDetailLevel;
   enableScanPostProcess?: boolean;
+  skipScanProcessing?: boolean;
 }
 
 export interface CreateProjectValidationResult {

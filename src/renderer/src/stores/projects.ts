@@ -96,6 +96,7 @@ export const useProjectsStore = defineStore('projects', {
         drawRegions: settings.drawRegions,
         defaultImageDetail: settings.defaultImageDetail,
         enableScanPostProcess: settings.enableScanPostProcess,
+        skipScanProcessing: settings.skipScanProcessing,
       });
       await this.loadProjects();
       await this.loadProjectDetail(projectId);
