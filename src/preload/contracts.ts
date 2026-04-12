@@ -176,11 +176,16 @@ export interface SaveFinalResultOptions {
 }
 
 export type SmartNameMatchRunStatus = 'idle' | 'running' | 'completed' | 'failed';
+export type SmartNameMatchScope = 'unverified' | 'all';
 export type SmartNameMatchDecision =
   | 'certain_update'
   | 'certain_keep'
   | 'uncertain'
   | 'no_match';
+
+export interface StartSmartNameMatchOptions {
+  scope?: SmartNameMatchScope;
+}
 
 export interface SmartNameMatchSuggestion {
   paperId: string;
@@ -567,6 +572,7 @@ export interface NeuromarkApi {
     startSmartNameMatch: (
       projectId: string,
       rosterText: string,
+      options?: StartSmartNameMatchOptions,
     ) => Promise<SmartNameMatchSnapshot>;
     applySmartNameMatch: (projectId: string) => Promise<string[]>;
     onSmartNameMatchUpdated: (handler: SmartNameMatchUpdateHandler) => () => void;

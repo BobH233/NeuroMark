@@ -5,8 +5,10 @@ import type {
   ResultRecord,
   SmartNameMatchDecision,
   SmartNameMatchDuplicateGroup,
+  SmartNameMatchScope,
   SmartNameMatchSnapshot,
   SmartNameMatchSuggestion,
+  StartSmartNameMatchOptions,
   StudentInfo,
 } from '@preload/contracts';
 import { SMART_NAME_MATCH_SYSTEM_PROMPT } from '@main/prompts/smart-name-match/system';
@@ -253,11 +255,16 @@ export class SmartNameMatchService {
     return cloneSnapshot(this.snapshots.get(projectId) ?? createEmptySnapshot(projectId));
   }
 
-  async start(projectId: string, rosterText: string): Promise<SmartNameMatchSnapshot> {
+  async start(
+    projectId: string,
+    rosterText: string,
+    options?: StartSmartNameMatchOptions,
+  ): Promise<SmartNameMatchSnapshot> {
     const trimmedRosterText = rosterText.trim();
     if (!trimmedRosterText) {
       throw new Error('请先输入班级名册内容。');
     }
+    const scope = options?.scope ?? 'unverified';
 
     const current = this.snapshots.get(projectId);
     if (current?.status === 'running') {
@@ -277,7 +284,7 @@ export class SmartNameMatchService {
     };
     this.setSnapshot(nextSnapshot);
 
-    void this.run(projectId, trimmedRosterText);
+    void this.run(projectId, trimmedRosterText, scope);
     return cloneSnapshot(nextSnapshot);
   }
 
@@ -294,30 +301,45 @@ export class SmartNameMatchService {
       throw new Error('当前没有 100% 确定的核名方案可应用。');
     }
 
-    const updatedPaperIds: string[] = [];
+    const appliedAt = new Date().toISOString();
+    const updates = (
+      await Promise.all(applicable.map(async (suggestion) => {
+        const current = await this.projects.getResult(projectId, suggestion.paperId);
+        if (!current?.finalResult) {
+          return null;
+        }
 
-    for (const suggestion of applicable) {
-      const current = await this.projects.getResult(projectId, suggestion.paperId);
-      if (!current?.finalResult) {
-        continue;
-      }
+        const nextResult = JSON.parse(JSON.stringify(current.finalResult)) as NonNullable<
+          ResultRecord['finalResult']
+        >;
+        nextResult.studentInfo = mergeStudentInfo(
+          nextResult.studentInfo,
+          suggestion.suggestedStudentInfo,
+          suggestion.changedFields,
+        );
 
-      const nextResult = JSON.parse(JSON.stringify(current.finalResult)) as NonNullable<
-        ResultRecord['finalResult']
-      >;
-      nextResult.studentInfo = mergeStudentInfo(
-        nextResult.studentInfo,
-        suggestion.suggestedStudentInfo,
-        suggestion.changedFields,
-      );
+        return {
+          paperId: suggestion.paperId,
+          finalResult: nextResult,
+          options: {
+            nameMatchStatus: 'verified' as const,
+            nameMatchSource: 'smart-name-llm' as const,
+            nameMatchUpdatedAt: appliedAt,
+          },
+        };
+      }))
+    ).filter((item): item is {
+      paperId: string;
+      finalResult: NonNullable<ResultRecord['finalResult']>;
+      options: {
+        nameMatchStatus: 'verified';
+        nameMatchSource: 'smart-name-llm';
+        nameMatchUpdatedAt: string;
+      };
+    } => Boolean(item));
 
-      await this.projects.saveFinalResult(projectId, suggestion.paperId, nextResult, {
-        nameMatchStatus: 'verified',
-        nameMatchSource: 'smart-name-llm',
-        nameMatchUpdatedAt: new Date().toISOString(),
-      });
-      updatedPaperIds.push(suggestion.paperId);
-    }
+    await this.projects.saveFinalResultsBatch(projectId, updates);
+    const updatedPaperIds = updates.map((item) => item.paperId);
 
     const nextSnapshot = cloneSnapshot(snapshot);
     nextSnapshot.stage = `已应用 ${updatedPaperIds.length} 份 100% 确定的核名结果`;
@@ -327,7 +349,7 @@ export class SmartNameMatchService {
     return updatedPaperIds;
   }
 
-  private async run(projectId: string, rosterText: string): Promise<void> {
+  private async run(projectId: string, rosterText: string, scope: SmartNameMatchScope): Promise<void> {
     try {
       const settings = await this.settings.getSettings();
       if (!settings.apiKey.trim()) {
@@ -335,7 +357,7 @@ export class SmartNameMatchService {
       }
 
       const detail = await this.projects.getProjectDetail(projectId);
-      const results = detail.results.filter(
+      const allGradedResults = detail.results.filter(
         (
           item,
         ): item is ResultRecord & {
@@ -344,12 +366,23 @@ export class SmartNameMatchService {
         } => Boolean(item.finalResult && item.modelResult),
       );
 
-      if (results.length === 0) {
+      if (allGradedResults.length === 0) {
         throw new Error('当前项目还没有已批阅完成的答卷。');
       }
 
+      const results =
+        scope === 'all'
+          ? allGradedResults
+          : allGradedResults.filter((item) => item.nameMatchStatus !== 'verified');
+
+      if (results.length === 0) {
+        throw new Error('当前项目没有待核名的已批阅答卷。');
+      }
+
+      const scopeLabel = scope === 'all' ? '全部已批阅答卷' : '未核名答卷';
+
       this.patchSnapshot(projectId, {
-        stage: `正在向模型提交 ${results.length} 份答卷的核名请求`,
+        stage: `正在向模型提交 ${results.length} 份${scopeLabel}的核名请求`,
       });
 
       const requestPayload: ChatCompletionCreateParamsNonStreaming = {

@@ -35,6 +35,7 @@ import type {
   ResultExportScope,
   ResultRecord,
   ScoreBreakdownItem,
+  SmartNameMatchScope,
   SmartNameMatchSnapshot,
   SmartNameMatchSuggestion,
   ProjectSettings,
@@ -464,6 +465,12 @@ const smartNameMatchCertainUpdateSuggestions = computed(() =>
 );
 const smartNameMatchCertainKeepSuggestions = computed(() =>
   smartNameMatchSuggestions.value.filter((item) => item.decision === 'certain_keep'),
+);
+const verifiedResultCount = computed(() =>
+  results.value.filter((item) => item.nameMatchStatus === 'verified').length,
+);
+const unverifiedResultCount = computed(() =>
+  results.value.filter((item) => item.nameMatchStatus !== 'verified').length,
 );
 const smartNameMatchUncertainSuggestions = computed(() =>
   smartNameMatchSuggestions.value.filter(
@@ -1172,7 +1179,7 @@ async function saveResult() {
   );
 }
 
-async function startSmartNameMatch() {
+async function startSmartNameMatch(scope: SmartNameMatchScope = 'unverified') {
   if (!selectedProject.value || smartNameSubmitting.value || smartNameMatchIsRunning.value) {
     return;
   }
@@ -1188,8 +1195,9 @@ async function startSmartNameMatch() {
     smartNameMatchSnapshot.value = await window.neuromark.results.startSmartNameMatch(
       selectedProject.value.id,
       rosterText,
+      { scope },
     );
-    message.success('智能核名已开始。');
+    message.success(scope === 'all' ? '已开始重新全量核名。' : '已开始智能核名。');
   } catch (error) {
     message.error(error instanceof Error ? error.message : '启动智能核名失败。');
   } finally {
@@ -2437,7 +2445,10 @@ function goBack() {
                 <div class="result-sidebar-stats">
                   <n-tag size="small" round :bordered="false">已批改 {{ results.length }}</n-tag>
                   <n-tag size="small" round type="success" :bordered="false">
-                    已核名 {{ results.filter((item) => item.nameMatchStatus === 'verified').length }}
+                    已核名 {{ verifiedResultCount }}
+                  </n-tag>
+                  <n-tag size="small" round type="warning" :bordered="false">
+                    待核名 {{ unverifiedResultCount }}
                   </n-tag>
                 </div>
               </div>
@@ -2608,10 +2619,18 @@ function goBack() {
                       <n-button
                         type="primary"
                         :loading="smartNameSubmitting"
-                        :disabled="smartNameMatchIsRunning"
-                        @click="startSmartNameMatch"
+                        :disabled="smartNameMatchIsRunning || unverifiedResultCount === 0"
+                        @click="startSmartNameMatch('unverified')"
                       >
                         开始智能核名
+                      </n-button>
+                      <n-button
+                        secondary
+                        :loading="smartNameSubmitting"
+                        :disabled="smartNameMatchIsRunning || results.length === 0"
+                        @click="startSmartNameMatch('all')"
+                      >
+                        重新全量核名
                       </n-button>
                       <n-tag
                         v-if="smartNameMatchState.stage"

@@ -78,8 +78,8 @@ const api: NeuromarkApi = {
       ipcRenderer.invoke('results:export-json', projectId, options),
     getSmartNameMatchSnapshot: (projectId) =>
       ipcRenderer.invoke('results:get-smart-name-match-snapshot', projectId),
-    startSmartNameMatch: (projectId, rosterText) =>
-      ipcRenderer.invoke('results:start-smart-name-match', projectId, rosterText),
+    startSmartNameMatch: (projectId, rosterText, options) =>
+      ipcRenderer.invoke('results:start-smart-name-match', projectId, rosterText, options),
     applySmartNameMatch: (projectId) =>
       ipcRenderer.invoke('results:apply-smart-name-match', projectId),
     onSmartNameMatchUpdated: (handler) => {

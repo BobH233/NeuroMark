@@ -359,6 +359,12 @@ interface PaperGradingSnapshot {
   errorMessage?: string | null;
 }
 
+interface BatchFinalResultUpdate {
+  paperId: string;
+  finalResult: FinalResult;
+  options?: SaveFinalResultOptions;
+}
+
 function getPaperPageAssetPaths(
   rootPath: string,
   paperCode: string,
@@ -1055,38 +1061,10 @@ export class ProjectService {
       .map((entry) => path.join(structure.resultsDir, entry.name))
       .sort((left, right) => left.localeCompare(right, 'zh-Hans-CN'));
 
-    const records: ResultRecord[] = [];
-    for (const filePath of files) {
-      try {
-        const payload = await fs.readJson(filePath);
-        const normalized = normalizeResultPayload(payload);
-        if (!normalized || normalized.status !== 'completed') {
-          continue;
-        }
-
-        const paperId = getFileNameWithoutExtension(filePath);
-        const stat = await fs.stat(filePath);
-        records.push({
-          id: filePath,
-          projectId,
-          paperId,
-          filePath,
-          status: normalized.status,
-          errorMessage: normalized.errorMessage ?? null,
-          referenceAnswerVersion: normalized.referenceAnswerVersion,
-          modelResult: normalized.modelResult,
-          finalResult: normalized.finalResult,
-          nameMatchStatus: normalized.nameMatchStatus,
-          nameMatchUpdatedAt: normalized.nameMatchUpdatedAt ?? null,
-          nameMatchSource: normalized.nameMatchSource ?? null,
-          updatedAt: stat.mtime.toISOString(),
-        });
-      } catch {
-        continue;
-      }
-    }
-
-    return records;
+    const records = await Promise.all(
+      files.map((filePath) => this.readCompletedResultRecord(projectId, filePath)),
+    );
+    return records.filter((record): record is ResultRecord => Boolean(record));
   }
 
   async getPaperGradingSnapshot(projectId: string, paperId: string): Promise<PaperGradingSnapshot> {
@@ -1139,8 +1117,9 @@ export class ProjectService {
   }
 
   async getResult(projectId: string, paperId: string): Promise<ResultRecord | null> {
-    const results = await this.listResults(projectId);
-    return results.find((item) => item.paperId === paperId) ?? null;
+    const project = await this.getProjectById(projectId);
+    const filePath = getResultFilePath(project.rootPath, paperId);
+    return this.readCompletedResultRecord(projectId, filePath);
   }
 
   async writeProcessingResult(
@@ -1213,7 +1192,7 @@ export class ProjectService {
     );
 
     await this.recomputeStats(projectId);
-    return (await this.getResult(projectId, paperId))!;
+    return (await this.readCompletedResultRecord(projectId, filePath))!;
   }
 
   async clearProcessingResult(projectId: string, paperId: string): Promise<void> {
@@ -1264,6 +1243,42 @@ export class ProjectService {
     finalResult: FinalResult,
     options?: SaveFinalResultOptions,
   ): Promise<ResultRecord> {
+    return this.saveFinalResultInternal(projectId, paperId, finalResult, options);
+  }
+
+  async saveFinalResultsBatch(
+    projectId: string,
+    updates: BatchFinalResultUpdate[],
+  ): Promise<ResultRecord[]> {
+    if (updates.length === 0) {
+      return [];
+    }
+
+    const updatedRecords = await Promise.all(
+      updates.map((update) =>
+        this.saveFinalResultInternal(
+          projectId,
+          update.paperId,
+          update.finalResult,
+          update.options,
+          { skipRecomputeStats: true },
+        ),
+      ),
+    );
+
+    await this.recomputeStats(projectId);
+    return updatedRecords;
+  }
+
+  private async saveFinalResultInternal(
+    projectId: string,
+    paperId: string,
+    finalResult: FinalResult,
+    options?: SaveFinalResultOptions,
+    behavior?: {
+      skipRecomputeStats?: boolean;
+    },
+  ): Promise<ResultRecord> {
     const project = await this.getProjectById(projectId);
     const structure = getProjectStructure(project.rootPath);
     const current = await this.getResult(projectId, paperId);
@@ -1293,8 +1308,10 @@ export class ProjectService {
       { spaces: 2 },
     );
 
-    await this.recomputeStats(projectId);
-    return (await this.getResult(projectId, paperId))!;
+    if (!behavior?.skipRecomputeStats) {
+      await this.recomputeStats(projectId);
+    }
+    return (await this.readCompletedResultRecord(projectId, filePath))!;
   }
 
   async deleteResult(projectId: string, paperId: string): Promise<void> {
@@ -1480,6 +1497,43 @@ export class ProjectService {
     const projects = await this.listProjects();
     for (const listener of this.listeners) {
       listener(projects);
+    }
+  }
+
+  private async readCompletedResultRecord(
+    projectId: string,
+    filePath: string,
+  ): Promise<ResultRecord | null> {
+    if (!(await fs.pathExists(filePath))) {
+      return null;
+    }
+
+    try {
+      const payload = await fs.readJson(filePath);
+      const normalized = normalizeResultPayload(payload);
+      if (!normalized || normalized.status !== 'completed') {
+        return null;
+      }
+
+      const stat = await fs.stat(filePath);
+      const paperId = getFileNameWithoutExtension(filePath);
+      return {
+        id: filePath,
+        projectId,
+        paperId,
+        filePath,
+        status: normalized.status,
+        errorMessage: normalized.errorMessage ?? null,
+        referenceAnswerVersion: normalized.referenceAnswerVersion,
+        modelResult: normalized.modelResult,
+        finalResult: normalized.finalResult,
+        nameMatchStatus: normalized.nameMatchStatus,
+        nameMatchUpdatedAt: normalized.nameMatchUpdatedAt ?? null,
+        nameMatchSource: normalized.nameMatchSource ?? null,
+        updatedAt: stat.mtime.toISOString(),
+      };
+    } catch {
+      return null;
     }
   }
 
