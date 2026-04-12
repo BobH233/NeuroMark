@@ -50,6 +50,8 @@ export const tasksTable = sqliteTable('tasks', {
   currentPaperLabel: text('current_paper_label'),
   summary: text('summary').notNull(),
   runtimeLogsJson: text('runtime_logs_json').notNull().default('[]'),
+  streamPreviewText: text('stream_preview_text').notNull().default(''),
+  streamReasoningText: text('stream_reasoning_text').notNull().default(''),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
 });

@@ -862,6 +862,8 @@ export class ProjectService {
             return [];
           }
         })(),
+        streamPreviewText: row.streamPreviewText ?? '',
+        streamReasoningText: row.streamReasoningText ?? '',
       }));
 
     return {

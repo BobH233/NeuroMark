@@ -76,6 +76,8 @@ function ensureSchema(connection: Database.Database): void {
       current_paper_label TEXT,
       summary TEXT NOT NULL,
       runtime_logs_json TEXT NOT NULL DEFAULT '[]',
+      stream_preview_text TEXT NOT NULL DEFAULT '',
+      stream_reasoning_text TEXT NOT NULL DEFAULT '',
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
@@ -171,6 +173,18 @@ function ensureSchema(connection: Database.Database): void {
     'tasks',
     'runtime_logs_json',
     "runtime_logs_json TEXT NOT NULL DEFAULT '[]'",
+  );
+  ensureColumn(
+    connection,
+    'tasks',
+    'stream_preview_text',
+    "stream_preview_text TEXT NOT NULL DEFAULT ''",
+  );
+  ensureColumn(
+    connection,
+    'tasks',
+    'stream_reasoning_text',
+    "stream_reasoning_text TEXT NOT NULL DEFAULT ''",
   );
   ensureColumn(
     connection,

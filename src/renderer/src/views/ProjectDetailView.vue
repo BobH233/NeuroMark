@@ -47,6 +47,7 @@ import StatusPill from '@/components/StatusPill.vue';
 import { useDebugPanelStore } from '@/stores/debug-panel';
 import { useProjectsStore } from '@/stores/projects';
 import { useTasksStore } from '@/stores/tasks';
+import { useTokenVisualizerStore } from '@/stores/token-visualizer';
 import { toImageSrc } from '@/utils/file';
 import { cloneFinalResult, computeDisplayedTotal } from '@/utils/result';
 
@@ -56,6 +57,7 @@ const message = useMessage();
 const projectsStore = useProjectsStore();
 const tasksStore = useTasksStore();
 const debugPanelStore = useDebugPanelStore();
+const visualizerStore = useTokenVisualizerStore();
 
 const DEFAULT_PREVIEW_DISPLAY_OPTIONS: PreviewDisplayOptions = {
   showQuestionTags: true,
@@ -216,6 +218,14 @@ const currentGradingTask = computed(() =>
   ) ?? null,
 );
 const hasActiveGradingTask = computed(() => Boolean(currentGradingTask.value));
+const visualizerSourceTask = computed(() =>
+  currentGradingTask.value
+  ?? recentJobs.value.find((task) =>
+    task.kind === 'grading'
+    && (task.streamPreviewText.trim().length > 0 || task.streamReasoningText.trim().length > 0),
+  )
+  ?? null,
+);
 const results = computed(() =>
   (detail.value?.results ?? []).filter(
     (item): item is ResultRecord & { finalResult: FinalResult; modelResult: NonNullable<ResultRecord['modelResult']> } =>
@@ -444,7 +454,6 @@ const smartNameMatchUncertainSuggestions = computed(() =>
   ),
 );
 const smartNameMatchHasPreview = computed(() => Boolean(smartNameMatchState.value.previewText.trim()));
-
 const selectedResult = computed<ResultRecord | null>(() => {
   return (
     results.value.find((item) => item.id === selectedResultId.value) ??
@@ -699,6 +708,11 @@ watch(
 watch(
   () => smartNameMatchState.value.reasoningText,
   async () => {
+    visualizerStore.syncText(
+      `smart-name-match:${projectId.value}`,
+      'reasoning',
+      smartNameMatchState.value.reasoningText,
+    );
     if (!smartNameMatchIsRunning.value || smartNameMatchHasPreview.value) {
       return;
     }
@@ -712,6 +726,11 @@ watch(
 watch(
   () => smartNameMatchState.value.previewText,
   async () => {
+    visualizerStore.syncText(
+      `smart-name-match:${projectId.value}`,
+      'preview',
+      smartNameMatchState.value.previewText,
+    );
     if (!smartNameMatchIsRunning.value || !smartNameMatchHasPreview.value) {
       return;
     }
@@ -720,6 +739,30 @@ watch(
       smartNamePreviewRef.value.scrollTop = smartNamePreviewRef.value.scrollHeight;
     }
   },
+);
+
+watch(
+  () => visualizerSourceTask.value?.streamReasoningText ?? '',
+  (nextText) => {
+    visualizerStore.syncText(
+      `grading-task:${visualizerSourceTask.value?.id ?? projectId.value}`,
+      'reasoning',
+      nextText,
+    );
+  },
+  { immediate: true },
+);
+
+watch(
+  () => visualizerSourceTask.value?.streamPreviewText ?? '',
+  (nextText) => {
+    visualizerStore.syncText(
+      `grading-task:${visualizerSourceTask.value?.id ?? projectId.value}`,
+      'preview',
+      nextText,
+    );
+  },
+  { immediate: true },
 );
 
 watch(

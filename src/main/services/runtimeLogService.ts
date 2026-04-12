@@ -6,13 +6,34 @@ type WriteTarget = {
 };
 
 const DEBUG_LOG_EVENT = 'app:debug-log';
+const MAX_BUFFERED_LOG_LINES = 3000;
+
+type BufferedDebugLogEntry = {
+  entry: DebugLogEntry;
+  lineCount: number;
+};
+
+function countLogLines(text: string): number {
+  if (!text) {
+    return 0;
+  }
+
+  let lineCount = 1;
+  for (let index = 0; index < text.length; index += 1) {
+    if (text[index] === '\n') {
+      lineCount += 1;
+    }
+  }
+
+  return lineCount;
+}
 
 export class RuntimeLogService {
-  private readonly entries: DebugLogEntry[] = [];
-  private readonly maxEntries = 1500;
+  private readonly entries: BufferedDebugLogEntry[] = [];
   private installed = false;
   private sequence = 0;
   private enabled = false;
+  private totalLineCount = 0;
 
   install(): void {
     if (this.installed) {
@@ -29,7 +50,7 @@ export class RuntimeLogService {
       return [];
     }
 
-    return [...this.entries];
+    return this.entries.map(({ entry }) => entry);
   }
 
   enable(): void {
@@ -60,9 +81,17 @@ export class RuntimeLogService {
       return;
     }
 
-    this.entries.push(entry);
-    if (this.entries.length > this.maxEntries) {
-      this.entries.splice(0, this.entries.length - this.maxEntries);
+    const lineCount = countLogLines(entry.text);
+    if (lineCount <= 0) {
+      return;
+    }
+
+    this.entries.push({ entry, lineCount });
+    this.totalLineCount += lineCount;
+
+    while (this.totalLineCount > MAX_BUFFERED_LOG_LINES && this.entries.length) {
+      const removed = this.entries.shift();
+      this.totalLineCount -= removed?.lineCount ?? 0;
     }
 
     for (const window of BrowserWindow.getAllWindows()) {

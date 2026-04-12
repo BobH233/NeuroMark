@@ -249,6 +249,8 @@ export interface BackgroundJob {
   currentPaperLabel?: string;
   summary: string;
   runtimeLogs: string[];
+  streamPreviewText: string;
+  streamReasoningText: string;
 }
 
 export interface GlobalLlmSettings {

@@ -529,6 +529,7 @@ export class GradingService {
     settings: GradingServiceSettings;
     signal?: AbortSignal;
     onLog?: (message: string) => void | Promise<void>;
+    onStreamProgress?: (payload: { rawText: string; reasoningText: string }) => void | Promise<void>;
   }): Promise<CompiledRubric> {
     const rubricPath = path.join(
       input.projectRootPath,
@@ -600,6 +601,7 @@ export class GradingService {
         signal: input.signal,
         startedAtMs: startedAt,
         onLog: input.onLog,
+        onStreamProgress: input.onStreamProgress,
       });
       ensureAbort(input.signal);
       rawOutput = response.rawText;
@@ -666,6 +668,7 @@ export class GradingService {
     signal?: AbortSignal;
     onLog?: (message: string) => void | Promise<void>;
     onRetry?: () => void | Promise<void>;
+    onStreamProgress?: (payload: { rawText: string; reasoningText: string }) => void | Promise<void>;
   }): Promise<{
     modelResult: ModelResult;
     finalResult: FinalResult;
@@ -750,6 +753,7 @@ export class GradingService {
           startedAtMs: startedAt,
           attempt,
           onLog: input.onLog,
+          onStreamProgress: input.onStreamProgress,
         });
         lastParsedCandidate = parseJsonObject(lastRawOutput);
         const modelResult = validateModelResult(lastParsedCandidate, input.rubric, input.drawRegions);
@@ -812,6 +816,7 @@ export class GradingService {
     startedAtMs: number;
     attempt: number;
     onLog?: (message: string) => void | Promise<void>;
+    onStreamProgress?: (payload: { rawText: string; reasoningText: string }) => void | Promise<void>;
   }): Promise<string> {
     try {
       logLlmProgress(`grading-paper:${input.paperCode}`, {
@@ -845,6 +850,7 @@ export class GradingService {
     startedAtMs: number;
     attempt: number;
     onLog?: (message: string) => void | Promise<void>;
+    onStreamProgress?: (payload: { rawText: string; reasoningText: string }) => void | Promise<void>;
   }): Promise<string> {
     const stream = await input.client.chat.completions.create(
       {
@@ -898,6 +904,7 @@ export class GradingService {
           reasoningText,
           elapsedMs: now - input.startedAtMs,
           onLog: input.onLog,
+          onStreamProgress: input.onStreamProgress,
         });
       }
     }
@@ -909,6 +916,7 @@ export class GradingService {
       elapsedMs: Date.now() - input.startedAtMs,
       done: true,
       onLog: input.onLog,
+      onStreamProgress: input.onStreamProgress,
     });
 
     await this.llmUsage.recordUsage({
@@ -929,6 +937,7 @@ export class GradingService {
     startedAtMs: number;
     attempt: number;
     onLog?: (message: string) => void | Promise<void>;
+    onStreamProgress?: (payload: { rawText: string; reasoningText: string }) => void | Promise<void>;
   }): Promise<string> {
     const response = await input.client.chat.completions.create(input.requestPayload, {
       signal: input.signal,
@@ -945,6 +954,7 @@ export class GradingService {
       done: true,
       mode: 'non-stream',
       onLog: input.onLog,
+      onStreamProgress: input.onStreamProgress,
     });
 
     await this.llmUsage.recordUsage({
@@ -967,6 +977,7 @@ export class GradingService {
       done?: boolean;
       mode?: 'stream' | 'non-stream';
       onLog?: (message: string) => void | Promise<void>;
+      onStreamProgress?: (payload: { rawText: string; reasoningText: string }) => void | Promise<void>;
     },
   ): Promise<void> {
     const rawPreview = formatStreamPreview(input.rawText);
@@ -982,6 +993,10 @@ export class GradingService {
       reasoningChars: input.reasoningText.length,
       textPreview: rawPreview,
       reasoningPreview,
+    });
+    await input.onStreamProgress?.({
+      rawText: input.rawText,
+      reasoningText: input.reasoningText,
     });
     if (input.onLog) {
       if (status === 'done') {
@@ -1004,6 +1019,7 @@ export class GradingService {
     signal?: AbortSignal;
     startedAtMs: number;
     onLog?: (message: string) => void | Promise<void>;
+    onStreamProgress?: (payload: { rawText: string; reasoningText: string }) => void | Promise<void>;
   }): Promise<{
     rawText: string;
     reasoningText: string;
@@ -1036,6 +1052,7 @@ export class GradingService {
     signal?: AbortSignal;
     startedAtMs: number;
     onLog?: (message: string) => void | Promise<void>;
+    onStreamProgress?: (payload: { rawText: string; reasoningText: string }) => void | Promise<void>;
   }): Promise<{
     rawText: string;
     reasoningText: string;
@@ -1092,6 +1109,7 @@ export class GradingService {
           reasoningText,
           elapsedMs: now - input.startedAtMs,
           onLog: input.onLog,
+          onStreamProgress: input.onStreamProgress,
         });
       }
     }
@@ -1102,6 +1120,7 @@ export class GradingService {
       elapsedMs: Date.now() - input.startedAtMs,
       done: true,
       onLog: input.onLog,
+      onStreamProgress: input.onStreamProgress,
     });
 
     await this.llmUsage.recordUsage({
@@ -1124,6 +1143,7 @@ export class GradingService {
     signal?: AbortSignal;
     startedAtMs: number;
     onLog?: (message: string) => void | Promise<void>;
+    onStreamProgress?: (payload: { rawText: string; reasoningText: string }) => void | Promise<void>;
   }): Promise<{
     rawText: string;
     reasoningText: string;
@@ -1143,6 +1163,7 @@ export class GradingService {
       done: true,
       mode: 'non-stream',
       onLog: input.onLog,
+      onStreamProgress: input.onStreamProgress,
     });
 
     await this.llmUsage.recordUsage({
@@ -1166,6 +1187,7 @@ export class GradingService {
     done?: boolean;
     mode?: 'stream' | 'non-stream';
     onLog?: (message: string) => void | Promise<void>;
+    onStreamProgress?: (payload: { rawText: string; reasoningText: string }) => void | Promise<void>;
   }): Promise<void> {
     const mode = input.mode ?? 'stream';
     const status = input.done ? 'done' : 'progress';
@@ -1177,6 +1199,10 @@ export class GradingService {
       reasoningChars: input.reasoningText.length,
       textPreview: formatStreamPreview(input.rawText),
       reasoningPreview: formatStreamPreview(input.reasoningText),
+    });
+    await input.onStreamProgress?.({
+      rawText: input.rawText,
+      reasoningText: input.reasoningText,
     });
 
     if (!input.onLog) {

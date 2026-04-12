@@ -14,10 +14,12 @@ import {
 import ImagePreviewTile from '@/components/ImagePreviewTile.vue';
 import StatusPill from '@/components/StatusPill.vue';
 import { useAnswerGeneratorStore } from '@/stores/answer-generator';
+import { useTokenVisualizerStore } from '@/stores/token-visualizer';
 
 const route = useRoute();
 const router = useRouter();
 const store = useAnswerGeneratorStore();
+const visualizerStore = useTokenVisualizerStore();
 const markdown = ref('');
 const retrying = ref(false);
 const saving = ref(false);
@@ -90,7 +92,6 @@ const sourcePreviewImages = computed(() =>
     caption: image.name,
   })),
 );
-
 watch(
   () => draft.value?.markdown,
   (value) => {
@@ -122,6 +123,11 @@ watch(
 watch(
   () => draft.value?.generationReasoningText ?? '',
   async () => {
+    visualizerStore.syncText(
+      `answer-draft:${draft.value?.id ?? draftId.value}`,
+      'reasoning',
+      draft.value?.generationReasoningText ?? '',
+    );
     if (!showReasoningStreamPanel.value) {
       return;
     }
@@ -135,6 +141,11 @@ watch(
 watch(
   () => draft.value?.generationPreviewText ?? '',
   async () => {
+    visualizerStore.syncText(
+      `answer-draft:${draft.value?.id ?? draftId.value}`,
+      'preview',
+      draft.value?.generationPreviewText ?? '',
+    );
     if (!showJsonStreamPanel.value) {
       return;
     }

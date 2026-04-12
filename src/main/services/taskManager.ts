@@ -53,6 +53,8 @@ function toJob(row: typeof tasksTable.$inferSelect): BackgroundJob {
     currentPaperLabel: row.currentPaperLabel ?? undefined,
     summary: row.summary,
     runtimeLogs: extractRuntimeLogs(row.runtimeLogsJson),
+    streamPreviewText: row.streamPreviewText ?? '',
+    streamReasoningText: row.streamReasoningText ?? '',
   };
 }
 
@@ -198,6 +200,8 @@ export class TaskManager {
         currentPaperLabel: input.currentPaperLabel ?? null,
         summary: input.summary,
         runtimeLogsJson: JSON.stringify([]),
+        streamPreviewText: '',
+        streamReasoningText: '',
         createdAt: now,
         updatedAt: now,
       })
@@ -220,6 +224,8 @@ export class TaskManager {
         | 'abortable'
         | 'currentPaperLabel'
         | 'summary'
+        | 'streamPreviewText'
+        | 'streamReasoningText'
         | 'startedAt'
         | 'finishedAt'
       >
@@ -263,6 +269,14 @@ export class TaskManager {
             ? current.currentPaperLabel
             : patch.currentPaperLabel,
         summary: patch.summary ?? current.summary,
+        streamPreviewText:
+          patch.streamPreviewText === undefined
+            ? current.streamPreviewText
+            : patch.streamPreviewText,
+        streamReasoningText:
+          patch.streamReasoningText === undefined
+            ? current.streamReasoningText
+            : patch.streamReasoningText,
         updatedAt: now,
       })
       .where(eq(tasksTable.id, jobId))
@@ -286,6 +300,8 @@ export class TaskManager {
         | 'abortable'
         | 'currentPaperLabel'
         | 'summary'
+        | 'streamPreviewText'
+        | 'streamReasoningText'
         | 'startedAt'
         | 'finishedAt'
       >
@@ -330,6 +346,14 @@ export class TaskManager {
             ? current.currentPaperLabel
             : patch.currentPaperLabel,
         summary: patch?.summary ?? current.summary,
+        streamPreviewText:
+          patch?.streamPreviewText === undefined
+            ? current.streamPreviewText
+            : patch.streamPreviewText,
+        streamReasoningText:
+          patch?.streamReasoningText === undefined
+            ? current.streamReasoningText
+            : patch.streamReasoningText,
         runtimeLogsJson: JSON.stringify(logs),
         updatedAt: now,
       })
@@ -769,6 +793,8 @@ export class TaskManager {
       await this.appendJobLog(jobId, '开始加载项目配置与参考答案', {
         summary: '正在加载项目配置与参考答案',
         currentPaperLabel: '准备批阅',
+        streamPreviewText: '',
+        streamReasoningText: '',
       });
       const { project, referenceAnswerMarkdown, settings } =
         await this.gradingService.prepareProjectGrading(projectId);
@@ -790,6 +816,13 @@ export class TaskManager {
         signal: controller.signal,
         onLog: async (message) => {
           await this.appendJobLog(jobId, `[rubric] ${message}`);
+        },
+        onStreamProgress: async ({ rawText, reasoningText }) => {
+          await this.updateJob(jobId, {
+            currentPaperLabel: '编译 rubric',
+            streamPreviewText: rawText,
+            streamReasoningText: reasoningText,
+          });
         },
       });
       await this.appendJobLog(jobId, `评分 rubric 已就绪，共 ${rubric.questions.length} 道题`, {
@@ -874,6 +907,13 @@ export class TaskManager {
               onRetry: async () => {
                 retryCount += 1;
                 await updateProgress();
+              },
+              onStreamProgress: async ({ rawText, reasoningText }) => {
+                await this.updateJob(jobId, {
+                  currentPaperLabel: paper.paperCode,
+                  streamPreviewText: rawText,
+                  streamReasoningText: reasoningText,
+                });
               },
             });
             if (controller.signal.aborted) {
