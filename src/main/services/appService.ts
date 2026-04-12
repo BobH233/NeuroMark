@@ -67,6 +67,19 @@ export class AppService {
     return result.canceled ? [] : result.filePaths;
   }
 
+  async selectPaperImageDirectory(): Promise<string | null> {
+    const options: OpenDialogOptions = {
+      title: '选择试卷图片目录',
+      properties: ['openDirectory'],
+    };
+    const parent = this.getParentWindow();
+    const result = parent
+      ? await dialog.showOpenDialog(parent, options)
+      : await dialog.showOpenDialog(options);
+
+    return result.canceled ? null : result.filePaths[0] ?? null;
+  }
+
   async selectJsonSavePath(defaultFileName: string): Promise<string | null> {
     const parent = this.getParentWindow();
     const result = parent

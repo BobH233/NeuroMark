@@ -54,6 +54,11 @@ export function registerProjectIpc(services: ServiceBundle): void {
       services.projects.importOriginalImages(projectId, filePaths),
   );
   ipcMain.handle(
+    'projects:import-original-image-directory',
+    (_event, projectId: string, directoryPath: string) =>
+      services.projects.importOriginalImageDirectory(projectId, directoryPath),
+  );
+  ipcMain.handle(
     'projects:update-settings',
     (_event, projectId: string, settings: ProjectSettings) =>
       services.projects.updateProjectSettings(

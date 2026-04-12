@@ -501,6 +501,7 @@ export interface NeuromarkApi {
     getDefaultProjectBasePath: () => Promise<string>;
     selectDirectory: () => Promise<string | null>;
     selectImages: () => Promise<string[]>;
+    selectPaperImageDirectory: () => Promise<string | null>;
     selectJsonSavePath: (defaultFileName: string) => Promise<string | null>;
     openPath: (targetPath: string) => Promise<void>;
     openDevTools: () => Promise<void>;
@@ -523,6 +524,10 @@ export interface NeuromarkApi {
     importOriginalImages: (
       projectId: string,
       filePaths: string[],
+    ) => Promise<ImportOriginalImagesResult>;
+    importOriginalImageDirectory: (
+      projectId: string,
+      directoryPath: string,
     ) => Promise<ImportOriginalImagesResult>;
     updateSettings: (
       projectId: string,

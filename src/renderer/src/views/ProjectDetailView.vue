@@ -84,6 +84,7 @@ const exportScope = ref<ResultExportScope>('graded');
 const projectSettingsSaving = ref(false);
 const removingPaperId = ref('');
 const deletingResultPaperId = ref('');
+const importActionLoading = ref(false);
 const smartNameMatchSnapshot = ref<SmartNameMatchSnapshot | null>(null);
 const smartNameRosterText = ref('');
 const smartNameSubmitting = ref(false);
@@ -767,14 +768,46 @@ async function loadRubricDebug() {
 }
 
 async function importImages() {
-  if (!selectedProject.value) {
+  if (!selectedProject.value || importActionLoading.value) {
     return;
   }
-  const files = await window.neuromark.app.selectImages();
-  if (files.length === 0) {
+  importActionLoading.value = true;
+  try {
+    const files = await window.neuromark.app.selectImages();
+    if (files.length === 0) {
+      return;
+    }
+    const result = await projectsStore.importOriginalImages(selectedProject.value.id, files);
+    message.success(`已导入 ${result.addedPaperCount} 份试卷，共 ${result.addedPageCount} 张图片。`);
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : '导入图片失败。');
+  } finally {
+    importActionLoading.value = false;
+  }
+}
+
+async function importImageDirectory() {
+  if (!selectedProject.value || importActionLoading.value) {
     return;
   }
-  await projectsStore.importOriginalImages(selectedProject.value.id, files);
+  importActionLoading.value = true;
+  try {
+    const directoryPath = await window.neuromark.app.selectPaperImageDirectory();
+    if (!directoryPath) {
+      return;
+    }
+    const result = await projectsStore.importOriginalImageDirectory(
+      selectedProject.value.id,
+      directoryPath,
+    );
+    message.success(
+      `已从文件夹导入 ${result.addedPaperCount} 份试卷，共 ${result.addedPageCount} 张图片。`,
+    );
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : '导入文件夹失败。');
+  } finally {
+    importActionLoading.value = false;
+  }
 }
 
 async function removePaper(paperId: string) {
@@ -1485,7 +1518,12 @@ function goBack() {
           在这里查看项目概览、答卷库、批阅结果与项目设置。
         </p>
         <div v-if="selectedProject" class="hero-actions hero-actions-primary">
-          <n-button secondary type="primary" @click="importImages">导入图片</n-button>
+          <n-button secondary type="primary" :loading="importActionLoading" @click="importImages">
+            导入图片
+          </n-button>
+          <n-button secondary :loading="importActionLoading" @click="importImageDirectory">
+            导入文件夹
+          </n-button>
           <n-button
             v-if="hasActiveScanTask"
             secondary

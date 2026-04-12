@@ -86,9 +86,19 @@ export const useProjectsStore = defineStore('projects', {
       return this.detail;
     },
     async importOriginalImages(projectId: string, filePaths: string[]) {
-      await window.neuromark.projects.importOriginalImages(projectId, filePaths);
+      const result = await window.neuromark.projects.importOriginalImages(projectId, filePaths);
       await this.loadProjects();
       await this.loadProjectDetail(projectId);
+      return result;
+    },
+    async importOriginalImageDirectory(projectId: string, directoryPath: string) {
+      const result = await window.neuromark.projects.importOriginalImageDirectory(
+        projectId,
+        directoryPath,
+      );
+      await this.loadProjects();
+      await this.loadProjectDetail(projectId);
+      return result;
     },
     async updateProjectSettings(projectId: string, settings: ProjectSettings) {
       await window.neuromark.projects.updateSettings(projectId, {

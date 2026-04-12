@@ -8,6 +8,7 @@ export function registerAppIpc(services: ServiceBundle): void {
   );
   ipcMain.handle('app:select-directory', () => services.app.selectDirectory());
   ipcMain.handle('app:select-images', () => services.app.selectImages());
+  ipcMain.handle('app:select-paper-image-directory', () => services.app.selectPaperImageDirectory());
   ipcMain.handle('app:select-json-save-path', (_event, defaultFileName: string) =>
     services.app.selectJsonSavePath(defaultFileName),
   );

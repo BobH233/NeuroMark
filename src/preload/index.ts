@@ -12,6 +12,7 @@ const api: NeuromarkApi = {
     getDefaultProjectBasePath: () => ipcRenderer.invoke('app:get-default-project-base-path'),
     selectDirectory: () => ipcRenderer.invoke('app:select-directory'),
     selectImages: () => ipcRenderer.invoke('app:select-images'),
+    selectPaperImageDirectory: () => ipcRenderer.invoke('app:select-paper-image-directory'),
     selectJsonSavePath: (defaultFileName) =>
       ipcRenderer.invoke('app:select-json-save-path', defaultFileName),
     openPath: (targetPath) => ipcRenderer.invoke('app:open-path', targetPath),
@@ -40,6 +41,8 @@ const api: NeuromarkApi = {
     removePaper: (projectId, paperId) => ipcRenderer.invoke('projects:remove-paper', projectId, paperId),
     importOriginalImages: (projectId, filePaths) =>
       ipcRenderer.invoke('projects:import-original-images', projectId, filePaths),
+    importOriginalImageDirectory: (projectId, directoryPath) =>
+      ipcRenderer.invoke('projects:import-original-image-directory', projectId, directoryPath),
     updateSettings: (projectId, settings) =>
       ipcRenderer.invoke('projects:update-settings', projectId, settings),
     updateReferenceAnswer: (projectId, markdown) =>

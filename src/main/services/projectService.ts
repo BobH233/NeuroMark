@@ -407,6 +407,81 @@ function buildGroupedImportMap(filePaths: string[]): Map<string, string[]> {
   return groups;
 }
 
+async function buildGroupedImportMapFromDirectory(
+  directoryPath: string,
+): Promise<Map<string, string[]>> {
+  if (!(await fs.pathExists(directoryPath))) {
+    throw new Error('所选文件夹不存在。');
+  }
+
+  const entries = await fs.readdir(directoryPath, { withFileTypes: true });
+  const subDirectories = entries
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .sort((left, right) => left.localeCompare(right, 'zh-Hans-CN'));
+
+  if (subDirectories.length === 0) {
+    throw new Error('所选文件夹下没有子文件夹，无法按学生试卷导入。');
+  }
+
+  const groups = new Map<string, string[]>();
+  for (const subDirectoryName of subDirectories) {
+    const sourceDir = path.join(directoryPath, subDirectoryName);
+    const files = await listSortedFiles(sourceDir);
+    if (files.length === 0) {
+      continue;
+    }
+
+    const paperCode = toSafeFolderName(subDirectoryName) || subDirectoryName.trim();
+    groups.set(paperCode, files);
+  }
+
+  if (groups.size === 0) {
+    throw new Error('所选文件夹的子文件夹中没有可导入的图片。');
+  }
+
+  return groups;
+}
+
+async function importGroupedOriginalImages(
+  originalsDir: string,
+  grouped: Map<string, string[]>,
+): Promise<{
+  addedPaperCount: number;
+  addedPageCount: number;
+}> {
+  let addedPaperCount = 0;
+  let addedPageCount = 0;
+
+  for (const [paperCode, sourceFiles] of grouped.entries()) {
+    const paperDir = path.join(originalsDir, paperCode);
+    await fs.ensureDir(paperDir);
+    const existingPaths = await listSortedFiles(paperDir);
+    const wasEmpty = existingPaths.length === 0;
+    let nextPageIndex = existingPaths.length;
+
+    for (const sourcePath of sourceFiles) {
+      nextPageIndex += 1;
+      const extension = path.extname(sourcePath).toLowerCase() || '.jpg';
+      const targetPath = path.join(
+        paperDir,
+        `${paperCode}_${String(nextPageIndex).padStart(2, '0')}${extension}`,
+      );
+      await fs.copy(sourcePath, targetPath, { overwrite: false, errorOnExist: false });
+      addedPageCount += 1;
+    }
+
+    if (wasEmpty) {
+      addedPaperCount += 1;
+    }
+  }
+
+  return {
+    addedPaperCount,
+    addedPageCount,
+  };
+}
+
 function inferScanStatus(pages: PaperPage[]): PaperRecord['scanStatus'] {
   if (pages.length === 0) {
     return 'pending';
@@ -924,31 +999,27 @@ export class ProjectService {
     const project = await this.getProjectById(projectId);
     const structure = getProjectStructure(project.rootPath);
     const grouped = buildGroupedImportMap(filePaths);
-    let addedPaperCount = 0;
-    let addedPageCount = 0;
+    const { addedPaperCount, addedPageCount } = await importGroupedOriginalImages(
+      structure.originalsDir,
+      grouped,
+    );
 
-    for (const [paperCode, sourceFiles] of grouped.entries()) {
-      const paperDir = path.join(structure.originalsDir, paperCode);
-      await fs.ensureDir(paperDir);
-      const existingPaths = await listSortedFiles(paperDir);
-      const wasEmpty = existingPaths.length === 0;
-      let nextPageIndex = existingPaths.length;
+    await this.recomputeStats(projectId);
+    return {
+      projectId,
+      addedPaperCount,
+      addedPageCount,
+    };
+  }
 
-      for (const sourcePath of sourceFiles) {
-        nextPageIndex += 1;
-        const extension = path.extname(sourcePath).toLowerCase() || '.jpg';
-        const targetPath = path.join(
-          paperDir,
-          `${paperCode}_${String(nextPageIndex).padStart(2, '0')}${extension}`,
-        );
-        await fs.copy(sourcePath, targetPath, { overwrite: false, errorOnExist: false });
-        addedPageCount += 1;
-      }
-
-      if (wasEmpty) {
-        addedPaperCount += 1;
-      }
-    }
+  async importOriginalImageDirectory(projectId: string, directoryPath: string) {
+    const project = await this.getProjectById(projectId);
+    const structure = getProjectStructure(project.rootPath);
+    const grouped = await buildGroupedImportMapFromDirectory(directoryPath);
+    const { addedPaperCount, addedPageCount } = await importGroupedOriginalImages(
+      structure.originalsDir,
+      grouped,
+    );
 
     await this.recomputeStats(projectId);
     return {
