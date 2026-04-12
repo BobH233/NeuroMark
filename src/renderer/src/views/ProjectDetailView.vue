@@ -68,6 +68,7 @@ const PREVIEW_DISPLAY_OPTIONS_STORAGE_KEY_PREFIX = 'neuromark:preview-display-op
 
 const activeTab = ref('overview');
 const selectedResultId = ref('');
+const resultSearchKeyword = ref('');
 type ResultSortMode = 'input-order' | 'score-desc' | 'score-asc' | 'student-id';
 const resultSortMode = ref<ResultSortMode>('input-order');
 const editableResult = ref<FinalResult | null>(null);
@@ -292,6 +293,22 @@ const gradedResultEntries = computed(() =>
       return fallback;
     }),
 );
+const normalizedResultSearchKeyword = computed(() =>
+  normalizeResultSearchText(resultSearchKeyword.value),
+);
+const reviewResultEntries = computed(() =>
+  gradedResultEntries.value.filter((entry) =>
+    matchesResultSearch(entry, normalizedResultSearchKeyword.value),
+  ),
+);
+const reviewUngradedPapers = computed(() =>
+  ungradedPapers.value.filter((paper) =>
+    normalizeResultSearchText(paper.paperCode ?? '').includes(normalizedResultSearchKeyword.value),
+  ),
+);
+const selectableResultEntries = computed(() =>
+  activeTab.value === 'results' ? reviewResultEntries.value : gradedResultEntries.value,
+);
 
 function buildOriginalPreviewImage(
   paper: PaperRecord,
@@ -455,11 +472,10 @@ const smartNameMatchUncertainSuggestions = computed(() =>
 );
 const smartNameMatchHasPreview = computed(() => Boolean(smartNameMatchState.value.previewText.trim()));
 const selectedResult = computed<ResultRecord | null>(() => {
-  return (
-    results.value.find((item) => item.id === selectedResultId.value) ??
-    gradedResultEntries.value[0]?.result ??
-    null
+  const selectedEntry = selectableResultEntries.value.find(
+    (entry) => entry.result.id === selectedResultId.value,
   );
+  return selectedEntry?.result ?? selectableResultEntries.value[0]?.result ?? null;
 });
 
 const selectedPaper = computed(() => {
@@ -613,7 +629,7 @@ watch(
 );
 
 watch(
-  () => gradedResultEntries.value,
+  () => selectableResultEntries.value,
   (value) => {
     if (!value.length) {
       selectedResultId.value = '';
@@ -626,6 +642,26 @@ watch(
   },
   { immediate: true },
 );
+
+function normalizeResultSearchText(value: string): string {
+  return value.trim().toLocaleLowerCase('zh-CN');
+}
+
+function matchesResultSearch(
+  entry: (typeof gradedResultEntries.value)[number],
+  keyword: string,
+): boolean {
+  if (!keyword) {
+    return true;
+  }
+
+  return [
+    entry.paperLabel,
+    entry.studentName,
+    entry.studentId,
+    entry.className,
+  ].some((field) => normalizeResultSearchText(field ?? '').includes(keyword));
+}
 
 watch(
   () => selectedResult.value,
@@ -1897,6 +1933,12 @@ function goBack() {
                     :options="resultSortOptions"
                   />
                 </div>
+                <n-input
+                  v-model:value="resultSearchKeyword"
+                  size="small"
+                  clearable
+                  placeholder="搜索学号、姓名、班级或试卷名称"
+                />
                 <div class="result-sidebar-stats">
                   <n-tag size="small" round :bordered="false">已批改 {{ results.length }}</n-tag>
                   <n-tag size="small" round type="warning" :bordered="false">未批改 {{ ungradedPapers.length }}</n-tag>
@@ -1907,7 +1949,7 @@ function goBack() {
                 <div class="result-nav-section">
                   <div class="result-list-head">已批改</div>
                   <button
-                    v-for="entry in gradedResultEntries"
+                    v-for="entry in reviewResultEntries"
                     :key="entry.result.id"
                     class="result-row"
                     :class="{ active: entry.result.id === selectedResult?.id }"
@@ -1948,15 +1990,15 @@ function goBack() {
                       </div>
                     </div>
                   </button>
-                  <div v-if="!gradedResultEntries.length" class="result-nav-empty">
-                    还没有已批改答卷。
+                  <div v-if="!reviewResultEntries.length" class="result-nav-empty">
+                    {{ resultSearchKeyword.trim() ? '未找到匹配的已批改答卷。' : '还没有已批改答卷。' }}
                   </div>
                 </div>
 
                 <div class="result-nav-section">
                   <div class="result-list-head">未批改</div>
                   <div
-                    v-for="paper in ungradedPapers"
+                    v-for="paper in reviewUngradedPapers"
                     :key="paper.id"
                     class="result-row result-row--pending"
                   >
@@ -1976,8 +2018,8 @@ function goBack() {
                       </div>
                     </div>
                   </div>
-                  <div v-if="!ungradedPapers.length" class="result-nav-empty">
-                    当前没有待批改答卷。
+                  <div v-if="!reviewUngradedPapers.length" class="result-nav-empty">
+                    {{ resultSearchKeyword.trim() ? '未找到匹配的未批改答卷。' : '当前没有待批改答卷。' }}
                   </div>
                 </div>
               </div>
