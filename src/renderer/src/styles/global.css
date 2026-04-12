@@ -133,6 +133,7 @@ textarea {
 .shell-content {
   position: absolute;
   inset: 0;
+  min-width: 0;
   min-height: 0;
   overflow-x: hidden;
   overflow-y: auto;
@@ -317,6 +318,7 @@ textarea {
 .page-stack {
   display: grid;
   gap: 18px;
+  min-width: 0;
 }
 
 .llm-usage-stat-grid {
@@ -443,6 +445,11 @@ textarea {
   justify-content: space-between;
   align-items: flex-end;
   gap: 20px;
+  min-width: 0;
+}
+
+.hero-panel > * {
+  min-width: 0;
 }
 
 .project-grid {
@@ -665,6 +672,8 @@ textarea {
 
 .detail-panel {
   padding: 18px;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .projects-empty-state {
@@ -674,6 +683,7 @@ textarea {
 .project-detail-head {
   flex-direction: column;
   align-items: flex-start;
+  min-width: 0;
 }
 
 .project-detail-actions {
@@ -689,10 +699,21 @@ textarea {
 
 .project-overview-stack {
   padding: 4px 8px 12px;
+  min-width: 0;
 }
 
 .project-overview-section + .project-overview-section {
   margin-top: 8px;
+}
+
+.detail-panel :is(.n-tabs, .n-tabs-pane-wrapper, .n-tab-pane) {
+  min-width: 0;
+}
+
+.detail-panel .n-tabs-nav-scroll-wrapper,
+.detail-panel .n-tabs-wrapper {
+  min-width: 0;
+  max-width: 100%;
 }
 
 .project-section-head {
@@ -707,17 +728,19 @@ textarea {
 
 .project-section-copy {
   color: var(--muted);
+  min-width: 0;
 }
 
 .metrics-grid.project-overview-metrics {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
   align-items: stretch;
+  width: 100%;
 }
 
 .project-overview-metrics .metric-card {
-  flex: 1 1 220px;
-  max-width: 260px;
+  width: 100%;
+  max-width: none;
 }
 
 .flat-card {
@@ -759,8 +782,21 @@ textarea {
 }
 
 .project-overview-metrics .metric-card.metric-card-wide {
-  flex-basis: 420px;
-  max-width: 520px;
+  grid-column: span 2;
+}
+
+.project-overview-section .surface-card,
+.project-overview-section .flat-card,
+.project-overview-section .n-card,
+.project-overview-section .n-card__content {
+  min-width: 0;
+  max-width: 100%;
+}
+
+@media (max-width: 900px) {
+  .project-overview-metrics .metric-card.metric-card-wide {
+    grid-column: span 1;
+  }
 }
 
 .two-pane,
@@ -2704,6 +2740,15 @@ textarea {
   .create-project-toggle-row {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .hero-panel {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .hero-actions {
+    flex-wrap: wrap;
   }
 }
 

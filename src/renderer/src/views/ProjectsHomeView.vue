@@ -1,18 +1,36 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { NButton, NCard, NEmpty, useMessage } from 'naive-ui';
-import type { CreateProjectInput } from '@preload/contracts';
+import type { BackgroundJob, CreateProjectInput, ProjectMeta } from '@preload/contracts';
 import CreateProjectModal from '@/components/CreateProjectModal.vue';
 import StatusPill from '@/components/StatusPill.vue';
 import { useProjectsStore } from '@/stores/projects';
+import { useTasksStore } from '@/stores/tasks';
 
 const router = useRouter();
 const message = useMessage();
 const projectsStore = useProjectsStore();
+const tasksStore = useTasksStore();
 
 const showCreateModal = ref(false);
 const creatingProject = ref(false);
+
+const latestTaskByProjectId = computed(() => {
+  const taskMap = new Map<string, BackgroundJob>();
+  const sortedTasks = [...tasksStore.tasks].sort(
+    (left, right) =>
+      new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime(),
+  );
+
+  for (const task of sortedTasks) {
+    if (!taskMap.has(task.projectId)) {
+      taskMap.set(task.projectId, task);
+    }
+  }
+
+  return taskMap;
+});
 
 onMounted(() => {
   projectsStore.clearSelection();
@@ -48,6 +66,10 @@ async function handleCreateProject(payload: CreateProjectInput) {
 
 function openProject(projectId: string) {
   router.push(`/projects/${projectId}`);
+}
+
+function getProjectTaskSummary(project: ProjectMeta): string {
+  return latestTaskByProjectId.value.get(project.id)?.summary ?? project.stats.lastTaskSummary;
 }
 </script>
 
@@ -85,7 +107,7 @@ function openProject(projectId: string) {
         </div>
         <div class="project-card-footer">
           <span>平均分 {{ project.stats.averageScore }}</span>
-          <span>{{ project.stats.lastTaskSummary }}</span>
+          <span>{{ getProjectTaskSummary(project) }}</span>
         </div>
       </article>
     </section>
