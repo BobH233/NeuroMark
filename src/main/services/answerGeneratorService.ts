@@ -30,6 +30,10 @@ import {
 } from './llmStreamUtils';
 import { SettingsService } from './settingsService';
 import { TaskManager } from './taskManager';
+import {
+  shouldWriteLlmJsonDebugArtifact,
+  writeLlmJsonDebugArtifact,
+} from './llmJsonDebug';
 
 type AnswerGeneratorListener = (snapshot: AnswerGeneratorSnapshot) => void;
 
@@ -623,6 +627,7 @@ export class AnswerGeneratorService {
     const timeoutSeconds = Math.max(1, Math.round(settings.timeoutMs / 1000));
     const requestAbortController = new AbortController();
     let hardTimedOut = false;
+    let lastRawText = '';
     const hardTimeoutTimer = setTimeout(() => {
       hardTimedOut = true;
       requestAbortController.abort();
@@ -730,6 +735,7 @@ export class AnswerGeneratorService {
         signal: requestAbortController.signal,
       });
       const rawText = response.rawText;
+      lastRawText = rawText;
 
       if (waitingHeartbeat) {
         clearInterval(waitingHeartbeat);
@@ -798,6 +804,15 @@ export class AnswerGeneratorService {
       const message = hardTimedOut
         ? `请求超时（已超过 ${timeoutSeconds} 秒），已中止本次生成。`
         : this.toGenerationErrorMessage(error);
+      const debugDumpPath =
+        lastRawText && shouldWriteLlmJsonDebugArtifact(error)
+          ? await writeLlmJsonDebugArtifact({
+              scope: 'answer-generation',
+              identifier: draft.id,
+              rawOutput: lastRawText,
+              errorMessage: message,
+            })
+          : null;
       const failedAt = new Date().toISOString();
       const db = getDatabase();
 
@@ -808,6 +823,7 @@ export class AnswerGeneratorService {
           errorName: error instanceof Error ? error.name : 'UnknownError',
           message,
           rawError: error instanceof Error ? error.message : String(error),
+          debugDumpPath,
         },
       });
 
@@ -820,6 +836,7 @@ export class AnswerGeneratorService {
           generationLogsJson: JSON.stringify([
             ...this.getExistingLogs(draft.id),
             createGenerationLog(`生成失败：${message}`),
+            ...(debugDumpPath ? [createGenerationLog(`调试原文已写入：${debugDumpPath}`)] : []),
           ].slice(-60)),
           lastGenerationCompletedAt: failedAt,
           updatedAt: failedAt,

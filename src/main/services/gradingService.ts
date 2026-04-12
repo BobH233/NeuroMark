@@ -35,6 +35,10 @@ import type {
   CompiledRubric,
   GradingServiceSettings,
 } from './gradingTypes';
+import {
+  shouldWriteLlmJsonDebugArtifact,
+  writeLlmJsonDebugArtifact,
+} from './llmJsonDebug';
 
 const FENCED_JSON_PATTERN = /```(?:json)?\s*(\{[\s\S]*\})\s*```/i;
 
@@ -626,6 +630,15 @@ export class GradingService {
       return parsed;
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : '未知错误';
+      const debugDumpPath =
+        rawOutput && shouldWriteLlmJsonDebugArtifact(error)
+          ? await writeLlmJsonDebugArtifact({
+              scope: 'grading-rubric',
+              identifier: `${input.projectName}-v${input.referenceAnswerVersion}`,
+              rawOutput,
+              errorMessage,
+            })
+          : null;
       logLlmResult('grading-rubric', {
         status: 'error',
         detail: {
@@ -633,10 +646,11 @@ export class GradingService {
           message: errorMessage,
           rawOutput: rawOutput ? shortenText(rawOutput) : '(empty)',
           parsedCandidate,
+          debugDumpPath,
         },
       });
       throw new Error(
-        `${errorMessage}\n模型原始返回：\n${rawOutput ? shortenText(rawOutput, 1200) : '(empty)'}`,
+        `${errorMessage}${debugDumpPath ? `\n调试原文已写入：${debugDumpPath}` : ''}\n模型原始返回：\n${rawOutput ? shortenText(rawOutput, 1200) : '(empty)'}`,
       );
     }
   }
@@ -763,6 +777,15 @@ export class GradingService {
       }
     }
 
+    const debugDumpPath =
+      lastRawOutput && shouldWriteLlmJsonDebugArtifact(lastError)
+        ? await writeLlmJsonDebugArtifact({
+            scope: 'grading-paper',
+            identifier: input.paper.paperCode,
+            rawOutput: lastRawOutput,
+            errorMessage: lastError?.message ?? '未知批阅错误',
+          })
+        : null;
     logLlmResult(`grading-paper:${input.paper.paperCode}`, {
       status: 'error',
       detail: {
@@ -770,8 +793,12 @@ export class GradingService {
         message: lastError?.message ?? '未知批阅错误',
         rawOutput: lastRawOutput ? shortenText(lastRawOutput) : '(empty)',
         parsedCandidate: lastParsedCandidate,
+        debugDumpPath,
       },
     });
+    if (lastError && debugDumpPath) {
+      throw new Error(`${lastError.message}\n调试原文已写入：${debugDumpPath}`);
+    }
     throw lastError ?? new Error('批阅失败');
   }
 
