@@ -37,6 +37,7 @@ import type {
   ScoreBreakdownItem,
   SmartNameMatchSnapshot,
   SmartNameMatchSuggestion,
+  ProjectSettings,
 } from '@preload/contracts';
 import ImagePreviewTile from '@/components/ImagePreviewTile.vue';
 import JsonTreeView from '@/components/JsonTreeView.vue';
@@ -71,6 +72,14 @@ const editableResult = ref<FinalResult | null>(null);
 const referenceAnswerDraft = ref('');
 const referenceAnswerSaving = ref(false);
 const projectNameDraft = ref('');
+const projectSettingsDraft = ref<ProjectSettings>({
+  gradingConcurrency: 1,
+  drawRegions: false,
+  defaultImageDetail: 'high',
+  enableScanPostProcess: true,
+  skipScanProcessing: false,
+});
+const projectSettingsDraftProjectId = ref('');
 const rubricLoading = ref(false);
 const referenceAnswerDraftProjectId = ref('');
 const referenceAnswerDraftVersion = ref(0);
@@ -336,6 +345,21 @@ const showRubricDebugTab = computed(() => debugPanelStore.enabled);
 const referenceAnswerDirty = computed(() =>
   detail.value ? referenceAnswerDraft.value !== detail.value.referenceAnswerMarkdown : false,
 );
+const projectSettingsDirty = computed(() => {
+  if (!selectedProject.value) {
+    return false;
+  }
+
+  const current = selectedProject.value;
+  return (
+    projectNameDraft.value !== current.name ||
+    projectSettingsDraft.value.gradingConcurrency !== current.settings.gradingConcurrency ||
+    projectSettingsDraft.value.drawRegions !== current.settings.drawRegions ||
+    projectSettingsDraft.value.defaultImageDetail !== current.settings.defaultImageDetail ||
+    projectSettingsDraft.value.enableScanPostProcess !== current.settings.enableScanPostProcess ||
+    projectSettingsDraft.value.skipScanProcessing !== current.settings.skipScanProcessing
+  );
+});
 const selectedResultUsesLatestReference = computed(() => {
   if (!selectedResult.value) {
     return true;
@@ -519,16 +543,42 @@ function getScoreBreakdownBadgeClass(point: ScoreBreakdownItem): string {
 }
 
 watch(
-  () => [selectedProject.value?.id, selectedProject.value?.name] as const,
-  ([nextProjectId, nextProjectName]) => {
-    if (!nextProjectId) {
+  () =>
+    selectedProject.value
+      ? {
+          id: selectedProject.value.id,
+          name: selectedProject.value.name,
+          settings: selectedProject.value.settings,
+        }
+      : null,
+  (nextProject) => {
+    if (!nextProject) {
       projectNameDraft.value = '';
+      projectSettingsDraftProjectId.value = '';
+      projectSettingsDraft.value = {
+        gradingConcurrency: 1,
+        drawRegions: false,
+        defaultImageDetail: 'high',
+        enableScanPostProcess: true,
+        skipScanProcessing: false,
+      };
       return;
     }
 
-    projectNameDraft.value = nextProjectName ?? '';
+    const switchedProject = projectSettingsDraftProjectId.value !== nextProject.id;
+    if (switchedProject || (!projectSettingsDirty.value && !projectSettingsSaving.value)) {
+      projectSettingsDraftProjectId.value = nextProject.id;
+      projectNameDraft.value = nextProject.name;
+      projectSettingsDraft.value = {
+        gradingConcurrency: nextProject.settings.gradingConcurrency,
+        drawRegions: nextProject.settings.drawRegions,
+        defaultImageDetail: nextProject.settings.defaultImageDetail,
+        enableScanPostProcess: nextProject.settings.enableScanPostProcess,
+        skipScanProcessing: nextProject.settings.skipScanProcessing,
+      };
+    }
   },
-  { immediate: true },
+  { immediate: true, deep: true },
 );
 
 watch(
@@ -1271,11 +1321,11 @@ async function saveProjectSettings() {
   }
 
   const nextSettings = {
-    gradingConcurrency: selectedProject.value.settings.gradingConcurrency,
-    drawRegions: selectedProject.value.settings.drawRegions,
-    defaultImageDetail: selectedProject.value.settings.defaultImageDetail,
-    enableScanPostProcess: selectedProject.value.settings.enableScanPostProcess,
-    skipScanProcessing: selectedProject.value.settings.skipScanProcessing,
+    gradingConcurrency: projectSettingsDraft.value.gradingConcurrency,
+    drawRegions: projectSettingsDraft.value.drawRegions,
+    defaultImageDetail: projectSettingsDraft.value.defaultImageDetail,
+    enableScanPostProcess: projectSettingsDraft.value.enableScanPostProcess,
+    skipScanProcessing: projectSettingsDraft.value.skipScanProcessing,
   };
   const projectIdToSave = selectedProject.value.id;
   const nameChanged = nextName !== selectedProject.value.name;
@@ -2844,14 +2894,14 @@ function goBack() {
                 <div class="two-col create-project-settings-grid">
                   <n-form-item label="批阅并行数">
                     <n-input-number
-                      v-model:value="selectedProject.settings.gradingConcurrency"
+                      v-model:value="projectSettingsDraft.gradingConcurrency"
                       :min="1"
                       class="create-project-half-input"
                     />
                   </n-form-item>
                   <n-form-item label="图像细节">
                     <n-select
-                      v-model:value="selectedProject.settings.defaultImageDetail"
+                      v-model:value="projectSettingsDraft.defaultImageDetail"
                       class="create-project-half-input"
                       :options="[
                         { label: '高', value: 'high' },
@@ -2866,7 +2916,7 @@ function goBack() {
                     <div class="field-label">跳过扫描处理</div>
                     <div class="field-hint">开启后不再识别边界，直接将原始答卷图片作为扫描结果使用。</div>
                   </div>
-                  <n-switch v-model:value="selectedProject.settings.skipScanProcessing" />
+                  <n-switch v-model:value="projectSettingsDraft.skipScanProcessing" />
                 </div>
                 <div class="create-project-toggle-row">
                   <div class="create-project-toggle-copy">
@@ -2874,8 +2924,8 @@ function goBack() {
                     <div class="field-hint">关闭后只做边界识别、透视拉平与裁剪，不做增强和二值化。</div>
                   </div>
                   <n-switch
-                    v-model:value="selectedProject.settings.enableScanPostProcess"
-                    :disabled="selectedProject.settings.skipScanProcessing"
+                    v-model:value="projectSettingsDraft.enableScanPostProcess"
+                    :disabled="projectSettingsDraft.skipScanProcessing"
                   />
                 </div>
                 <div class="create-project-toggle-row">
@@ -2883,7 +2933,7 @@ function goBack() {
                     <div class="field-label">绘制批阅区域</div>
                     <div class="field-hint">开启后会在批阅视图中显示题目边界框，便于复核。</div>
                   </div>
-                  <n-switch v-model:value="selectedProject.settings.drawRegions" />
+                  <n-switch v-model:value="projectSettingsDraft.drawRegions" />
                 </div>
                 <n-button type="primary" :loading="projectSettingsSaving" @click="saveProjectSettings">
                   保存项目设置

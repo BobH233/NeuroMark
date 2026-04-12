@@ -1,4 +1,4 @@
-import { ipcMain } from 'electron';
+import { BrowserWindow, ipcMain } from 'electron';
 import { z } from 'zod';
 import type { CreateProjectInput, ProjectSettings } from '@preload/contracts';
 import type { ServiceBundle } from '@main/services/types';
@@ -27,6 +27,11 @@ const referenceAnswerSchema = z.string().trim().min(1);
 
 export function registerProjectIpc(services: ServiceBundle): void {
   ipcMain.handle('projects:list', () => services.projects.listProjects());
+  services.projects.onUpdated((projects) => {
+    for (const win of BrowserWindow.getAllWindows()) {
+      win.webContents.send('projects:updated', projects);
+    }
+  });
   ipcMain.handle('projects:validate-create', (_event, payload: Pick<CreateProjectInput, 'name' | 'basePath'>) =>
     services.projects.validateCreateProject(createProjectSchema.parse(payload)),
   );

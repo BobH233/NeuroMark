@@ -809,6 +809,7 @@ export class TaskManager {
       let settledCount = 0;
       let succeededCount = 0;
       let failedCount = 0;
+      let retryCount = 0;
       const activeLabels = new Set<string>();
       const queue = new PQueue({
         concurrency: Math.max(project.settings.gradingConcurrency, 1),
@@ -823,8 +824,8 @@ export class TaskManager {
           activeLabels.size > 0 ? Array.from(activeLabels).slice(0, 3).join(', ') : '等待收尾';
         const summary =
           settledCount >= totalPaperCount
-            ? `批阅结束，成功 ${succeededCount} 份，失败 ${failedCount} 份`
-            : `正在批阅答卷，已完成 ${settledCount}/${totalPaperCount}，成功 ${succeededCount}，失败 ${failedCount}`;
+            ? `批阅结束，成功 ${succeededCount} 份，失败 ${failedCount} 份，重试 ${retryCount} 次`
+            : `正在批阅答卷，已完成 ${settledCount}/${totalPaperCount}，成功 ${succeededCount}，失败 ${failedCount}，重试 ${retryCount} 次`;
 
         db.update(tasksTable)
           .set({
@@ -869,6 +870,10 @@ export class TaskManager {
               signal: controller.signal,
               onLog: async (message) => {
                 await this.appendJobLog(jobId, `[${paper.paperCode}] ${message}`);
+              },
+              onRetry: async () => {
+                retryCount += 1;
+                await updateProgress();
               },
             });
             if (controller.signal.aborted) {
@@ -925,7 +930,7 @@ export class TaskManager {
           eta: null,
           finishedAt: new Date().toISOString(),
           currentPaperLabel: failedCount > 0 ? '存在失败答卷待处理' : '全部完成',
-          summary: `批阅任务已完成，成功 ${succeededCount} 份，失败 ${failedCount} 份`,
+          summary: `批阅任务已完成，成功 ${succeededCount} 份，失败 ${failedCount} 份，重试 ${retryCount} 次`,
           updatedAt: new Date().toISOString(),
         })
         .where(eq(tasksTable.id, jobId))

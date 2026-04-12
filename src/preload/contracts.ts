@@ -487,6 +487,7 @@ export interface AnswerDraftInput {
 }
 
 export type TaskUpdateHandler = (tasks: BackgroundJob[]) => void;
+export type ProjectUpdateHandler = (projects: ProjectMeta[]) => void;
 export type AnswerGeneratorUpdateHandler = (
   snapshot: AnswerGeneratorSnapshot,
 ) => void;
@@ -537,6 +538,7 @@ export interface NeuromarkApi {
       projectId: string,
       markdown: string,
     ) => Promise<ProjectMeta>;
+    onUpdated: (handler: ProjectUpdateHandler) => () => void;
   };
   scan: {
     start: (projectId: string, options?: StartJobOptions) => Promise<BackgroundJob>;

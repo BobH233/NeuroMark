@@ -19,6 +19,7 @@ export const useProjectsStore = defineStore('projects', {
     detail: null as ProjectDetail | null,
     rubricDebug: null as ProjectRubricDebug | null,
     loading: false,
+    unbind: null as null | (() => void),
   }),
   getters: {
     selectedProject(state) {
@@ -28,6 +29,18 @@ export const useProjectsStore = defineStore('projects', {
   actions: {
     async bootstrap() {
       await this.loadProjects();
+      if (!this.unbind) {
+        this.unbind = window.neuromark.projects.onUpdated((projects) => {
+          this.projects = projects;
+          if (!this.projects.some((item) => item.id === this.selectedProjectId)) {
+            this.clearSelection();
+            return;
+          }
+          if (this.selectedProjectId) {
+            void this.loadProjectDetail(this.selectedProjectId);
+          }
+        });
+      }
     },
     async loadProjects() {
       this.projects = await window.neuromark.projects.list();

@@ -665,6 +665,7 @@ export class GradingService {
     settings: GradingServiceSettings;
     signal?: AbortSignal;
     onLog?: (message: string) => void | Promise<void>;
+    onRetry?: () => void | Promise<void>;
   }): Promise<{
     modelResult: ModelResult;
     finalResult: FinalResult;
@@ -773,6 +774,7 @@ export class GradingService {
         if (attempt >= attempts || /已取消/.test(lastError.message)) {
           break;
         }
+        await input.onRetry?.();
         await input.onLog?.(`准备开始第 ${attempt + 1} 次重试`);
       }
     }

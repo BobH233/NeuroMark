@@ -28,6 +28,8 @@ import {
 } from '@main/database/schema';
 import { processDocumentImage } from './documentScanService';
 
+type ProjectListener = (projects: ProjectMeta[]) => void;
+
 const SUPPORTED_IMAGE_EXTENSIONS = new Set([
   '.jpg',
   '.jpeg',
@@ -497,6 +499,15 @@ function inferScanStatus(pages: PaperPage[]): PaperRecord['scanStatus'] {
 }
 
 export class ProjectService {
+  private listeners = new Set<ProjectListener>();
+
+  onUpdated(listener: ProjectListener): () => void {
+    this.listeners.add(listener);
+    return () => {
+      this.listeners.delete(listener);
+    };
+  }
+
   async ensureSeedData(): Promise<void> {
     return;
   }
@@ -1459,7 +1470,15 @@ export class ProjectService {
       updatedAt,
     };
     await writeProjectManifest(updated);
+    await this.emit();
     return updated;
+  }
+
+  private async emit(): Promise<void> {
+    const projects = await this.listProjects();
+    for (const listener of this.listeners) {
+      listener(projects);
+    }
   }
 
   async completeMockScan(projectId: string): Promise<void> {

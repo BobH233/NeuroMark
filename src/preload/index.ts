@@ -3,6 +3,7 @@ import type {
   AnswerGeneratorUpdateHandler,
   DebugLogHandler,
   NeuromarkApi,
+  ProjectUpdateHandler,
   TaskUpdateHandler,
 } from './contracts';
 
@@ -47,6 +48,15 @@ const api: NeuromarkApi = {
       ipcRenderer.invoke('projects:update-settings', projectId, settings),
     updateReferenceAnswer: (projectId, markdown) =>
       ipcRenderer.invoke('projects:update-reference-answer', projectId, markdown),
+    onUpdated: (handler: ProjectUpdateHandler) => {
+      const listener = (_event: Electron.IpcRendererEvent, projects: unknown) => {
+        handler(projects as any);
+      };
+      ipcRenderer.on('projects:updated', listener);
+      return () => {
+        ipcRenderer.removeListener('projects:updated', listener);
+      };
+    },
   },
   scan: {
     start: (projectId, options) => ipcRenderer.invoke('scan:start', projectId, options),
