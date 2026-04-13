@@ -2,7 +2,7 @@
 import { computed, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { NButton, NCard, NEmpty, useMessage } from 'naive-ui';
-import type { BackgroundJob, CreateProjectInput, ProjectMeta } from '@preload/contracts';
+import type { BackgroundJob, CreateProjectInput, JobStatus, ProjectMeta } from '@preload/contracts';
 import CreateProjectModal from '@/components/CreateProjectModal.vue';
 import StatusPill from '@/components/StatusPill.vue';
 import { useProjectsStore } from '@/stores/projects';
@@ -22,6 +22,24 @@ const latestTaskByProjectId = computed(() => {
     (left, right) =>
       new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime(),
   );
+
+  for (const task of sortedTasks) {
+    if (!taskMap.has(task.projectId)) {
+      taskMap.set(task.projectId, task);
+    }
+  }
+
+  return taskMap;
+});
+
+const activeTaskByProjectId = computed(() => {
+  const taskMap = new Map<string, BackgroundJob>();
+  const sortedTasks = [...tasksStore.tasks]
+    .filter((task) => ['queued', 'running', 'paused'].includes(task.status))
+    .sort(
+      (left, right) =>
+        new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime(),
+    );
 
   for (const task of sortedTasks) {
     if (!taskMap.has(task.projectId)) {
@@ -71,6 +89,27 @@ function openProject(projectId: string) {
 function getProjectTaskSummary(project: ProjectMeta): string {
   return latestTaskByProjectId.value.get(project.id)?.summary ?? project.stats.lastTaskSummary;
 }
+
+function getProjectStatus(project: ProjectMeta): JobStatus | 'pending' {
+  const activeTask = activeTaskByProjectId.value.get(project.id);
+  if (activeTask) {
+    return activeTask.status;
+  }
+
+  const latestTask = latestTaskByProjectId.value.get(project.id);
+  if (latestTask && ['completed', 'failed', 'cancelled'].includes(latestTask.status)) {
+    return latestTask.status;
+  }
+
+  if (
+    project.stats.importedPaperCount > 0 &&
+    project.stats.gradedPaperCount >= project.stats.importedPaperCount
+  ) {
+    return 'completed';
+  }
+
+  return 'pending';
+}
 </script>
 
 <template>
@@ -98,7 +137,7 @@ function getProjectTaskSummary(project: ProjectMeta): string {
       >
         <div class="project-card-head">
           <h3>{{ project.name }}</h3>
-          <StatusPill value="completed" />
+          <StatusPill :value="getProjectStatus(project)" />
         </div>
         <div class="project-card-metrics">
           <span>{{ project.stats.importedPaperCount }} 套导入</span>
