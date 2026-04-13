@@ -1,6 +1,6 @@
 {
   "name": "neuromark-client",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "NeuroMark Electron 桌面端首版骨架",
   "type": "module",
   "main": "dist-electron/main/index.js",
