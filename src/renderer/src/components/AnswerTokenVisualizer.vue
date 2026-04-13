@@ -11,6 +11,7 @@ const props = withDefaults(defineProps<{
 interface TokenBlock {
   id: string;
   text: string;
+  hasEnteredStage: boolean;
   x: number;
   y: number;
   vx: number;
@@ -170,16 +171,16 @@ function createBlock(text: string, source: 'preview' | 'reasoning'): TokenBlock 
   if (spawnEdge === 'left') {
     spawnState = {
       x: -width * 0.9,
-      y: latestHeight * (0.22 + Math.random() * 0.34),
-      vx: 9.2 + Math.random() * 4.8,
-      vy: -1.6 + Math.random() * 2.8,
+      y: latestHeight * (0.68 + Math.random() * 0.12),
+      vx: 10 + Math.random() * 4.6,
+      vy: -(12 + Math.random() * 2.6),
     };
   } else {
     spawnState = {
       x: latestWidth + width * 0.9,
-      y: latestHeight * (0.22 + Math.random() * 0.34),
-      vx: -(9.2 + Math.random() * 4.8),
-      vy: -1.6 + Math.random() * 2.8,
+      y: latestHeight * (0.68 + Math.random() * 0.12),
+      vx: -(10 + Math.random() * 4.6),
+      vy: -(12 + Math.random() * 2.6),
     };
   }
 
@@ -195,10 +196,16 @@ function createBlock(text: string, source: 'preview' | 'reasoning'): TokenBlock 
     hue,
     glowHue,
   });
+  const offscreenPadding = 156;
+  const horizontalSpawnOffset = renderedSprite.width * (1.12 + Math.random() * 0.24) + offscreenPadding;
+
   return {
     id: `${source}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
     text,
-    x: spawnState.x,
+    hasEnteredStage: false,
+    x: spawnEdge === 'left'
+      ? -horizontalSpawnOffset
+      : latestWidth + horizontalSpawnOffset,
     y: spawnState.y,
     vx: spawnState.vx,
     vy: spawnState.vy,
@@ -257,7 +264,7 @@ function updateBlocks(deltaSeconds: number) {
   for (let index = blocks.length - 1; index >= 0; index -= 1) {
     const block = blocks[index];
     const ageMs = Date.now() - block.createdAt;
-    block.vy += 0.34 * frameScale;
+    block.vy += 0.22 * frameScale;
     block.vx *= 0.997;
     block.vy *= 0.999;
     block.angularVelocity *= block.angularDamping;
@@ -268,13 +275,19 @@ function updateBlocks(deltaSeconds: number) {
 
     const halfWidth = block.width * 0.5;
     const halfHeight = block.height * 0.5;
+    const hasEnteredVisibleStage =
+      block.x - halfWidth >= leftWall && block.x + halfWidth <= rightWall;
 
-    if (block.x - halfWidth < leftWall) {
+    if (!block.hasEnteredStage && hasEnteredVisibleStage) {
+      block.hasEnteredStage = true;
+    }
+
+    if (block.hasEnteredStage && block.x - halfWidth < leftWall) {
       block.x = leftWall + halfWidth;
       block.vx = Math.abs(block.vx) * 0.82;
     }
 
-    if (block.x + halfWidth > rightWall) {
+    if (block.hasEnteredStage && block.x + halfWidth > rightWall) {
       block.x = rightWall - halfWidth;
       block.vx = -Math.abs(block.vx) * 0.82;
     }
