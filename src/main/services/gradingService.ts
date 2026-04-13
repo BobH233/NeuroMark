@@ -4,7 +4,6 @@ import fs from 'fs-extra';
 import OpenAI from 'openai';
 import type { ChatCompletionCreateParamsNonStreaming } from 'openai/resources/chat/completions';
 import sharp from 'sharp';
-import { buildGradingJsonSchema } from '@main/prompts/grading/schema';
 import { buildGradingSystemPrompt } from '@main/prompts/grading/system';
 import { buildGradingUserPrompt } from '@main/prompts/grading/user';
 import { GRADING_RUBRIC_SYSTEM_PROMPT } from '@main/prompts/grading/rubric-system';
@@ -627,8 +626,6 @@ export class GradingService {
     const startedAt = Date.now();
     let rawOutput = '';
     let parsedCandidate: Record<string, unknown> | null = null;
-    let reasoningText = '';
-    let mode: 'stream' | 'non-stream' = 'stream';
     try {
       await input.onLog?.('已发起 rubric 编译请求，准备接收流式输出');
       const response = await this.collectRubricResponseText({
@@ -641,8 +638,6 @@ export class GradingService {
       });
       ensureAbort(input.signal);
       rawOutput = response.rawText;
-      reasoningText = response.reasoningText;
-      mode = response.mode;
       parsedCandidate = parseJsonObject(rawOutput);
       const parsed = validateCompiledRubric(parsedCandidate, input.projectName);
       await fs.writeJson(
@@ -658,10 +653,10 @@ export class GradingService {
         status: 'success',
         detail: {
           latencyMs: Date.now() - startedAt,
-          mode,
+          mode: response.mode,
           rubricPath,
           questionCount: parsed.questions.length,
-          reasoningTextLength: reasoningText.length,
+          reasoningTextLength: response.reasoningText.length,
           rawOutput: shortenText(rawOutput),
         },
       });
@@ -689,6 +684,7 @@ export class GradingService {
       });
       throw new Error(
         `${errorMessage}${debugDumpPath ? `\n调试原文已写入：${debugDumpPath}` : ''}\n模型原始返回：\n${rawOutput ? shortenText(rawOutput, 1200) : '(empty)'}`,
+        { cause: error },
       );
     }
   }

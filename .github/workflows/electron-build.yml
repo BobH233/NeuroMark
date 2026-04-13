@@ -1,13 +1,14 @@
-name: build-electron
+name: release-electron
 
 on:
   workflow_dispatch:
   push:
-    branches:
-      - main
-      - master
     tags:
       - 'v*'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: write

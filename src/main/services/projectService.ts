@@ -243,6 +243,11 @@ function normalizeResultPayload(payload: unknown): {
     const totalScore = legacy.totalScore ?? legacy.total_score ?? 0;
     const overallComment = legacy.overallComment ?? legacy.overall_comment ?? '';
     const questionRegions = legacy.questionRegions ?? legacy.question_regions;
+    const overallAdviceStrengths = legacy.overallAdvice?.strengths ?? legacy.overall_advice?.strengths;
+    const overallAdvicePriorityKnowledgePoints =
+      legacy.overallAdvice?.priorityKnowledgePoints ?? legacy.overall_advice?.priority_knowledge_points;
+    const overallAdviceAttentionPoints =
+      legacy.overallAdvice?.attentionPoints ?? legacy.overall_advice?.attention_points;
 
     const modelResult: ModelResult = {
       studentInfo: {
@@ -278,23 +283,14 @@ function normalizeResultPayload(payload: unknown): {
       overallComment: String(overallComment),
       overallAdvice: {
         summary: String(legacy.overallAdvice?.summary ?? legacy.overall_advice?.summary ?? ''),
-        strengths: Array.isArray(legacy.overallAdvice?.strengths ?? legacy.overall_advice?.strengths)
-          ? (legacy.overallAdvice?.strengths ?? legacy.overall_advice?.strengths).map((item: unknown) => String(item))
+        strengths: Array.isArray(overallAdviceStrengths)
+          ? overallAdviceStrengths.map((item: unknown) => String(item))
           : [],
-        priorityKnowledgePoints: Array.isArray(
-          legacy.overallAdvice?.priorityKnowledgePoints ?? legacy.overall_advice?.priority_knowledge_points,
-        )
-          ? (
-              legacy.overallAdvice?.priorityKnowledgePoints ??
-              legacy.overall_advice?.priority_knowledge_points
-            ).map((item: unknown) => String(item))
+        priorityKnowledgePoints: Array.isArray(overallAdvicePriorityKnowledgePoints)
+          ? overallAdvicePriorityKnowledgePoints.map((item: unknown) => String(item))
           : [],
-        attentionPoints: Array.isArray(
-          legacy.overallAdvice?.attentionPoints ?? legacy.overall_advice?.attention_points,
-        )
-          ? (legacy.overallAdvice?.attentionPoints ?? legacy.overall_advice?.attention_points).map((item: unknown) =>
-              String(item),
-            )
+        attentionPoints: Array.isArray(overallAdviceAttentionPoints)
+          ? overallAdviceAttentionPoints.map((item: unknown) => String(item))
           : [],
         encouragement: String(
           legacy.overallAdvice?.encouragement ?? legacy.overall_advice?.encouragement ?? '',

@@ -1,7 +1,6 @@
 import OpenAI from 'openai';
 import type { ChatCompletionCreateParamsNonStreaming } from 'openai/resources/chat/completions';
 import type {
-  NameMatchStatus,
   ResultRecord,
   SmartNameMatchDecision,
   SmartNameMatchDuplicateGroup,

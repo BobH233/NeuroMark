@@ -12,11 +12,26 @@ export default [
       'node_modules/**',
       'release/**',
       'reference_python_project/**',
+      'src-native/**/.venv/**',
+      'src-native/**/third_party/**',
+      'src-native/**/build*/**',
+      'build/native/**',
+      'artifacts/**',
     ],
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   ...pluginVue.configs['flat/recommended'],
+  {
+    files: ['**/*.{js,mjs,cjs}'],
+    languageOptions: {
+      ecmaVersion: 'latest',
+      sourceType: 'module',
+      globals: {
+        ...globals.node,
+      },
+    },
+  },
   {
     files: ['**/*.ts', '**/*.vue'],
     languageOptions: {
@@ -38,4 +53,3 @@ export default [
     },
   },
 ];
-

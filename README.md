@@ -11,7 +11,8 @@
   <a href="https://vuejs.org/"><img alt="Vue 3" src="https://img.shields.io/badge/Vue-3-0f766e?style=for-the-badge&logo=vuedotjs&logoColor=ffffff"></a>
   <a href="https://www.typescriptlang.org/"><img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-5.9-1d4ed8?style=for-the-badge&logo=typescript&logoColor=ffffff"></a>
   <a href="https://platform.openai.com/docs/overview"><img alt="OpenAI Compatible" src="https://img.shields.io/badge/OpenAI-Compatible-0f172a?style=for-the-badge&logo=openai&logoColor=ffffff"></a>
-  <a href="https://github.com/BobH233/NeuroMark/actions/workflows/electron-build.yml"><img alt="Build Electron" src="https://github.com/BobH233/NeuroMark/actions/workflows/electron-build.yml/badge.svg"></a>
+  <a href="https://github.com/BobH233/NeuroMark/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/BobH233/NeuroMark/actions/workflows/ci.yml/badge.svg"></a>
+  <a href="https://github.com/BobH233/NeuroMark/actions/workflows/electron-build.yml"><img alt="Release Electron" src="https://github.com/BobH233/NeuroMark/actions/workflows/electron-build.yml/badge.svg"></a>
   <img alt="Status" src="https://img.shields.io/badge/Status-Early%20Community%20Project-f59e0b?style=for-the-badge">
   <a href="./LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-111827?style=for-the-badge"></a>
 </p>
@@ -27,7 +28,6 @@
   <a href="#界面预览">界面预览</a> ·
   <a href="#快速开始">快速开始</a> ·
   <a href="#架构概览">架构概览</a> ·
-  <a href="#路线图">路线图</a> ·
   <a href="#参与共建">参与共建</a>
 </p>
 
@@ -196,9 +196,26 @@ npm run package
 ### 测试
 
 ```bash
+npm run lint
+npm run typecheck
 npm run test:unit
 npm run test:e2e
 ```
+
+日常本地校验建议至少执行：
+
+```bash
+npm run lint
+npm run typecheck
+npm run test:unit
+```
+
+其中：
+
+- `npm run lint` 用于执行 ESLint 校验
+- `npm run typecheck` 用于执行 Vue 与 Node 侧 TypeScript 类型检查
+- `npm run test:unit` 用于运行 Vitest 单元测试
+- `npm run test:e2e` 用于运行 Playwright 端到端测试
 
 ## 当前适合谁使用
 
@@ -206,30 +223,6 @@ npm run test:e2e
 - 希望把题目图片、参考答案、批阅结果统一管理的教师或助教
 - 对 OCR、文档扫描、评分系统、教育工作流有兴趣的开源贡献者
 - 需要一个 Electron + Vue + Native Addon + LLM 组合项目作为参考实现的工程团队
-
-## 路线图
-
-### 近期计划
-
-- 完善 README、贡献指南、Issue 模板和路线图管理
-- 补充安装文档与跨平台构建说明
-- 打磨项目详情页的批阅复核体验
-- 继续增强扫描鲁棒性与调试可观测性
-
-### 中期计划
-
-- 更强的名册匹配与智能核名工作流
-- 更细粒度的评分细则编辑与版本管理
-- 更稳定的导出格式与结果二次分析能力
-- 更完整的自动化测试覆盖
-- 社区 demo 数据集与示例项目
-
-### 长期方向
-
-- 面向社区的插件化评分策略
-- 多模型 / 多后端切换能力
-- 更成熟的协作与共享工作流
-- 面向真实教学场景的可部署发行版
 
 ## 参与共建
 
@@ -248,7 +241,7 @@ npm run test:e2e
 ## 开源说明
 
 - License: MIT
-- 当前版本：`0.1.0`
+- 当前版本：`0.2.0`
 - 项目状态：可运行、可演示、适合继续打磨，不建议在高风险正式场景中直接无验证投入使用
 
 ## 致谢

@@ -589,22 +589,6 @@ const smartNameManualPaper = computed(() => {
 });
 const manualSmartNameDraft = ref<FinalResult | null>(null);
 const manualSmartNameSaving = ref(false);
-const manualSmartNameChanged = computed(() => {
-  if (
-    !smartNameManualResult.value?.finalResult ||
-    !manualSmartNameDraft.value
-  ) {
-    return false;
-  }
-
-  const current = smartNameManualResult.value.finalResult.studentInfo;
-  const next = manualSmartNameDraft.value.studentInfo;
-  return (
-    current.className !== next.className ||
-    current.studentId !== next.studentId ||
-    current.name !== next.name
-  );
-});
 const smartNameMatchState = computed<SmartNameMatchSnapshot>(() =>
   smartNameMatchSnapshot.value?.projectId === projectId.value
     ? smartNameMatchSnapshot.value
@@ -2783,37 +2767,38 @@ function goBack() {
                             :src="toImageSrc(image.src, image.cacheKey)"
                             :alt="image.title"
                           />
-                          <div
-                            v-if="hasVisibleRegionOverlay"
-                            v-for="region in image.regions"
-                            :key="`${image.title}-${region.questionId}`"
-                            class="paper-stage-region"
-                            :class="{
-                              'paper-stage-region--active':
-                                region.questionId === activeQuestionId,
-                              'paper-stage-region--box-hidden':
-                                !previewDisplayOptions.showQuestionBoxes,
-                            }"
-                            :style="{
-                              left: `${region.x * 100}%`,
-                              top: `${region.y * 100}%`,
-                              width: `${region.width * 100}%`,
-                              height: `${region.height * 100}%`,
-                            }"
-                          >
-                            <span
-                              v-if="previewDisplayOptions.showQuestionTags"
-                              >{{ region.questionId }}</span
+                          <template v-if="hasVisibleRegionOverlay">
+                            <div
+                              v-for="region in image.regions"
+                              :key="`${image.title}-${region.questionId}`"
+                              class="paper-stage-region"
+                              :class="{
+                                'paper-stage-region--active':
+                                  region.questionId === activeQuestionId,
+                                'paper-stage-region--box-hidden':
+                                  !previewDisplayOptions.showQuestionBoxes,
+                              }"
+                              :style="{
+                                left: `${region.x * 100}%`,
+                                top: `${region.y * 100}%`,
+                                width: `${region.width * 100}%`,
+                                height: `${region.height * 100}%`,
+                              }"
                             >
-                            <strong
+                              <span
+                                v-if="previewDisplayOptions.showQuestionTags"
+                                >{{ region.questionId }}</span
+                              >
+                              <strong
                               v-if="previewDisplayOptions.showQuestionScores"
                               class="paper-stage-region-score"
                             >
                               {{
                                 formatRegionScore(region.score, region.maxScore)
                               }}
-                            </strong>
-                          </div>
+                              </strong>
+                            </div>
+                          </template>
                         </div>
                       </div>
                     </div>
@@ -3352,7 +3337,7 @@ function goBack() {
                       class="result-stage-stack result-stage-stack--embedded"
                     >
                       <div
-                        v-for="(image, imageIndex) in buildPaperPreviewImages(
+                        v-for="image in buildPaperPreviewImages(
                           smartNameManualResult.paperId,
                         )"
                         :key="`manual-${image.title}`"
