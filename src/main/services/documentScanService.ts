@@ -152,10 +152,9 @@ export async function processDocumentImage(
   await fs.ensureDir(path.dirname(cornersPath));
 
   if (options?.skipScanProcessing) {
-    const passthroughImage = sharp(inputPath, { limitInputPixels: false }).rotate();
     await Promise.all([
-      passthroughImage.clone().png().toFile(scannedPath),
-      passthroughImage.clone().jpeg({ quality: 90 }).toFile(debugPreviewPath),
+      fs.copyFile(inputPath, scannedPath),
+      fs.copyFile(inputPath, debugPreviewPath),
     ]);
 
     const corners: CornerPoint[] = [];

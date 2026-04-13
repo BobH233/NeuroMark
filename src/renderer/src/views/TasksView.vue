@@ -100,10 +100,15 @@ function getTaskSpeedLabel(task: BackgroundJob) {
   }
 
   if (task.speed <= 0) {
-    return task.status === 'queued' ? '排队中' : '等待首套完成';
+    return task.status === 'queued'
+      ? '排队中'
+      : task.kind === 'scan'
+        ? '等待首张完成'
+        : '等待首套完成';
   }
 
-  return `${task.speed.toFixed(task.speed >= 10 ? 1 : 2)} 秒/套`;
+  const unit = task.kind === 'scan' ? '页' : '套';
+  return `${task.speed.toFixed(task.speed >= 10 ? 1 : 2)} 秒/${unit}`;
 }
 
 function getTaskEtaLabel(task: BackgroundJob) {
@@ -123,7 +128,11 @@ function getTaskEtaLabel(task: BackgroundJob) {
     return task.eta;
   }
 
-  return task.status === 'queued' ? '排队中' : '等待首套完成';
+  return task.status === 'queued'
+    ? '排队中'
+    : task.kind === 'scan'
+      ? '等待首张完成'
+      : '等待首套完成';
 }
 
 function getTaskRuntimeLogs(task: BackgroundJob) {

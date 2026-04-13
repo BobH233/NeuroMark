@@ -476,15 +476,24 @@ export class TaskManager {
   ): Promise<BackgroundJob> {
     const project = await this.projects.getProjectById(projectId);
     const papers = await this.projects.listProjectPapers(projectId);
-    const pendingPaperCount = papers.filter((paper) =>
-      paper.originalPages.some(
-        (page) => !(options?.skipCompleted ?? true) || !page.scannedPath || !page.debugPreviewPath,
-      ),
-    ).length;
+    const pendingPageCount = papers.reduce(
+      (count, paper) =>
+        count +
+        paper.originalPages.filter(
+          (page) =>
+            !(options?.skipCompleted ?? true) ||
+            !page.scannedPath ||
+            !page.debugPreviewPath,
+        ).length,
+      0,
+    );
     const db = getDatabase();
     const now = new Date().toISOString();
     const jobId = nanoid();
     const controller = new AbortController();
+    const runningSummary = project.settings.skipScanProcessing
+      ? '正在直通复用原始图片'
+      : '正在批量扫描识别答卷';
 
     db.insert(tasksTable)
       .values({
@@ -502,7 +511,7 @@ export class TaskManager {
         archivedAt: null,
         abortable: true,
         currentPaperLabel: papers[0]?.paperCode ?? '准备中',
-        summary: '正在批量扫描识别答卷',
+        summary: runningSummary,
         createdAt: now,
         updatedAt: now,
       })
@@ -510,7 +519,7 @@ export class TaskManager {
 
     this.scanControllers.set(jobId, controller);
     await this.emit();
-    void this.runScanJob(jobId, projectId, controller, Math.max(pendingPaperCount, 0), options);
+    void this.runScanJob(jobId, projectId, controller, Math.max(pendingPageCount, 0), options);
 
     const row = db.select().from(tasksTable).where(eq(tasksTable.id, jobId)).get();
     return toJob(row!);
@@ -696,11 +705,18 @@ export class TaskManager {
     jobId: string,
     projectId: string,
     controller: AbortController,
-    totalPaperCount: number,
+    totalPageCount: number,
     options?: StartJobOptions,
   ): Promise<void> {
     const db = getDatabase();
     const startedAt = Date.now();
+    const project = await this.projects.getProjectById(projectId);
+    const runningSummaryPrefix = project.settings.skipScanProcessing
+      ? '正在直通复用原始图片'
+      : '正在识别纸张边界与扫描效果';
+    const completedSummaryPrefix = project.settings.skipScanProcessing
+      ? '直通扫描任务已完成'
+      : '扫描任务已完成';
 
     try {
       const result = await this.projects.scanProjectDocuments(projectId, {
@@ -712,15 +728,15 @@ export class TaskManager {
               ? Number((completedPageCount / totalPageCount).toFixed(3))
               : 1;
           const elapsedSeconds = Math.max((Date.now() - startedAt) / 1000, 1);
-          const speed = getSecondsPerPaper(progress, elapsedSeconds, totalPaperCount);
+          const speed = getSecondsPerPaper(progress, elapsedSeconds, totalPageCount);
 
           db.update(tasksTable)
             .set({
               progress,
               speed,
-              eta: estimateEta(progress, speed * totalPaperCount),
+              eta: estimateEta(progress, speed * totalPageCount),
               currentPaperLabel,
-              summary: `正在识别纸张边界与扫描效果，已完成 ${completedPageCount}/${Math.max(totalPageCount, 1)} 页`,
+              summary: `${runningSummaryPrefix}，已完成 ${completedPageCount}/${Math.max(totalPageCount, 1)} 页`,
               updatedAt: new Date().toISOString(),
             })
             .where(eq(tasksTable.id, jobId))
@@ -745,13 +761,13 @@ export class TaskManager {
           speed: getSecondsPerPaper(
             1,
             Math.max((Date.now() - startedAt) / 1000, 1),
-            totalPaperCount,
+            totalPageCount,
           ),
           eta: null,
           finishedAt: new Date().toISOString(),
           summary:
             result.totalPageCount > 0
-              ? `扫描任务已完成，共处理 ${result.processedPageCount} 页`
+              ? `${completedSummaryPrefix}，共处理 ${result.processedPageCount} 页`
               : '没有需要扫描的新答卷',
           updatedAt: new Date().toISOString(),
         })

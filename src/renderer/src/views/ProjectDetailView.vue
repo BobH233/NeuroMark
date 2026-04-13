@@ -84,6 +84,7 @@ type ResultSortMode = 'input-order' | 'score-desc' | 'score-asc' | 'student-id';
 const resultSortMode = ref<ResultSortMode>('input-order');
 const editableResult = ref<FinalResult | null>(null);
 const referenceAnswerDraft = ref('');
+const savedReferenceAnswerMarkdown = ref('');
 const referenceAnswerSaving = ref(false);
 const projectNameDraft = ref('');
 const projectSettingsDraft = ref<ProjectSettings>({
@@ -96,7 +97,6 @@ const projectSettingsDraft = ref<ProjectSettings>({
 const projectSettingsDraftProjectId = ref('');
 const rubricLoading = ref(false);
 const referenceAnswerDraftProjectId = ref('');
-const referenceAnswerDraftVersion = ref(0);
 const deletingProject = ref(false);
 const scanActionLoading = ref(false);
 const gradingActionLoading = ref(false);
@@ -529,9 +529,7 @@ const rubricDebug = computed(() =>
 );
 const showRubricDebugTab = computed(() => debugPanelStore.enabled);
 const referenceAnswerDirty = computed(() =>
-  detail.value
-    ? referenceAnswerDraft.value !== detail.value.referenceAnswerMarkdown
-    : false,
+  referenceAnswerDraft.value !== savedReferenceAnswerMarkdown.value,
 );
 const projectSettingsDirty = computed(() => {
   if (!selectedProject.value) {
@@ -810,24 +808,27 @@ watch(
 watch(
   () =>
     [
-      detail.value?.project.id,
-      detail.value?.project.referenceAnswerVersion,
+      detail.value?.project.id ?? '',
+      detail.value?.referenceAnswerMarkdown ?? '',
     ] as const,
-  ([nextProjectId, nextVersion]) => {
+  ([nextProjectId, nextMarkdown]) => {
     if (!nextProjectId) {
       referenceAnswerDraft.value = '';
+      savedReferenceAnswerMarkdown.value = '';
       referenceAnswerDraftProjectId.value = '';
-      referenceAnswerDraftVersion.value = 0;
       return;
     }
 
-    if (
-      referenceAnswerDraftProjectId.value !== nextProjectId ||
-      referenceAnswerDraftVersion.value !== (nextVersion ?? 0)
-    ) {
-      referenceAnswerDraft.value = detail.value?.referenceAnswerMarkdown ?? '';
+    if (referenceAnswerDraftProjectId.value !== nextProjectId) {
+      referenceAnswerDraft.value = nextMarkdown;
+      savedReferenceAnswerMarkdown.value = nextMarkdown;
       referenceAnswerDraftProjectId.value = nextProjectId;
-      referenceAnswerDraftVersion.value = nextVersion ?? 0;
+      return;
+    }
+
+    if (!referenceAnswerDirty.value || nextMarkdown === referenceAnswerDraft.value) {
+      referenceAnswerDraft.value = nextMarkdown;
+      savedReferenceAnswerMarkdown.value = nextMarkdown;
     }
   },
   { immediate: true },
@@ -1798,6 +1799,7 @@ async function saveReferenceAnswer() {
     return;
   }
 
+  referenceAnswerDraft.value = nextMarkdown;
   referenceAnswerSaving.value = true;
   try {
     await projectsStore.updateReferenceAnswer(
