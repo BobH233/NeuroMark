@@ -12,6 +12,7 @@ import {
 } from 'naive-ui';
 import type {
   ProjectMeta,
+  PreviewImageItem,
   ResultRecord,
   PaperRecord,
   ScorePostProcessPaperResult,
@@ -171,6 +172,9 @@ const selectedProcessedResult = computed<ScorePostProcessPaperResult | null>(
     return matched ?? filteredResults.value[0] ?? null;
   },
 );
+const selectedProcessedPaper = computed<PaperRecord | null>(() =>
+  props.papers.find((paper) => paper.id === selectedProcessedResult.value?.paperId) ?? null,
+);
 
 function formatScore(value: number): string {
   return Number(value.toFixed(2)).toString();
@@ -181,6 +185,29 @@ function formatDelta(value: number): string {
     return '0';
   }
   return `${value > 0 ? '+' : ''}${formatScore(value)}`;
+}
+
+function buildOriginalPreviewImages(paper: PaperRecord | null): PreviewImageItem[] {
+  if (!paper) {
+    return [];
+  }
+
+  return paper.originalPages.map((page, index) => ({
+    src: page.originalPath,
+    cacheKey: page.originalVersion,
+    title: `${paper.paperCode} · 第 ${index + 1} 页`,
+    caption: '原始答卷',
+  }));
+}
+
+async function openSelectedOriginalPreview() {
+  const previewImages = buildOriginalPreviewImages(selectedProcessedPaper.value);
+  if (!previewImages.length) {
+    message.warning('当前答卷还没有可预览的原始图片。');
+    return;
+  }
+
+  await window.neuromark.preview.open(previewImages, 0, '原卷图片预览');
 }
 
 function hydrateEditorFromPreset(presetId: string | null) {
@@ -791,6 +818,13 @@ watch(
                 {{ selectedProcessedResult.studentInfo.name || '未识别姓名' }}
               </div>
             </div>
+            <n-button
+              tertiary
+              :disabled="!selectedProcessedPaper"
+              @click="openSelectedOriginalPreview"
+            >
+              查看原卷图片
+            </n-button>
           </div>
 
           <div class="result-workspace-scroll">
