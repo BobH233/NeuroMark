@@ -177,14 +177,14 @@ async function deletePreset(presetId: string) {
       <n-form label-placement="top">
         <n-form-item label="脚本名称">
           <n-input
-            v-model="presetForm.name"
+            v-model:value="presetForm.name"
             :disabled="presetForm.readonly"
             placeholder="例如：作业归一化到 60-100"
           />
         </n-form-item>
         <n-form-item label="脚本说明">
           <n-input
-            v-model="presetForm.description"
+            v-model:value="presetForm.description"
             type="textarea"
             :autosize="{ minRows: 3, maxRows: 5 }"
             :disabled="presetForm.readonly"

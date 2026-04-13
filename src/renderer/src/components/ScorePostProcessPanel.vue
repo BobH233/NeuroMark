@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue';
+import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import {
   NAlert,
   NButton,
@@ -19,7 +19,10 @@ import type {
 } from '@preload/contracts';
 import JsonTreeView from '@/components/JsonTreeView.vue';
 import { useScorePostProcessStore } from '@/stores/score-post-process';
-import { SCORE_POST_PROCESS_EDITOR_TYPES } from '@/utils/score-post-process';
+import {
+  SCORE_POST_PROCESS_EDITOR_TYPES,
+  SCORE_POST_PROCESS_SCRIPT_DOC_ITEMS,
+} from '@/utils/score-post-process';
 import CodeEditor from './CodeEditor.vue';
 
 const props = defineProps<{
@@ -40,6 +43,11 @@ const running = ref(false);
 const exporting = ref(false);
 const executionError = ref<ScorePostProcessScriptError | null>(null);
 const scriptDocsExpanded = ref(false);
+const aiScriptExpanded = ref(false);
+const aiInstruction = ref('');
+const aiReasoningStreamRef = ref<HTMLElement | null>(null);
+const aiJsonStreamRef = ref<HTMLElement | null>(null);
+const lastAppliedAiSnapshotAt = ref('');
 
 const gradedResults = computed(() =>
   props.results.filter((result) => result.finalResult && result.modelResult),
@@ -48,6 +56,17 @@ const latestSnapshot = computed(() =>
   store.getProjectSnapshot(props.project.id),
 );
 const latestRun = computed(() => latestSnapshot.value.latestRun);
+const aiSnapshot = computed(() =>
+  store.getAiScriptSnapshot(props.project.id),
+);
+const aiGenerationResult = computed(() => aiSnapshot.value.result);
+const aiGenerating = computed(() => aiSnapshot.value.status === 'running');
+const showAiReasoningStreamPanel = computed(
+  () => aiGenerating.value && !aiSnapshot.value.previewText.trim().length,
+);
+const showAiJsonStreamPanel = computed(
+  () => aiGenerating.value && Boolean(aiSnapshot.value.previewText.trim().length),
+);
 const presetOptions = computed(() =>
   store.presets.map((preset) => ({
     label: preset.name,
@@ -134,6 +153,18 @@ function hydrateEditorFromLatestRun() {
   executionError.value = null;
 }
 
+function applyAiScriptResult() {
+  if (!aiGenerationResult.value) {
+    return;
+  }
+
+  selectedPresetId.value = null;
+  scriptName.value = aiGenerationResult.value.scriptName;
+  scriptCode.value = aiGenerationResult.value.scriptCode;
+  executionError.value = null;
+  aiScriptExpanded.value = true;
+}
+
 async function runScript() {
   if (!scriptCode.value.trim() || running.value) {
     return;
@@ -162,6 +193,23 @@ async function runScript() {
     message.error(error instanceof Error ? error.message : '脚本执行失败。');
   } finally {
     running.value = false;
+  }
+}
+
+async function generateAiScript() {
+  if (!aiInstruction.value.trim() || aiGenerating.value) {
+    return;
+  }
+
+  aiScriptExpanded.value = true;
+  try {
+    await store.startAiScriptGeneration(props.project.id, {
+      instruction: aiInstruction.value.trim(),
+    });
+  } catch (error) {
+    message.error(
+      error instanceof Error ? error.message : 'AI 脚本生成失败。',
+    );
   }
 }
 
@@ -201,6 +249,7 @@ onMounted(async () => {
   await Promise.all([
     store.presets.length ? Promise.resolve() : store.loadPresets(),
     store.loadProjectSnapshot(props.project.id),
+    store.loadAiScriptSnapshot(props.project.id),
   ]);
 
   if (latestRun.value) {
@@ -220,7 +269,9 @@ watch(
     executionError.value = null;
     searchKeyword.value = '';
     selectedPaperId.value = '';
+    lastAppliedAiSnapshotAt.value = '';
     await store.loadProjectSnapshot(projectId);
+    await store.loadAiScriptSnapshot(projectId);
     if (latestRun.value) {
       hydrateEditorFromLatestRun();
       selectedPaperId.value = latestRun.value.results[0]?.paperId ?? '';
@@ -242,6 +293,50 @@ watch(
     }
   },
   { immediate: true },
+);
+
+watch(
+  () => aiSnapshot.value.reasoningText,
+  async () => {
+    if (!showAiReasoningStreamPanel.value) {
+      return;
+    }
+    await nextTick();
+    if (aiReasoningStreamRef.value) {
+      aiReasoningStreamRef.value.scrollTop =
+        aiReasoningStreamRef.value.scrollHeight;
+    }
+  },
+);
+
+watch(
+  () => aiSnapshot.value.previewText,
+  async () => {
+    if (!showAiJsonStreamPanel.value) {
+      return;
+    }
+    await nextTick();
+    if (aiJsonStreamRef.value) {
+      aiJsonStreamRef.value.scrollTop = aiJsonStreamRef.value.scrollHeight;
+    }
+  },
+);
+
+watch(
+  () => aiSnapshot.value.updatedAt,
+  () => {
+    if (
+      aiSnapshot.value.status !== 'completed' ||
+      !aiGenerationResult.value ||
+      lastAppliedAiSnapshotAt.value === aiSnapshot.value.updatedAt
+    ) {
+      return;
+    }
+
+    lastAppliedAiSnapshotAt.value = aiSnapshot.value.updatedAt;
+    applyAiScriptResult();
+    message.success('AI 脚本已通过生成前校验，请点击“执行脚本”。');
+  },
 );
 </script>
 
@@ -315,53 +410,158 @@ watch(
         <div v-if="scriptDocsExpanded" class="score-postprocess-docs-panel">
           <div class="score-postprocess-api-box">
             <div class="score-postprocess-doc-grid">
-              <div class="score-postprocess-doc-item">
-                <div class="preset-panel-title">可用全局对象</div>
-                <div class="preset-panel-copy">
-                  <code>project</code>、<code>papers</code>、<code>utils</code>、
-                  <code>output()</code>、<code>outputMany()</code>、<code>log()</code>
-                </div>
+              <div
+                v-for="item in SCORE_POST_PROCESS_SCRIPT_DOC_ITEMS"
+                :key="item.title"
+                class="score-postprocess-doc-item"
+              >
+                <div class="preset-panel-title">{{ item.title }}</div>
+                <div class="preset-panel-copy">{{ item.description }}</div>
               </div>
+            </div>
+          </div>
+        </div>
+      </section>
 
-              <div class="score-postprocess-doc-item">
-                <div class="preset-panel-title">project</div>
-                <div class="preset-panel-copy">
-                  当前项目信息，包含项目名、路径、参考答案版本、统计信息和项目设置。
-                </div>
+      <section
+        class="score-postprocess-docs"
+        :class="{ 'is-expanded': aiScriptExpanded }"
+      >
+        <button
+          type="button"
+          class="score-postprocess-docs-toggle"
+          :aria-expanded="aiScriptExpanded"
+          @click="aiScriptExpanded = !aiScriptExpanded"
+        >
+          <span class="score-postprocess-docs-toggle__title">AI脚本</span>
+          <span
+            class="score-postprocess-docs-toggle__arrow"
+            :class="{ 'is-expanded': aiScriptExpanded }"
+            aria-hidden="true"
+          >
+            ›
+          </span>
+        </button>
+
+        <div v-if="aiScriptExpanded" class="score-postprocess-docs-panel">
+          <div class="score-postprocess-ai-panel stack-gap">
+            <div class="detail-subtitle">
+              用自然语言描述你想如何处理当前这批分数。
+            </div>
+            <n-input
+              v-model:value="aiInstruction"
+              type="textarea"
+              :autosize="{ minRows: 3, maxRows: 8 }"
+              placeholder="例如：把 80 分以上的同学分数保留不动，80 分以下的全部压缩进 60-80 分段。"
+            />
+            <div class="settings-actions score-postprocess-actions score-postprocess-ai-actions">
+              <n-button
+                type="primary"
+                :loading="aiGenerating"
+                :disabled="!aiInstruction.trim()"
+                @click="generateAiScript"
+              >
+                生成脚本
+              </n-button>
+              <n-button
+                tertiary
+                :disabled="!aiGenerationResult"
+                @click="applyAiScriptResult"
+              >
+                将 AI 生成脚本填入编辑器
+              </n-button>
+            </div>
+
+            <n-alert
+              v-if="aiGenerating"
+              type="info"
+              class="settings-inline-feedback"
+              title="AI 正在生成脚本"
+              show-icon
+            >
+              {{ aiSnapshot.stage || '正在请求模型。' }}
+            </n-alert>
+
+            <n-alert
+              v-else-if="aiSnapshot.status === 'failed' && aiSnapshot.errorMessage"
+              type="error"
+              class="settings-inline-feedback"
+              title="AI 脚本生成失败"
+              show-icon
+            >
+              {{ aiSnapshot.errorMessage }}
+            </n-alert>
+
+            <n-alert
+              v-else-if="aiSnapshot.status === 'completed' && aiGenerationResult"
+              type="success"
+              class="settings-inline-feedback"
+              title="AI 脚本已通过生成前校验"
+              show-icon
+            >
+              AI 脚本已填入当前编辑器，请点击“执行脚本”确认结果。
+            </n-alert>
+
+            <div
+              v-if="showAiReasoningStreamPanel"
+              class="preset-panel preset-panel--stream"
+            >
+              <div class="preset-panel-title">模型思考过程（实时）</div>
+              <div
+                ref="aiReasoningStreamRef"
+                class="preset-panel-copy preset-panel-copy--log stream-output-box"
+              >
+                {{
+                  aiSnapshot.reasoningText || '当前还没有接收到模型的思考文本。'
+                }}
               </div>
+            </div>
 
-              <div class="score-postprocess-doc-item">
-                <div class="preset-panel-title">papers</div>
-                <div class="preset-panel-copy">
-                  已批改答卷数组。<code>papers[*].totalScore</code> 就是当前最终分数，
-                  <code>studentInfo</code> 里能拿到姓名、学号、班级，<code>questionScores</code>
-                  里能拿到每题分数。
-                </div>
+            <div
+              v-if="showAiJsonStreamPanel"
+              class="preset-panel preset-panel--stream"
+            >
+              <div class="preset-panel-title">模型实时输出（JSON 草稿）</div>
+              <div
+                ref="aiJsonStreamRef"
+                class="preset-panel-copy preset-panel-copy--log stream-output-box"
+              >
+                {{ aiSnapshot.previewText || '模型尚未返回任何文本片段。' }}
               </div>
+            </div>
 
-              <div class="score-postprocess-doc-item">
-                <div class="preset-panel-title">utils</div>
-                <div class="preset-panel-copy">
-                  内置数学工具，包含 <code>round</code>、<code>clamp</code>、
-                  <code>average</code>、<code>quantile</code>、<code>percentile</code>、
-                  <code>zScore</code>、<code>normalizeToRange</code> 等。
+            <div
+              v-if="aiSnapshot.status === 'completed' && aiGenerationResult"
+              class="score-postprocess-api-box"
+            >
+              <div class="score-postprocess-doc-grid">
+                <div class="score-postprocess-doc-item">
+                  <div class="preset-panel-title">AI 标题</div>
+                  <div class="preset-panel-copy">
+                    {{ aiGenerationResult.scriptName }}
+                  </div>
                 </div>
-              </div>
-
-              <div class="score-postprocess-doc-item">
-                <div class="preset-panel-title">输出结果</div>
-                <div class="preset-panel-copy">
-                  你可以直接 <code>return [...]</code>，也可以逐条调用
-                  <code>output(...)</code>，批量则用 <code>outputMany(...)</code>。每条输出至少要有
-                  <code>paperId</code>，可选返回 <code>processedScore</code>、
-                  <code>gradeLabel</code>、<code>note</code>、<code>metadata</code>。
+                <div class="score-postprocess-doc-item">
+                  <div class="preset-panel-title">AI 摘要</div>
+                  <div class="preset-panel-copy">
+                    {{ aiGenerationResult.summary }}
+                  </div>
                 </div>
-              </div>
-
-              <div class="score-postprocess-doc-item">
-                <div class="preset-panel-title">log() 有什么用</div>
-                <div class="preset-panel-copy">
-                  <code>log(...args)</code> 用来在脚本执行时输出调试日志，方便你排查逻辑。日志会显示在本页执行结果下方的“脚本日志”区域里，也会跟随本次后处理结果一起保存和导出。
+                <div class="score-postprocess-doc-item">
+                  <div class="preset-panel-title">假设与提醒</div>
+                  <div class="preset-panel-copy">
+                    {{
+                      aiGenerationResult.assumptions.length
+                        ? aiGenerationResult.assumptions.join('；')
+                        : '无额外假设。'
+                    }}
+                  </div>
+                </div>
+                <div class="score-postprocess-doc-item">
+                  <div class="preset-panel-title">当前状态</div>
+                  <div class="preset-panel-copy">
+                    已自动填充脚本名称与代码，等待你手动执行。
+                  </div>
                 </div>
               </div>
             </div>
@@ -371,7 +571,7 @@ watch(
 
       <div class="score-postprocess-script-grid">
         <div class="score-postprocess-script-field">
-          <div class="field-label">脚本名称</div>
+          <div class="field-label" style="margin-left: 10px;">脚本名称</div>
           <n-input
             v-model:value="scriptName"
             placeholder="例如：线性归一化到 60-100"
@@ -409,13 +609,13 @@ watch(
         >
           导出后处理 JSON
         </n-button>
-        <n-button
+        <!-- <n-button
           tertiary
           :disabled="!latestRun?.exportPath"
           @click="openExportPath"
         >
           打开导出位置
-        </n-button>
+        </n-button> -->
       </div>
 
       <n-alert

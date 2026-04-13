@@ -2753,6 +2753,10 @@ textarea {
   border-top: 1px solid rgba(148, 163, 184, 0.14);
 }
 
+.score-postprocess-ai-panel {
+  padding: 20px 24px 24px;
+}
+
 .score-postprocess-doc-grid {
   display: grid;
   gap: 16px;
@@ -2787,6 +2791,10 @@ textarea {
   margin-top: 8px;
 }
 
+.score-postprocess-ai-actions {
+  margin-top: 4px;
+}
+
 .score-postprocess-error-stack {
   margin: 10px 0 0;
   padding: 12px 14px;
@@ -2802,13 +2810,17 @@ textarea {
 
 .score-postprocess-result-layout {
   grid-template-columns: 320px minmax(0, 1fr);
-  min-height: 680px;
-  align-items: start;
+  height: clamp(720px, calc(100dvh - 230px), 980px);
+  min-height: 0;
+  max-height: calc(100dvh - 230px);
+  align-items: stretch;
+  overflow: hidden;
 }
 
 .score-postprocess-sidebar,
 .score-postprocess-workspace {
   min-height: 0;
+  height: 100%;
 }
 
 .score-postprocess-sidebar {
@@ -3467,6 +3479,19 @@ textarea {
     grid-template-columns: 1fr;
   }
 
+  .score-postprocess-result-layout {
+    grid-template-columns: 1fr;
+    height: auto;
+    max-height: none;
+    overflow: visible;
+  }
+
+  .score-postprocess-workspace,
+  .score-postprocess-sidebar {
+    height: auto;
+    overflow: visible;
+  }
+
   .result-sidebar-scroll,
   .result-workspace-scroll {
     overflow: visible;
@@ -3499,6 +3524,10 @@ textarea {
 }
 
 @media (max-width: 768px) {
+  .score-postprocess-ai-panel {
+    padding: 16px 16px 18px;
+  }
+
   .project-scroll-fab-stack {
     left: calc(
       var(--sidebar-footprint) +

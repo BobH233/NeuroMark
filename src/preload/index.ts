@@ -154,6 +154,29 @@ const api: NeuromarkApi = {
       ipcRenderer.invoke('score-post-process:get-project-snapshot', projectId),
     execute: (projectId, input) =>
       ipcRenderer.invoke('score-post-process:execute', projectId, input),
+    getAiScriptSnapshot: (projectId) =>
+      ipcRenderer.invoke('score-post-process:get-ai-script-snapshot', projectId),
+    startAiScriptGeneration: (projectId, input) =>
+      ipcRenderer.invoke(
+        'score-post-process:start-ai-script-generation',
+        projectId,
+        input,
+      ),
+    onAiScriptUpdated: (handler) => {
+      const listener = (
+        _event: Electron.IpcRendererEvent,
+        snapshot: unknown,
+      ) => {
+        handler(snapshot as any);
+      };
+      ipcRenderer.on('score-post-process:ai-script-updated', listener);
+      return () => {
+        ipcRenderer.removeListener(
+          'score-post-process:ai-script-updated',
+          listener,
+        );
+      };
+    },
     exportLatest: (projectId, options) =>
       ipcRenderer.invoke(
         'score-post-process:export-latest',

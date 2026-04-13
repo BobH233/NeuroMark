@@ -107,7 +107,11 @@ async function bootstrap(): Promise<void> {
     settings,
     llmUsage,
   );
-  const scorePostProcess = new ScorePostProcessService(projects);
+  const scorePostProcess = new ScorePostProcessService(
+    projects,
+    settings,
+    llmUsage,
+  );
   answerGeneratorService = answerGenerator;
   const appService = new AppService(
     () => mainWindow,

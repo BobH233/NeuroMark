@@ -174,6 +174,17 @@ function applyExtraLibs() {
   );
 }
 
+function syncLineNumberGutter() {
+  if (!editorRef.value || !modelRef.value) {
+    return;
+  }
+
+  const digits = String(modelRef.value.getLineCount()).length;
+  editorRef.value.updateOptions({
+    lineNumbersMinChars: Math.max(4, digits + 1),
+  });
+}
+
 onMounted(() => {
   if (!editorRootRef.value) {
     return;
@@ -192,7 +203,7 @@ onMounted(() => {
     theme: 'neuromark-light',
     automaticLayout: true,
     minimap: { enabled: false },
-    lineNumbersMinChars: 3,
+    lineNumbersMinChars: 5,
     wordWrap: 'on',
     scrollBeyondLastLine: false,
     tabSize: 2,
@@ -207,11 +218,13 @@ onMounted(() => {
     renderLineHighlight: 'line',
     readOnly: props.readonly,
   });
+  syncLineNumberGutter();
 
   editorRef.value.onDidChangeModelContent(() => {
     if (!modelRef.value || applyingExternalValue) {
       return;
     }
+    syncLineNumberGutter();
     emit('update:modelValue', modelRef.value.getValue());
   });
 
@@ -237,6 +250,7 @@ watch(
       () => null,
     );
     applyingExternalValue = false;
+    syncLineNumberGutter();
   },
 );
 

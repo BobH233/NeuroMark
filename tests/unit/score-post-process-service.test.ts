@@ -1,9 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import type { ScorePostProcessPaperData } from '@preload/contracts';
+import type {
+  ScorePostProcessPaperData,
+  ScorePostProcessProjectContext,
+} from '@preload/contracts';
 import {
   createScriptError,
+  executeScorePostProcessScript,
   normalizeScriptOutputs,
   normalizeToRange,
+  parseScorePostProcessAiScriptModelResponse,
 } from '@main/services/scorePostProcessService';
 
 function createPaper(
@@ -29,6 +34,30 @@ function createPaper(
     scanStatus: 'completed',
     gradingStatus: 'completed',
     ...overrides,
+  };
+}
+
+function createProjectContext(): ScorePostProcessProjectContext {
+  return {
+    id: 'project-1',
+    name: '测试项目',
+    rootPath: '/tmp/project-1',
+    referenceAnswerVersion: 1,
+    stats: {
+      importedPaperCount: 2,
+      scannedPaperCount: 2,
+      gradedPaperCount: 2,
+      averageScore: 80,
+      pageCount: 4,
+      lastTaskSummary: 'done',
+    },
+    settings: {
+      gradingConcurrency: 2,
+      drawRegions: false,
+      defaultImageDetail: 'auto',
+      enableScanPostProcess: false,
+      skipScanProcessing: false,
+    },
   };
 }
 
@@ -88,5 +117,64 @@ describe('scorePostProcessService helpers', () => {
 
     expect(error.lineNumber).toBe(3);
     expect(error.columnNumber).toBe(9);
+  });
+
+  it('reports compile errors from in-memory script execution', () => {
+    const result = executeScorePostProcessScript({
+      projectId: 'project-1',
+      projectContext: createProjectContext(),
+      paperInputs: [createPaper({})],
+      scriptName: 'broken',
+      scriptCode: 'return {',
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.error?.phase).toBe('compile');
+  });
+
+  it('reports runtime errors from in-memory script execution', () => {
+    const result = executeScorePostProcessScript({
+      projectId: 'project-1',
+      projectContext: createProjectContext(),
+      paperInputs: [createPaper({})],
+      scriptName: 'boom',
+      scriptCode: "throw new Error('boom');",
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.error?.phase).toBe('runtime');
+    expect(result.error?.message).toContain('boom');
+  });
+
+  it('reports normalize errors from in-memory script execution', () => {
+    const result = executeScorePostProcessScript({
+      projectId: 'project-1',
+      projectContext: createProjectContext(),
+      paperInputs: [createPaper({})],
+      scriptName: 'bad-output',
+      scriptCode: "return [{ paperId: 'missing-paper', processedScore: 88 }];",
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.error?.phase).toBe('normalize');
+    expect(result.error?.message).toContain('未知试卷');
+  });
+
+  it('parses strict AI script JSON responses', () => {
+    const parsed = parseScorePostProcessAiScriptModelResponse(`{
+      "scriptName": "压缩低分段",
+      "summary": "把 80 分以下压缩到 60-80 分段",
+      "assumptions": [],
+      "scriptCode": "return papers.map((paper) => ({ paperId: paper.paperId }));"
+    }`);
+
+    expect(parsed.scriptName).toBe('压缩低分段');
+    expect(parsed.assumptions).toEqual([]);
+  });
+
+  it('rejects invalid AI script JSON responses', () => {
+    expect(() =>
+      parseScorePostProcessAiScriptModelResponse('not json'),
+    ).toThrow('合法 JSON 对象');
   });
 });

@@ -71,6 +71,8 @@ function getSourceLabel(source: LlmUsageSource): string {
       return '连接测试';
     case 'smart-name-match':
       return '智能核名';
+    case 'score-postprocess-ai-script':
+      return 'AI脚本生成';
     default:
       return source;
   }

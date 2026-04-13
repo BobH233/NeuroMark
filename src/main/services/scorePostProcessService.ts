@@ -3,8 +3,14 @@ import vm from 'node:vm';
 import fs from 'fs-extra';
 import { desc, eq } from 'drizzle-orm';
 import { nanoid } from 'nanoid';
+import OpenAI from 'openai';
+import type { ChatCompletionCreateParamsNonStreaming } from 'openai/resources/chat/completions';
+import { z } from 'zod';
 import type {
+  GenerateScorePostProcessAiScriptInput,
   ExecuteScorePostProcessInput,
+  ScorePostProcessAiScriptResult,
+  ScorePostProcessAiScriptSnapshot,
   ScorePostProcessExecutionResult,
   ScorePostProcessPaperData,
   ScorePostProcessPaperResult,
@@ -17,7 +23,24 @@ import type {
 } from '@preload/contracts';
 import { getDatabase } from '@main/database/client';
 import { scorePostProcessPresetsTable } from '@main/database/schema';
+import { SCORE_POST_PROCESS_AI_SCRIPT_JSON_CONTRACT } from '@main/prompts/score-post-process-ai/schema';
+import { SCORE_POST_PROCESS_AI_SCRIPT_SYSTEM_PROMPT } from '@main/prompts/score-post-process-ai/system';
+import { buildScorePostProcessAiScriptUserPrompt } from '@main/prompts/score-post-process-ai/user';
+import {
+  shouldWriteLlmJsonDebugArtifact,
+  writeLlmJsonDebugArtifact,
+} from './llmJsonDebug';
+import { LlmUsageService, normalizeLlmUsage } from './llmUsageService';
+import { logLlmRequest, logLlmResult } from './llmRequestLogger';
+import {
+  compactErrorMessage,
+  extractReasoningText,
+  extractStreamingDeltaText,
+  isStreamingFallbackCandidate,
+  readAssistantText,
+} from './llmStreamUtils';
 import { ProjectService } from './projectService';
+import { SettingsService } from './settingsService';
 
 type BuiltinPresetDefinition = Omit<
   ScorePostProcessPreset,
@@ -44,6 +67,30 @@ type ScriptReturnValue =
 const LATEST_RUN_FILE_NAME = 'latest.json';
 const SCRIPT_FILE_NAME = '<score-post-process-script>';
 const EXECUTION_TIMEOUT_MS = 1500;
+const AI_SCRIPT_STREAM_FLUSH_INTERVAL_MS = 800;
+const AI_SCRIPT_RESPONSE_SCHEMA = z
+  .object({
+    scriptName: z.string().trim().min(1),
+    summary: z.string().trim().min(1),
+    assumptions: z.array(z.string()),
+    scriptCode: z.string().trim().min(1),
+  })
+  .strict();
+
+type ScorePostProcessAiScriptListener = (
+  snapshot: ScorePostProcessAiScriptSnapshot,
+) => void;
+
+type ScriptExecutionInput = {
+  projectId: string;
+  projectContext: ScorePostProcessProjectContext;
+  paperInputs: ScorePostProcessPaperData[];
+  scriptName?: string;
+  scriptCode: string;
+  preset?: Pick<ScorePostProcessPreset, 'id' | 'name' | 'source'> | null;
+  runId?: string;
+  createdAt?: string;
+};
 const BUILTIN_PRESETS: BuiltinPresetDefinition[] = [
   {
     id: 'builtin-normalize-60-100',
@@ -270,6 +317,14 @@ function percentile(values: number[], score: number): number {
   return (count / values.length) * 100;
 }
 
+function variance(values: number[]): number {
+  if (values.length === 0) {
+    return 0;
+  }
+  const mean = average(values);
+  return average(values.map((value) => (value - mean) ** 2));
+}
+
 function sanitizeJsonRecord(
   value: unknown,
   depth = 0,
@@ -494,8 +549,293 @@ function buildStoredRunPayload(run: ScorePostProcessRunRecord) {
   };
 }
 
+function createNoGradedPapersError(): ScorePostProcessScriptError {
+  return {
+    phase: 'normalize',
+    name: 'NoGradedPapersError',
+    message: '当前项目还没有可用于分数后处理的已批阅答卷。',
+    stack: '当前项目还没有可用于分数后处理的已批阅答卷。',
+    lineNumber: null,
+    columnNumber: null,
+  };
+}
+
+function createEmptyAiScriptSnapshot(
+  projectId: string,
+): ScorePostProcessAiScriptSnapshot {
+  return {
+    projectId,
+    status: 'idle',
+    stage: null,
+    reasoningText: '',
+    previewText: '',
+    errorMessage: null,
+    result: null,
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+function cloneAiScriptSnapshot(
+  snapshot: ScorePostProcessAiScriptSnapshot,
+): ScorePostProcessAiScriptSnapshot {
+  return JSON.parse(JSON.stringify(snapshot)) as ScorePostProcessAiScriptSnapshot;
+}
+
+export function findFirstJsonObject(rawText: string): string {
+  const trimmed = rawText
+    .trim()
+    .replace(/^```json\s*/i, '')
+    .replace(/^```\s*/i, '')
+    .replace(/\s*```$/i, '');
+
+  if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+    return trimmed;
+  }
+
+  let depth = 0;
+  let start = -1;
+  let inString = false;
+  let escaped = false;
+
+  for (let index = 0; index < trimmed.length; index += 1) {
+    const char = trimmed[index];
+
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+      if (char === '\\') {
+        escaped = true;
+        continue;
+      }
+      if (char === '"') {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (char === '"') {
+      inString = true;
+      continue;
+    }
+
+    if (char === '{') {
+      if (depth === 0) {
+        start = index;
+      }
+      depth += 1;
+      continue;
+    }
+
+    if (char === '}') {
+      depth -= 1;
+      if (depth === 0 && start >= 0) {
+        return trimmed.slice(start, index + 1);
+      }
+    }
+  }
+
+  throw new Error('模型返回中未找到合法 JSON 对象。');
+}
+
+export function parseScorePostProcessAiScriptModelResponse(
+  rawText: string,
+): ScorePostProcessAiScriptResult {
+  const jsonText = findFirstJsonObject(rawText);
+  const parsed = JSON.parse(jsonText) as unknown;
+  return AI_SCRIPT_RESPONSE_SCHEMA.parse(parsed);
+}
+
+function buildProgramPromptText(): string {
+  return `${SCORE_POST_PROCESS_AI_SCRIPT_SYSTEM_PROMPT}\n\n${SCORE_POST_PROCESS_AI_SCRIPT_JSON_CONTRACT}`;
+}
+
+function formatScriptValidationError(error: ScorePostProcessScriptError): string {
+  const position =
+    error.lineNumber != null
+      ? `（第 ${error.lineNumber} 行，第 ${error.columnNumber ?? 1} 列）`
+      : '';
+  return `${error.phase} 阶段失败${position}：${error.message}`;
+}
+
+export function executeScorePostProcessScript(
+  input: ScriptExecutionInput,
+): ScorePostProcessExecutionResult {
+  if (!input.paperInputs.length) {
+    return {
+      success: false,
+      run: null,
+      error: createNoGradedPapersError(),
+    };
+  }
+
+  const logs: string[] = [];
+  const collectedOutputs: ScriptOutputRow[] = [];
+  const projectContext = deepFreeze({
+    ...input.projectContext,
+    stats: { ...input.projectContext.stats },
+    settings: { ...input.projectContext.settings },
+  });
+  const frozenPapers = deepFreeze(
+    input.paperInputs.map((paper) => ({
+      ...paper,
+      studentInfo: { ...paper.studentInfo },
+      questionScores: paper.questionScores.map((question) => ({
+        ...question,
+      })),
+    })),
+  );
+  const utils = buildScriptUtilities();
+  const output = (row: ScriptOutputRow) => {
+    collectedOutputs.push(row);
+  };
+  const outputMany = (rows: ScriptOutputRow[]) => {
+    if (!Array.isArray(rows)) {
+      throw new Error('outputMany 需要传入数组。');
+    }
+    collectedOutputs.push(...rows);
+  };
+  const log = (...args: unknown[]) => {
+    logs.push(
+      args
+        .map((arg) =>
+          typeof arg === 'string'
+            ? arg
+            : JSON.stringify(sanitizeJsonValue(arg)),
+        )
+        .join(' '),
+    );
+  };
+  const context = vm.createContext({
+    project: projectContext,
+    papers: frozenPapers,
+    utils,
+    output,
+    outputMany,
+    log,
+    Math,
+    Number,
+    String,
+    Boolean,
+    Array,
+    Object,
+    JSON,
+    console: {
+      log,
+      info: log,
+      warn: log,
+      error: log,
+    },
+  });
+
+  let returnedValue: ScriptReturnValue;
+  try {
+    const script = new vm.Script(
+      `"use strict";\n(function () {\n${input.scriptCode}\n})()`,
+      {
+        filename: SCRIPT_FILE_NAME,
+      },
+    );
+    returnedValue = script.runInContext(context, {
+      timeout: EXECUTION_TIMEOUT_MS,
+    }) as ScriptReturnValue;
+  } catch (error) {
+    return {
+      success: false,
+      run: null,
+      error: createScriptError(
+        error instanceof SyntaxError ? 'compile' : 'runtime',
+        error,
+      ),
+    };
+  }
+
+  try {
+    if (Array.isArray(returnedValue)) {
+      collectedOutputs.push(...returnedValue);
+    } else if (returnedValue && typeof returnedValue === 'object') {
+      if (Array.isArray(returnedValue.outputs)) {
+        collectedOutputs.push(...(returnedValue.outputs as ScriptOutputRow[]));
+      } else if (returnedValue.outputs != null) {
+        throw new Error('脚本返回的 outputs 必须是数组。');
+      }
+    }
+
+    const normalizedResults = normalizeScriptOutputs(
+      input.paperInputs,
+      collectedOutputs,
+    );
+    const processedScores = normalizedResults.map((item) => item.processedScore);
+    const originalScores = normalizedResults.map((item) => item.originalScore);
+    const run: ScorePostProcessRunRecord = {
+      id: input.runId ?? `score-post-process-${nanoid(10)}`,
+      projectId: input.projectId,
+      scriptName: input.scriptName?.trim() || input.preset?.name || '临时脚本',
+      presetId: input.preset?.id ?? null,
+      presetName: input.preset?.name ?? null,
+      presetSource: input.preset?.source ?? 'adhoc',
+      scriptCode: input.scriptCode,
+      createdAt: input.createdAt ?? new Date().toISOString(),
+      summary: {
+        paperCount: normalizedResults.length,
+        appliedCount: normalizedResults.filter((item) => item.applied).length,
+        averageOriginalScore: roundScore(average(originalScores)),
+        averageProcessedScore: roundScore(average(processedScores)),
+        minProcessedScore: roundScore(min(processedScores)),
+        maxProcessedScore: roundScore(max(processedScores)),
+      },
+      scriptSummary:
+        returnedValue &&
+        typeof returnedValue === 'object' &&
+        !Array.isArray(returnedValue) &&
+        returnedValue.summary &&
+        typeof returnedValue.summary === 'object' &&
+        !Array.isArray(returnedValue.summary)
+          ? sanitizeJsonRecord(returnedValue.summary)
+          : null,
+      results: normalizedResults,
+      logs,
+      exportPath: null,
+    };
+
+    return {
+      success: true,
+      run,
+      error: null,
+    };
+  } catch (error) {
+    return {
+      success: false,
+      run: null,
+      error: createScriptError('normalize', error),
+    };
+  }
+}
+
 export class ScorePostProcessService {
-  constructor(private readonly projects: ProjectService) {}
+  private aiScriptListeners = new Set<ScorePostProcessAiScriptListener>();
+
+  private aiSnapshots = new Map<string, ScorePostProcessAiScriptSnapshot>();
+
+  constructor(
+    private readonly projects: ProjectService,
+    private readonly settings: SettingsService,
+    private readonly llmUsage: LlmUsageService,
+  ) {}
+
+  onAiScriptUpdated(handler: ScorePostProcessAiScriptListener): () => void {
+    this.aiScriptListeners.add(handler);
+    return () => {
+      this.aiScriptListeners.delete(handler);
+    };
+  }
+
+  getAiScriptSnapshot(projectId: string): ScorePostProcessAiScriptSnapshot {
+    return cloneAiScriptSnapshot(
+      this.aiSnapshots.get(projectId) ?? createEmptyAiScriptSnapshot(projectId),
+    );
+  }
 
   async listPresets(): Promise<ScorePostProcessPreset[]> {
     const db = getDatabase();
@@ -612,174 +952,37 @@ export class ScorePostProcessService {
     projectId: string,
     input: ExecuteScorePostProcessInput,
   ): Promise<ScorePostProcessExecutionResult> {
-    const [project, results, papers, presets] = await Promise.all([
-      this.projects.getProjectById(projectId),
-      this.projects.listResults(projectId),
-      this.projects.listProjectPapers(projectId),
-      this.listPresets(),
-    ]);
-    const paperInputs = buildPaperData(results, papers);
+    return this.executeInternal(projectId, input, { persist: true });
+  }
 
-    if (!paperInputs.length) {
-      return {
-        success: false,
-        run: null,
-        error: {
-          phase: 'normalize',
-          name: 'NoGradedPapersError',
-          message: '当前项目还没有可用于分数后处理的已批阅答卷。',
-          stack: '当前项目还没有可用于分数后处理的已批阅答卷。',
-          lineNumber: null,
-          columnNumber: null,
-        },
-      };
+  async startAiScriptGeneration(
+    projectId: string,
+    input: GenerateScorePostProcessAiScriptInput,
+  ): Promise<ScorePostProcessAiScriptSnapshot> {
+    const instruction = input.instruction.trim();
+    if (!instruction) {
+      throw new Error('请先输入你希望 AI 处理分数的意图。');
     }
 
-    const preset = input.presetId
-      ? (presets.find((item) => item.id === input.presetId) ?? null)
-      : null;
-    const logs: string[] = [];
-    const collectedOutputs: ScriptOutputRow[] = [];
-    const projectContext = deepFreeze(buildProjectContext(project));
-    const frozenPapers = deepFreeze(
-      paperInputs.map((paper) => ({
-        ...paper,
-        studentInfo: { ...paper.studentInfo },
-        questionScores: paper.questionScores.map((question) => ({
-          ...question,
-        })),
-      })),
-    );
-    const utils = buildScriptUtilities();
-    const output = (row: ScriptOutputRow) => {
-      collectedOutputs.push(row);
-    };
-    const outputMany = (rows: ScriptOutputRow[]) => {
-      if (!Array.isArray(rows)) {
-        throw new Error('outputMany 需要传入数组。');
-      }
-      collectedOutputs.push(...rows);
-    };
-    const log = (...args: unknown[]) => {
-      logs.push(
-        args
-          .map((arg) =>
-            typeof arg === 'string'
-              ? arg
-              : JSON.stringify(sanitizeJsonValue(arg)),
-          )
-          .join(' '),
-      );
-    };
-    const context = vm.createContext({
-      project: projectContext,
-      papers: frozenPapers,
-      utils,
-      output,
-      outputMany,
-      log,
-      console: {
-        log,
-        info: log,
-        warn: log,
-        error: log,
-      },
-    });
-
-    let returnedValue: ScriptReturnValue;
-    try {
-      const script = new vm.Script(
-        `"use strict";\n(function () {\n${input.scriptCode}\n})()`,
-        {
-          filename: SCRIPT_FILE_NAME,
-        },
-      );
-      returnedValue = script.runInContext(context, {
-        timeout: EXECUTION_TIMEOUT_MS,
-      }) as ScriptReturnValue;
-    } catch (error) {
-      return {
-        success: false,
-        run: null,
-        error: createScriptError(
-          error instanceof SyntaxError ? 'compile' : 'runtime',
-          error,
-        ),
-      };
+    const current = this.aiSnapshots.get(projectId);
+    if (current?.status === 'running') {
+      throw new Error('AI 脚本正在生成中，请等待当前请求完成。');
     }
 
-    try {
-      if (Array.isArray(returnedValue)) {
-        collectedOutputs.push(...returnedValue);
-      } else if (returnedValue && typeof returnedValue === 'object') {
-        if (Array.isArray(returnedValue.outputs)) {
-          collectedOutputs.push(
-            ...(returnedValue.outputs as ScriptOutputRow[]),
-          );
-        } else if (returnedValue.outputs != null) {
-          throw new Error('脚本返回的 outputs 必须是数组。');
-        }
-      }
+    const snapshot: ScorePostProcessAiScriptSnapshot = {
+      projectId,
+      status: 'running',
+      stage: '正在整理项目与答卷上下文',
+      reasoningText: '',
+      previewText: '',
+      errorMessage: null,
+      result: null,
+      updatedAt: new Date().toISOString(),
+    };
+    this.setAiSnapshot(snapshot);
 
-      const normalizedResults = normalizeScriptOutputs(
-        paperInputs,
-        collectedOutputs,
-      );
-      const processedScores = normalizedResults.map(
-        (item) => item.processedScore,
-      );
-      const originalScores = normalizedResults.map(
-        (item) => item.originalScore,
-      );
-      const run: ScorePostProcessRunRecord = {
-        id: `score-post-process-${nanoid(10)}`,
-        projectId,
-        scriptName: input.scriptName?.trim() || preset?.name || '临时脚本',
-        presetId: preset?.id ?? null,
-        presetName: preset?.name ?? null,
-        presetSource: preset?.source ?? 'adhoc',
-        scriptCode: input.scriptCode,
-        createdAt: new Date().toISOString(),
-        summary: {
-          paperCount: normalizedResults.length,
-          appliedCount: normalizedResults.filter((item) => item.applied).length,
-          averageOriginalScore: roundScore(average(originalScores)),
-          averageProcessedScore: roundScore(average(processedScores)),
-          minProcessedScore: roundScore(min(processedScores)),
-          maxProcessedScore: roundScore(max(processedScores)),
-        },
-        scriptSummary:
-          returnedValue &&
-          typeof returnedValue === 'object' &&
-          !Array.isArray(returnedValue) &&
-          returnedValue.summary &&
-          typeof returnedValue.summary === 'object' &&
-          !Array.isArray(returnedValue.summary)
-            ? sanitizeJsonRecord(returnedValue.summary)
-            : null,
-        results: normalizedResults,
-        logs,
-        exportPath: null,
-      };
-
-      const latestRunPath = getLatestRunPath(project.rootPath);
-      await fs.ensureDir(path.dirname(latestRunPath));
-      await fs.writeJson(latestRunPath, buildStoredRunPayload(run), {
-        spaces: 2,
-      });
-
-      return {
-        success: true,
-        run,
-        error: null,
-      };
-    } catch (error) {
-      return {
-        success: false,
-        run: null,
-        error: createScriptError('normalize', error),
-      };
-    }
+    void this.runAiScriptGeneration(projectId, instruction);
+    return cloneAiScriptSnapshot(snapshot);
   }
 
   async exportLatest(
@@ -827,5 +1030,451 @@ export class ScorePostProcessService {
     );
 
     return outputPath;
+  }
+
+  private async executeInternal(
+    projectId: string,
+    input: ExecuteScorePostProcessInput,
+    options: {
+      persist: boolean;
+    },
+  ): Promise<ScorePostProcessExecutionResult> {
+    const context = await this.loadExecutionContext(projectId);
+    const preset = input.presetId
+      ? (context.presets.find((item) => item.id === input.presetId) ?? null)
+      : null;
+    const result = executeScorePostProcessScript({
+      projectId,
+      projectContext: context.projectContext,
+      paperInputs: context.paperInputs,
+      scriptName: input.scriptName,
+      scriptCode: input.scriptCode,
+      preset,
+    });
+
+    if (!options.persist || !result.success || !result.run) {
+      return result;
+    }
+
+    const latestRunPath = getLatestRunPath(context.project.rootPath);
+    await fs.ensureDir(path.dirname(latestRunPath));
+    await fs.writeJson(latestRunPath, buildStoredRunPayload(result.run), {
+      spaces: 2,
+    });
+    return result;
+  }
+
+  private async loadExecutionContext(projectId: string) {
+    const [project, results, papers, presets] = await Promise.all([
+      this.projects.getProjectById(projectId),
+      this.projects.listResults(projectId),
+      this.projects.listProjectPapers(projectId),
+      this.listPresets(),
+    ]);
+    const paperInputs = buildPaperData(results, papers);
+
+    return {
+      project,
+      projectContext: buildProjectContext(project),
+      paperInputs,
+      presets,
+    };
+  }
+
+  private async runAiScriptGeneration(
+    projectId: string,
+    instruction: string,
+  ): Promise<void> {
+    try {
+      const settingsCheck = await this.settings.validateGenerationSettings();
+      if (!settingsCheck.ok) {
+        throw new Error(settingsCheck.message);
+      }
+
+      const context = await this.loadExecutionContext(projectId);
+      if (!context.paperInputs.length) {
+        throw new Error(createNoGradedPapersError().message);
+      }
+
+      const client = new OpenAI({
+        apiKey: settingsCheck.settings.apiKey,
+        baseURL: settingsCheck.settings.baseUrl,
+        timeout: settingsCheck.settings.timeoutMs,
+      });
+
+      const firstCandidate = await this.requestAiScriptCandidate({
+        client,
+        settings: settingsCheck.settings,
+        projectId,
+        attempt: 1,
+        instruction,
+        context,
+      });
+
+      this.patchAiSnapshot(projectId, {
+        stage: '正在校验第 1 次生成的脚本',
+      });
+
+      const firstValidation = this.validateAiScriptCandidate(
+        projectId,
+        context,
+        firstCandidate,
+      );
+      if (firstValidation.success) {
+        this.patchAiSnapshot(projectId, {
+          status: 'completed',
+          stage: '脚本生成完成，已通过执行前校验',
+          errorMessage: null,
+          result: firstCandidate,
+        });
+        return;
+      }
+
+      this.patchAiSnapshot(projectId, {
+        stage: '首轮脚本未通过校验，正在自动修复',
+      });
+
+      const secondCandidate = await this.requestAiScriptCandidate({
+        client,
+        settings: settingsCheck.settings,
+        projectId,
+        attempt: 2,
+        instruction,
+        context,
+        repairError: firstValidation.error,
+        previousScriptName: firstCandidate.scriptName,
+        previousScriptCode: firstCandidate.scriptCode,
+      });
+
+      this.patchAiSnapshot(projectId, {
+        stage: '正在校验修复后的脚本',
+      });
+
+      const secondValidation = this.validateAiScriptCandidate(
+        projectId,
+        context,
+        secondCandidate,
+      );
+      if (!secondValidation.success) {
+        throw new Error(
+          `AI 生成的脚本未能通过校验：${formatScriptValidationError(
+            secondValidation.error,
+          )}`,
+        );
+      }
+
+      this.patchAiSnapshot(projectId, {
+        status: 'completed',
+        stage: '脚本生成完成，已通过执行前校验',
+        errorMessage: null,
+        result: secondCandidate,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.patchAiSnapshot(projectId, {
+        status: 'failed',
+        stage: 'AI 脚本生成失败',
+        errorMessage: message,
+      });
+    }
+  }
+
+  private async requestAiScriptCandidate(input: {
+    client: OpenAI;
+    settings: ChatCompletionCreateParamsNonStreaming['model'] extends string
+      ? {
+          model: string;
+          gradingTemperature: number;
+          reasoningEffort: 'low' | 'medium' | 'high';
+        }
+      : never;
+    projectId: string;
+    attempt: number;
+    instruction: string;
+    context: Awaited<ReturnType<ScorePostProcessService['loadExecutionContext']>>;
+    repairError?: ScorePostProcessScriptError | null;
+    previousScriptName?: string;
+    previousScriptCode?: string;
+  }): Promise<ScorePostProcessAiScriptResult> {
+      const scoreList = input.context.paperInputs.map((paper) => paper.totalScore);
+      const label = `score-post-process-ai-script:${input.projectId}:attempt-${input.attempt}`;
+      this.patchAiSnapshot(input.projectId, {
+        stage:
+          input.attempt === 1
+            ? '正在请求模型'
+            : '正在请求模型修复脚本',
+      });
+      const requestPayload: ChatCompletionCreateParamsNonStreaming = {
+        model: input.settings.model,
+        temperature: input.settings.gradingTemperature,
+      reasoning_effort: input.settings.reasoningEffort,
+      messages: [
+        {
+          role: 'system',
+          content: buildProgramPromptText(),
+        },
+        {
+          role: 'user',
+          content: buildScorePostProcessAiScriptUserPrompt({
+            instruction: input.instruction,
+            project: input.context.projectContext,
+            scoreStats: {
+              paperCount: input.context.paperInputs.length,
+              minScore: roundScore(min(scoreList), 2),
+              maxScore: roundScore(max(scoreList), 2),
+              averageScore: roundScore(average(scoreList), 2),
+              medianScore: roundScore(quantile(scoreList, 0.5), 2),
+              variance: roundScore(variance(scoreList), 4),
+              standardDeviation: roundScore(standardDeviation(scoreList), 4),
+              q1: roundScore(quantile(scoreList, 0.25), 2),
+              q3: roundScore(quantile(scoreList, 0.75), 2),
+              p10: roundScore(quantile(scoreList, 0.1), 2),
+              p90: roundScore(quantile(scoreList, 0.9), 2),
+            },
+            repairError: input.repairError,
+            previousScriptName: input.previousScriptName,
+            previousScriptCode: input.previousScriptCode,
+          }),
+        },
+      ],
+    };
+
+    logLlmRequest(label, {
+      client: {
+        baseURL: input.client.baseURL,
+        model: input.settings.model,
+        timeoutMs: input.client.timeout,
+        apiKey: input.client.apiKey,
+        reasoningEffort: input.settings.reasoningEffort,
+        gradingTemperature: input.settings.gradingTemperature,
+      },
+      payload: requestPayload,
+    });
+
+    let rawText = '';
+    try {
+      const response = await this.collectModelResponseText({
+        client: input.client,
+        requestPayload,
+        projectId: input.projectId,
+      });
+      rawText = response.rawText;
+      const parsed = parseScorePostProcessAiScriptModelResponse(rawText);
+      logLlmResult(label, {
+        status: 'success',
+        detail: {
+          mode: response.mode,
+          scriptName: parsed.scriptName,
+          assumptionsCount: parsed.assumptions.length,
+          responseTextLength: rawText.length,
+        },
+      });
+      return parsed;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const debugDumpPath =
+        rawText && shouldWriteLlmJsonDebugArtifact(error)
+          ? await writeLlmJsonDebugArtifact({
+              scope: 'score-post-process-ai-script',
+              identifier: `${input.projectId}-attempt-${input.attempt}`,
+              rawOutput: rawText,
+              errorMessage: message,
+            })
+          : null;
+      logLlmResult(label, {
+        status: 'error',
+        detail: {
+          message,
+          debugDumpPath,
+        },
+      });
+      throw error;
+    }
+  }
+
+  private validateAiScriptCandidate(
+    projectId: string,
+    context: Awaited<ReturnType<ScorePostProcessService['loadExecutionContext']>>,
+    candidate: ScorePostProcessAiScriptResult,
+  ):
+    | {
+        success: true;
+      }
+    | {
+        success: false;
+        error: ScorePostProcessScriptError;
+      } {
+    const result = executeScorePostProcessScript({
+      projectId,
+      projectContext: context.projectContext,
+      paperInputs: context.paperInputs,
+      scriptName: candidate.scriptName,
+      scriptCode: candidate.scriptCode,
+      preset: null,
+    });
+
+    if (result.success) {
+      return { success: true };
+    }
+
+    return {
+      success: false,
+      error: result.error ?? createNoGradedPapersError(),
+    };
+  }
+
+  private async collectModelResponseText(input: {
+    client: OpenAI;
+    requestPayload: ChatCompletionCreateParamsNonStreaming;
+    projectId: string;
+  }): Promise<{
+    rawText: string;
+    mode: 'stream' | 'non-stream';
+  }> {
+    try {
+      this.patchAiSnapshot(input.projectId, {
+        stage: '正在请求模型',
+      });
+      return await this.collectStreamingResponseText(input);
+    } catch (error) {
+      if (!isStreamingFallbackCandidate(error)) {
+        throw error;
+      }
+
+      this.patchAiSnapshot(input.projectId, {
+        stage: `正在请求模型（已切换为普通请求）：${compactErrorMessage(error)}`,
+      });
+      return this.collectNonStreamingResponseText(input);
+    }
+  }
+
+  private async collectStreamingResponseText(input: {
+    client: OpenAI;
+    requestPayload: ChatCompletionCreateParamsNonStreaming;
+    projectId: string;
+  }): Promise<{
+    rawText: string;
+    mode: 'stream';
+  }> {
+    const stream = await input.client.chat.completions.create({
+      ...input.requestPayload,
+      stream: true,
+      stream_options: {
+        include_usage: true,
+      },
+    });
+
+    let rawText = '';
+    let reasoningText = '';
+    let usage = null;
+    let lastFlushedLength = 0;
+    let lastReasoningFlushedLength = 0;
+    let lastFlushAt = 0;
+
+    for await (const chunk of stream) {
+      usage = normalizeLlmUsage(chunk.usage) ?? usage;
+      const delta = chunk.choices[0]?.delta;
+      const chunkText = extractStreamingDeltaText(delta?.content);
+      const chunkReasoningText = extractReasoningText(delta);
+
+      if (chunkText) {
+        rawText += chunkText;
+      }
+      if (chunkReasoningText) {
+        reasoningText += chunkReasoningText;
+      }
+      if (!chunkText && !chunkReasoningText) {
+        continue;
+      }
+
+      const now = Date.now();
+      const shouldFlush =
+        rawText.length - lastFlushedLength >= 80 ||
+        reasoningText.length - lastReasoningFlushedLength >= 120 ||
+        now - lastFlushAt >= AI_SCRIPT_STREAM_FLUSH_INTERVAL_MS;
+
+      if (shouldFlush) {
+        lastFlushedLength = rawText.length;
+        lastReasoningFlushedLength = reasoningText.length;
+        lastFlushAt = now;
+        this.patchAiSnapshot(input.projectId, {
+          stage: rawText.trim().length > 0 ? '正在接收模型输出草稿' : '模型正在推理',
+          previewText: rawText,
+          reasoningText,
+        });
+      }
+    }
+
+    this.patchAiSnapshot(input.projectId, {
+      previewText: rawText,
+      reasoningText,
+    });
+
+    await this.llmUsage.recordUsage({
+      source: 'score-postprocess-ai-script',
+      label: 'AI脚本生成',
+      model: input.requestPayload.model,
+      usage,
+    });
+
+    return {
+      rawText,
+      mode: 'stream',
+    };
+  }
+
+  private async collectNonStreamingResponseText(input: {
+    client: OpenAI;
+    requestPayload: ChatCompletionCreateParamsNonStreaming;
+    projectId: string;
+  }): Promise<{
+    rawText: string;
+    mode: 'non-stream';
+  }> {
+    const response = await input.client.chat.completions.create(
+      input.requestPayload,
+    );
+    const rawText = readAssistantText(response);
+    const reasoningText = extractReasoningText(response.choices[0]?.message);
+    const usage = normalizeLlmUsage(response.usage);
+
+    this.patchAiSnapshot(input.projectId, {
+      previewText: rawText,
+      reasoningText,
+      stage: '模型已返回完整结果，正在解析',
+    });
+
+    await this.llmUsage.recordUsage({
+      source: 'score-postprocess-ai-script',
+      label: 'AI脚本生成',
+      model: input.requestPayload.model,
+      usage,
+    });
+
+    return {
+      rawText,
+      mode: 'non-stream',
+    };
+  }
+
+  private setAiSnapshot(snapshot: ScorePostProcessAiScriptSnapshot): void {
+    this.aiSnapshots.set(snapshot.projectId, cloneAiScriptSnapshot(snapshot));
+    const payload = cloneAiScriptSnapshot(snapshot);
+    for (const listener of this.aiScriptListeners) {
+      listener(payload);
+    }
+  }
+
+  private patchAiSnapshot(
+    projectId: string,
+    patch: Partial<ScorePostProcessAiScriptSnapshot>,
+  ): void {
+    const current =
+      this.aiSnapshots.get(projectId) ?? createEmptyAiScriptSnapshot(projectId);
+    this.setAiSnapshot({
+      ...current,
+      ...patch,
+      updatedAt: new Date().toISOString(),
+    });
   }
 }

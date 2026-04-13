@@ -281,6 +281,34 @@ export interface ScorePostProcessProjectSnapshot {
   latestRun: ScorePostProcessRunRecord | null;
 }
 
+export type ScorePostProcessAiGenerationStatus =
+  | 'idle'
+  | 'running'
+  | 'completed'
+  | 'failed';
+
+export interface GenerateScorePostProcessAiScriptInput {
+  instruction: string;
+}
+
+export interface ScorePostProcessAiScriptResult {
+  scriptName: string;
+  scriptCode: string;
+  summary: string;
+  assumptions: string[];
+}
+
+export interface ScorePostProcessAiScriptSnapshot {
+  projectId: string;
+  status: ScorePostProcessAiGenerationStatus;
+  stage: string | null;
+  reasoningText: string;
+  previewText: string;
+  errorMessage: string | null;
+  result: ScorePostProcessAiScriptResult | null;
+  updatedAt: string;
+}
+
 export interface ExecuteScorePostProcessInput {
   scriptName?: string;
   presetId?: string | null;
@@ -425,7 +453,8 @@ export type LlmUsageSource =
   | 'grading-paper'
   | 'grading-rubric'
   | 'settings-test'
-  | 'smart-name-match';
+  | 'smart-name-match'
+  | 'score-postprocess-ai-script';
 
 export interface LlmPricingSettings {
   currency: string;
@@ -628,6 +657,9 @@ export type DebugLogHandler = (entry: DebugLogEntry) => void;
 export type SmartNameMatchUpdateHandler = (
   snapshot: SmartNameMatchSnapshot,
 ) => void;
+export type ScorePostProcessAiUpdateHandler = (
+  snapshot: ScorePostProcessAiScriptSnapshot,
+) => void;
 
 export interface NeuromarkApi {
   app: {
@@ -737,6 +769,16 @@ export interface NeuromarkApi {
       projectId: string,
       input: ExecuteScorePostProcessInput,
     ) => Promise<ScorePostProcessExecutionResult>;
+    getAiScriptSnapshot: (
+      projectId: string,
+    ) => Promise<ScorePostProcessAiScriptSnapshot>;
+    startAiScriptGeneration: (
+      projectId: string,
+      input: GenerateScorePostProcessAiScriptInput,
+    ) => Promise<ScorePostProcessAiScriptSnapshot>;
+    onAiScriptUpdated: (
+      handler: ScorePostProcessAiUpdateHandler,
+    ) => () => void;
     exportLatest: (
       projectId: string,
       options?: ExportScorePostProcessOptions,

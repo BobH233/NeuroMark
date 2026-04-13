@@ -1,8 +1,9 @@
-import { ipcMain } from 'electron';
+import { BrowserWindow, ipcMain } from 'electron';
 import { z } from 'zod';
 import type {
   ExecuteScorePostProcessInput,
   ExportScorePostProcessOptions,
+  GenerateScorePostProcessAiScriptInput,
   ScorePostProcessPresetInput,
 } from '@preload/contracts';
 import type { ServiceBundle } from '@main/services/types';
@@ -18,6 +19,10 @@ const executionSchema = z.object({
   scriptName: z.string().trim().min(1).max(120).optional(),
   presetId: z.string().trim().min(1).nullable().optional(),
   scriptCode: z.string().trim().min(1),
+});
+
+const aiGenerationSchema = z.object({
+  instruction: z.string().trim().min(1),
 });
 
 const exportSchema = z.object({
@@ -52,6 +57,23 @@ export function registerScorePostProcessIpc(services: ServiceBundle): void {
       ),
   );
   ipcMain.handle(
+    'score-post-process:get-ai-script-snapshot',
+    (_event, projectId: string) =>
+      services.scorePostProcess.getAiScriptSnapshot(projectId),
+  );
+  ipcMain.handle(
+    'score-post-process:start-ai-script-generation',
+    (
+      _event,
+      projectId: string,
+      payload: GenerateScorePostProcessAiScriptInput,
+    ) =>
+      services.scorePostProcess.startAiScriptGeneration(
+        projectId,
+        aiGenerationSchema.parse(payload),
+      ),
+  );
+  ipcMain.handle(
     'score-post-process:export-latest',
     (_event, projectId: string, payload?: ExportScorePostProcessOptions) =>
       services.scorePostProcess.exportLatest(
@@ -59,4 +81,10 @@ export function registerScorePostProcessIpc(services: ServiceBundle): void {
         payload ? exportSchema.parse(payload) : undefined,
       ),
   );
+
+  services.scorePostProcess.onAiScriptUpdated((snapshot) => {
+    for (const win of BrowserWindow.getAllWindows()) {
+      win.webContents.send('score-post-process:ai-script-updated', snapshot);
+    }
+  });
 }
