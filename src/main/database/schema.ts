@@ -4,7 +4,9 @@ export const projectsTable = sqliteTable('projects', {
   id: text('id').primaryKey(),
   name: text('name').notNull(),
   rootPath: text('root_path').notNull().unique(),
-  referenceAnswerVersion: integer('reference_answer_version').notNull().default(1),
+  referenceAnswerVersion: integer('reference_answer_version')
+    .notNull()
+    .default(1),
   statsJson: text('stats_json').notNull(),
   settingsJson: text('settings_json').notNull(),
   createdAt: text('created_at').notNull(),
@@ -63,13 +65,25 @@ export const settingsTable = sqliteTable('settings', {
   apiKeyEncrypted: text('api_key_encrypted').notNull(),
   timeoutMs: integer('timeout_ms').notNull(),
   reasoningEffort: text('reasoning_effort').notNull(),
-  answerGenerationTemperature: real('answer_generation_temperature').notNull().default(0.2),
+  answerGenerationTemperature: real('answer_generation_temperature')
+    .notNull()
+    .default(0.2),
   gradingTemperature: real('grading_temperature').notNull().default(0),
-  pricingInputPerMillion: real('pricing_input_per_million').notNull().default(2),
-  pricingOutputPerMillion: real('pricing_output_per_million').notNull().default(12),
-  pricingCacheReadPerMillion: real('pricing_cache_read_per_million').notNull().default(0.2),
-  pricingCacheWritePerMillion: real('pricing_cache_write_per_million').notNull().default(0),
-  pricingReasoningPerMillion: real('pricing_reasoning_per_million').notNull().default(0),
+  pricingInputPerMillion: real('pricing_input_per_million')
+    .notNull()
+    .default(2),
+  pricingOutputPerMillion: real('pricing_output_per_million')
+    .notNull()
+    .default(12),
+  pricingCacheReadPerMillion: real('pricing_cache_read_per_million')
+    .notNull()
+    .default(0.2),
+  pricingCacheWritePerMillion: real('pricing_cache_write_per_million')
+    .notNull()
+    .default(0),
+  pricingReasoningPerMillion: real('pricing_reasoning_per_million')
+    .notNull()
+    .default(0),
   pricingCurrency: text('pricing_currency').notNull().default('USD'),
   storageMode: text('storage_mode').notNull(),
 });
@@ -117,6 +131,18 @@ export const promptPresetsTable = sqliteTable('prompt_presets', {
   updatedAt: text('updated_at').notNull(),
 });
 
+export const scorePostProcessPresetsTable = sqliteTable(
+  'score_postprocess_presets',
+  {
+    id: text('id').primaryKey(),
+    name: text('name').notNull(),
+    description: text('description').notNull(),
+    code: text('code').notNull(),
+    createdAt: text('created_at').notNull(),
+    updatedAt: text('updated_at').notNull(),
+  },
+);
+
 export type Schema = {
   projectsTable: typeof projectsTable;
   paperRecordsTable: typeof paperRecordsTable;
@@ -126,4 +152,5 @@ export type Schema = {
   llmUsageRecordsTable: typeof llmUsageRecordsTable;
   answerDraftsTable: typeof answerDraftsTable;
   promptPresetsTable: typeof promptPresetsTable;
+  scorePostProcessPresetsTable: typeof scorePostProcessPresetsTable;
 };

@@ -8,12 +8,14 @@ import type { LlmUsageService } from './llmUsageService';
 import type { RuntimeLogService } from './runtimeLogService';
 import type { SettingsService } from './settingsService';
 import type { SmartNameMatchService } from './smartNameMatchService';
+import type { ScorePostProcessService } from './scorePostProcessService';
 import type { TaskManager } from './taskManager';
 
 export interface ServiceBundle {
   app: AppService;
   projects: ProjectService;
   settings: SettingsService;
+  scorePostProcess: ScorePostProcessService;
   llmUsage: LlmUsageService;
   answerGenerator: AnswerGeneratorService;
   smartNameMatch: SmartNameMatchService;

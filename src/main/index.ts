@@ -12,6 +12,7 @@ import { GradingService } from './services/gradingService';
 import { LlmUsageService } from './services/llmUsageService';
 import { ProjectService } from './services/projectService';
 import { RuntimeLogService } from './services/runtimeLogService';
+import { ScorePostProcessService } from './services/scorePostProcessService';
 import { SettingsService } from './services/settingsService';
 import { SmartNameMatchService } from './services/smartNameMatchService';
 import { TaskManager } from './services/taskManager';
@@ -68,7 +69,9 @@ function resolveAppIconPath(): string | null {
     path.join(process.cwd(), 'build/icons/512x512.png'),
   ];
 
-  return candidatePaths.find((candidatePath) => existsSync(candidatePath)) ?? null;
+  return (
+    candidatePaths.find((candidatePath) => existsSync(candidatePath)) ?? null
+  );
 }
 
 function applyPlatformChrome(): void {
@@ -99,7 +102,12 @@ async function bootstrap(): Promise<void> {
   const grading = new GradingService(projects, settings, llmUsage);
   const tasks = new TaskManager(projects, grading);
   const answerGenerator = new AnswerGeneratorService(settings, tasks, llmUsage);
-  const smartNameMatch = new SmartNameMatchService(projects, settings, llmUsage);
+  const smartNameMatch = new SmartNameMatchService(
+    projects,
+    settings,
+    llmUsage,
+  );
+  const scorePostProcess = new ScorePostProcessService(projects);
   answerGeneratorService = answerGenerator;
   const appService = new AppService(
     () => mainWindow,
@@ -113,6 +121,7 @@ async function bootstrap(): Promise<void> {
     app: appService,
     projects,
     settings,
+    scorePostProcess,
     llmUsage,
     answerGenerator,
     smartNameMatch,

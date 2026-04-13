@@ -13,6 +13,7 @@ import {
   NSelect,
 } from 'naive-ui';
 import type { LlmReasoningEffort, PromptPreset } from '@preload/contracts';
+import ScorePostProcessPresetManager from '@/components/ScorePostProcessPresetManager.vue';
 import { useAnswerGeneratorStore } from '@/stores/answer-generator';
 import { useSettingsStore } from '@/stores/settings';
 
@@ -43,7 +44,9 @@ const presetForm = reactive({
 });
 
 const presets = computed(() => answerGeneratorStore.presets);
-const presetEditorTitle = computed(() => (presetForm.id ? '编辑模板' : '新建模板'));
+const presetEditorTitle = computed(() =>
+  presetForm.id ? '编辑模板' : '新建模板',
+);
 const testFeedback = ref<{
   type: 'success' | 'error';
   title: string;
@@ -59,7 +62,8 @@ onMounted(async () => {
     form.apiKey = settingsStore.settings.apiKey;
     form.timeoutMs = settingsStore.settings.timeoutMs;
     form.reasoningEffort = settingsStore.settings.reasoningEffort;
-    form.answerGenerationTemperature = settingsStore.settings.answerGenerationTemperature;
+    form.answerGenerationTemperature =
+      settingsStore.settings.answerGenerationTemperature;
     form.gradingTemperature = settingsStore.settings.gradingTemperature;
   }
 });
@@ -80,7 +84,10 @@ async function test() {
   }
 
   try {
-    const result = await settingsStore.test({ ...form, apiKey: form.apiKey || '' });
+    const result = await settingsStore.test({
+      ...form,
+      apiKey: form.apiKey || '',
+    });
     testFeedback.value = result.success
       ? {
           type: 'success',
@@ -96,7 +103,10 @@ async function test() {
     testFeedback.value = {
       type: 'error',
       title: '连接测试失败',
-      text: error instanceof Error ? error.message : '发生了未知错误，请检查配置后重试。',
+      text:
+        error instanceof Error
+          ? error.message
+          : '发生了未知错误，请检查配置后重试。',
     };
   }
 }
@@ -161,7 +171,10 @@ async function deletePreset(presetId: string) {
     <n-card class="surface-card settings-card" title="OpenAI 兼容后端">
       <n-form label-placement="top">
         <n-form-item label="Base URL">
-          <n-input v-model:value="form.baseUrl" placeholder="https://api.openai.com/v1" />
+          <n-input
+            v-model:value="form.baseUrl"
+            placeholder="https://api.openai.com/v1"
+          />
         </n-form-item>
         <n-form-item label="模型名称">
           <n-input v-model:value="form.model" placeholder="gpt-4.1" />
@@ -175,7 +188,11 @@ async function deletePreset(presetId: string) {
           />
         </n-form-item>
         <n-form-item label="请求超时（毫秒）">
-          <n-input-number v-model:value="form.timeoutMs" :min="5000" :max="600000" />
+          <n-input-number
+            v-model:value="form.timeoutMs"
+            :min="5000"
+            :max="600000"
+          />
         </n-form-item>
         <n-form-item label="思考强度">
           <n-select
@@ -204,7 +221,12 @@ async function deletePreset(presetId: string) {
         </n-form-item>
 
         <div class="settings-actions">
-          <n-button secondary type="primary" :loading="settingsStore.testing" @click="test">
+          <n-button
+            secondary
+            type="primary"
+            :loading="settingsStore.testing"
+            @click="test"
+          >
             测试连接
           </n-button>
           <n-button type="primary" @click="save">保存设置</n-button>
@@ -276,7 +298,10 @@ async function deletePreset(presetId: string) {
       <n-card class="surface-card" :title="presetEditorTitle">
         <n-form label-placement="top">
           <n-form-item label="模板名称">
-            <n-input v-model:value="presetForm.name" placeholder="例如：物理计算题模板" />
+            <n-input
+              v-model:value="presetForm.name"
+              placeholder="例如：物理计算题模板"
+            />
           </n-form-item>
           <n-form-item label="模板说明">
             <n-input
@@ -294,12 +319,18 @@ async function deletePreset(presetId: string) {
           </n-form-item>
 
           <div class="settings-actions">
-            <n-button type="primary" :disabled="!presetForm.name.trim() || !presetForm.prompt.trim()" @click="savePreset">
+            <n-button
+              type="primary"
+              :disabled="!presetForm.name.trim() || !presetForm.prompt.trim()"
+              @click="savePreset"
+            >
               保存模板
             </n-button>
           </div>
         </n-form>
       </n-card>
     </section>
+
+    <ScorePostProcessPresetManager />
   </div>
 </template>

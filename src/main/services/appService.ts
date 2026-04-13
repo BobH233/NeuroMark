@@ -29,7 +29,9 @@ export class AppService {
 
   constructor(
     private readonly getParentWindow: () => BrowserWindow | null,
-    private readonly openPreviewWindow: (token: string) => Promise<BrowserWindow>,
+    private readonly openPreviewWindow: (
+      token: string,
+    ) => Promise<BrowserWindow>,
   ) {}
 
   getDefaultProjectBasePath(): string {
@@ -45,7 +47,19 @@ export class AppService {
     const result = parent
       ? await dialog.showOpenDialog(parent, options)
       : await dialog.showOpenDialog(options);
-    return result.canceled ? null : result.filePaths[0] ?? null;
+    return result.canceled ? null : (result.filePaths[0] ?? null);
+  }
+
+  async selectExportDirectory(): Promise<string | null> {
+    const options: OpenDialogOptions = {
+      title: '选择导出目录',
+      properties: ['openDirectory', 'createDirectory'],
+    };
+    const parent = this.getParentWindow();
+    const result = parent
+      ? await dialog.showOpenDialog(parent, options)
+      : await dialog.showOpenDialog(options);
+    return result.canceled ? null : (result.filePaths[0] ?? null);
   }
 
   async selectImages(): Promise<string[]> {
@@ -55,7 +69,16 @@ export class AppService {
       filters: [
         {
           name: '图片',
-          extensions: ['png', 'jpg', 'jpeg', 'webp', 'bmp', 'tif', 'tiff', 'svg'],
+          extensions: [
+            'png',
+            'jpg',
+            'jpeg',
+            'webp',
+            'bmp',
+            'tif',
+            'tiff',
+            'svg',
+          ],
         },
       ],
     };
@@ -77,7 +100,7 @@ export class AppService {
       ? await dialog.showOpenDialog(parent, options)
       : await dialog.showOpenDialog(options);
 
-    return result.canceled ? null : result.filePaths[0] ?? null;
+    return result.canceled ? null : (result.filePaths[0] ?? null);
   }
 
   async selectJsonSavePath(defaultFileName: string): Promise<string | null> {
@@ -100,7 +123,7 @@ export class AppService {
           ],
         });
 
-    return result.canceled ? null : result.filePath ?? null;
+    return result.canceled ? null : (result.filePath ?? null);
   }
 
   async openPath(targetPath: string): Promise<void> {
@@ -145,7 +168,10 @@ export class AppService {
     return this.previewSessions.get(token) ?? null;
   }
 
-  async setPreviewActiveQuestion(token: string | null, activeQuestionId: string): Promise<void> {
+  async setPreviewActiveQuestion(
+    token: string | null,
+    activeQuestionId: string,
+  ): Promise<void> {
     const targetTokens = token ? [token] : [...this.previewSessions.keys()];
 
     for (const targetToken of targetTokens) {
@@ -172,7 +198,8 @@ export class AppService {
     displayOptions: PreviewDisplayOptions,
   ): Promise<void> {
     const targetTokens = token ? [token] : [...this.previewSessions.keys()];
-    const normalizedDisplayOptions = normalizePreviewDisplayOptions(displayOptions);
+    const normalizedDisplayOptions =
+      normalizePreviewDisplayOptions(displayOptions);
 
     for (const targetToken of targetTokens) {
       const session = this.previewSessions.get(targetToken);
@@ -193,8 +220,15 @@ export class AppService {
     }
   }
 
-  async savePreviewImage(source: string, suggestedName?: string): Promise<string | null> {
-    return this.savePreviewImageForWindow(this.getParentWindow(), source, suggestedName);
+  async savePreviewImage(
+    source: string,
+    suggestedName?: string,
+  ): Promise<string | null> {
+    return this.savePreviewImageForWindow(
+      this.getParentWindow(),
+      source,
+      suggestedName,
+    );
   }
 
   async copyPreviewImage(source: string): Promise<void> {
@@ -249,10 +283,15 @@ function normalizePreviewDisplayOptions(
   displayOptions?: PreviewDisplayOptions,
 ): PreviewDisplayOptions {
   return {
-    showQuestionTags: displayOptions?.showQuestionTags ?? DEFAULT_PREVIEW_DISPLAY_OPTIONS.showQuestionTags,
-    showQuestionBoxes: displayOptions?.showQuestionBoxes ?? DEFAULT_PREVIEW_DISPLAY_OPTIONS.showQuestionBoxes,
+    showQuestionTags:
+      displayOptions?.showQuestionTags ??
+      DEFAULT_PREVIEW_DISPLAY_OPTIONS.showQuestionTags,
+    showQuestionBoxes:
+      displayOptions?.showQuestionBoxes ??
+      DEFAULT_PREVIEW_DISPLAY_OPTIONS.showQuestionBoxes,
     showQuestionScores:
-      displayOptions?.showQuestionScores ?? DEFAULT_PREVIEW_DISPLAY_OPTIONS.showQuestionScores,
+      displayOptions?.showQuestionScores ??
+      DEFAULT_PREVIEW_DISPLAY_OPTIONS.showQuestionScores,
   };
 }
 
@@ -268,7 +307,9 @@ type ResolvedPreviewImage =
       extension: string;
     };
 
-async function resolvePreviewImageSource(source: string): Promise<ResolvedPreviewImage> {
+async function resolvePreviewImageSource(
+  source: string,
+): Promise<ResolvedPreviewImage> {
   if (source.startsWith('data:image/')) {
     return decodeDataImage(source);
   }
@@ -319,13 +360,16 @@ function decodeDataImage(source: string): ResolvedPreviewImage {
 async function fetchRemoteImage(source: string): Promise<ResolvedPreviewImage> {
   const response = await fetch(source);
   if (!response.ok) {
-    throw new Error(`下载图片失败（${response.status} ${response.statusText}）。`);
+    throw new Error(
+      `下载图片失败（${response.status} ${response.statusText}）。`,
+    );
   }
 
   const contentType = response.headers.get('content-type') ?? '';
   const buffer = Buffer.from(await response.arrayBuffer());
   const extension =
-    extensionFromContentType(contentType) || normalizeExtension(extname(new URL(source).pathname));
+    extensionFromContentType(contentType) ||
+    normalizeExtension(extname(new URL(source).pathname));
 
   return {
     kind: 'buffer',
@@ -334,7 +378,10 @@ async function fetchRemoteImage(source: string): Promise<ResolvedPreviewImage> {
   };
 }
 
-function buildSuggestedFileName(image: ResolvedPreviewImage, suggestedName?: string): string {
+function buildSuggestedFileName(
+  image: ResolvedPreviewImage,
+  suggestedName?: string,
+): string {
   if (image.kind === 'file') {
     const originalFileName = sanitizeFileName(basename(image.path));
     if (originalFileName) {
