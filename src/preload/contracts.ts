@@ -35,6 +35,7 @@ export interface ProjectSettings {
   drawRegions: boolean;
   defaultImageDetail: ImageDetailLevel;
   enableScanPostProcess: boolean;
+  skipScanProcessing: boolean;
 }
 
 export interface ProjectStats {
@@ -174,12 +175,171 @@ export interface SaveFinalResultOptions {
   nameMatchSource?: string | null;
 }
 
-export type SmartNameMatchRunStatus = 'idle' | 'running' | 'completed' | 'failed';
+export type ScorePostProcessPresetSource = 'builtin' | 'custom';
+export type ScorePostProcessErrorPhase = 'compile' | 'runtime' | 'normalize';
+
+export interface ScorePostProcessPreset {
+  id: string;
+  name: string;
+  description: string;
+  code: string;
+  source: ScorePostProcessPresetSource;
+  readonly: boolean;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+export interface ScorePostProcessPresetInput {
+  id?: string;
+  name: string;
+  description: string;
+  code: string;
+}
+
+export interface ScorePostProcessProjectContext {
+  id: string;
+  name: string;
+  rootPath: string;
+  referenceAnswerVersion: number;
+  stats: ProjectStats;
+  settings: ProjectSettings;
+}
+
+export interface ScorePostProcessPaperQuestion {
+  questionId: string;
+  questionTitle: string;
+  score: number;
+  maxScore: number;
+}
+
+export interface ScorePostProcessPaperData {
+  paperId: string;
+  paperCode: string;
+  originalScore: number;
+  totalScore: number;
+  modelScore: number;
+  manualScore: number | null;
+  studentInfo: StudentInfo;
+  questionScores: ScorePostProcessPaperQuestion[];
+  nameMatchStatus: NameMatchStatus;
+  referenceAnswerVersion: number;
+  updatedAt: string;
+  pageCount: number;
+  scanStatus: PaperStageStatus;
+  gradingStatus: PaperStageStatus;
+}
+
+export interface ScorePostProcessScriptError {
+  phase: ScorePostProcessErrorPhase;
+  name: string;
+  message: string;
+  stack: string;
+  lineNumber: number | null;
+  columnNumber: number | null;
+}
+
+export interface ScorePostProcessPaperResult {
+  paperId: string;
+  paperCode: string;
+  studentInfo: StudentInfo;
+  originalScore: number;
+  processedScore: number;
+  scoreDelta: number;
+  applied: boolean;
+  gradeLabel: string | null;
+  note: string | null;
+  metadata: Record<string, unknown>;
+}
+
+export interface ScorePostProcessRunSummary {
+  paperCount: number;
+  appliedCount: number;
+  averageOriginalScore: number;
+  averageProcessedScore: number;
+  minProcessedScore: number;
+  maxProcessedScore: number;
+}
+
+export interface ScorePostProcessRunRecord {
+  id: string;
+  projectId: string;
+  scriptName: string;
+  presetId: string | null;
+  presetName: string | null;
+  presetSource: ScorePostProcessPresetSource | 'adhoc';
+  scriptCode: string;
+  createdAt: string;
+  summary: ScorePostProcessRunSummary;
+  scriptSummary: Record<string, unknown> | null;
+  results: ScorePostProcessPaperResult[];
+  logs: string[];
+  exportPath: string | null;
+}
+
+export interface ScorePostProcessProjectSnapshot {
+  projectId: string;
+  latestRun: ScorePostProcessRunRecord | null;
+}
+
+export type ScorePostProcessAiGenerationStatus =
+  | 'idle'
+  | 'running'
+  | 'completed'
+  | 'failed';
+
+export interface GenerateScorePostProcessAiScriptInput {
+  instruction: string;
+}
+
+export interface ScorePostProcessAiScriptResult {
+  scriptName: string;
+  scriptCode: string;
+  summary: string;
+  assumptions: string[];
+}
+
+export interface ScorePostProcessAiScriptSnapshot {
+  projectId: string;
+  status: ScorePostProcessAiGenerationStatus;
+  stage: string | null;
+  reasoningText: string;
+  previewText: string;
+  errorMessage: string | null;
+  result: ScorePostProcessAiScriptResult | null;
+  updatedAt: string;
+}
+
+export interface ExecuteScorePostProcessInput {
+  scriptName?: string;
+  presetId?: string | null;
+  scriptCode: string;
+}
+
+export interface ScorePostProcessExecutionResult {
+  success: boolean;
+  run: ScorePostProcessRunRecord | null;
+  error: ScorePostProcessScriptError | null;
+}
+
+export interface ExportScorePostProcessOptions {
+  targetDirectory?: string;
+}
+
+export type SmartNameMatchRunStatus =
+  | 'idle'
+  | 'running'
+  | 'completed'
+  | 'failed';
+export type SmartNameMatchScope = 'unverified' | 'all';
 export type SmartNameMatchDecision =
   | 'certain_update'
   | 'certain_keep'
   | 'uncertain'
   | 'no_match';
+
+export interface StartSmartNameMatchOptions {
+  scope?: SmartNameMatchScope;
+}
 
 export interface SmartNameMatchSuggestion {
   paperId: string;
@@ -248,6 +408,8 @@ export interface BackgroundJob {
   currentPaperLabel?: string;
   summary: string;
   runtimeLogs: string[];
+  streamPreviewText: string;
+  streamReasoningText: string;
 }
 
 export interface GlobalLlmSettings {
@@ -284,6 +446,75 @@ export interface TestLlmConnectionResult {
   success: boolean;
   message: string;
   latencyMs: number;
+}
+
+export type LlmUsageSource =
+  | 'answer-generation'
+  | 'grading-paper'
+  | 'grading-rubric'
+  | 'settings-test'
+  | 'smart-name-match'
+  | 'score-postprocess-ai-script';
+
+export interface LlmPricingSettings {
+  currency: string;
+  inputPerMillion: number;
+  outputPerMillion: number;
+  cacheReadPerMillion: number;
+  cacheWritePerMillion: number;
+  reasoningPerMillion: number;
+}
+
+export interface LlmUsageRecord {
+  id: string;
+  source: LlmUsageSource;
+  label: string;
+  model: string;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+  reasoningTokens: number;
+  billableInputTokens: number;
+  billableOutputTokens: number;
+  totalTokens: number;
+  estimatedCost: number;
+  createdAt: string;
+}
+
+export interface LlmUsageRecordPage {
+  page: number;
+  pageSize: number;
+  total: number;
+  records: LlmUsageRecord[];
+}
+
+export interface LlmUsageBreakdownItem {
+  source: LlmUsageSource;
+  label: string;
+  requestCount: number;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+  reasoningTokens: number;
+  totalTokens: number;
+  estimatedCost: number;
+}
+
+export interface LlmUsageSummary {
+  pricing: LlmPricingSettings;
+  requestCount: number;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+  reasoningTokens: number;
+  billableInputTokens: number;
+  billableOutputTokens: number;
+  totalTokens: number;
+  estimatedCost: number;
+  breakdown: LlmUsageBreakdownItem[];
 }
 
 export interface AnswerSourceImage {
@@ -364,6 +595,7 @@ export interface CreateProjectInput {
   drawRegions?: boolean;
   defaultImageDetail?: ImageDetailLevel;
   enableScanPostProcess?: boolean;
+  skipScanProcessing?: boolean;
 }
 
 export interface CreateProjectValidationResult {
@@ -417,6 +649,7 @@ export interface AnswerDraftInput {
 }
 
 export type TaskUpdateHandler = (tasks: BackgroundJob[]) => void;
+export type ProjectUpdateHandler = (projects: ProjectMeta[]) => void;
 export type AnswerGeneratorUpdateHandler = (
   snapshot: AnswerGeneratorSnapshot,
 ) => void;
@@ -424,13 +657,18 @@ export type DebugLogHandler = (entry: DebugLogEntry) => void;
 export type SmartNameMatchUpdateHandler = (
   snapshot: SmartNameMatchSnapshot,
 ) => void;
+export type ScorePostProcessAiUpdateHandler = (
+  snapshot: ScorePostProcessAiScriptSnapshot,
+) => void;
 
 export interface NeuromarkApi {
   app: {
     getVersion: () => Promise<string>;
     getDefaultProjectBasePath: () => Promise<string>;
     selectDirectory: () => Promise<string | null>;
+    selectExportDirectory: () => Promise<string | null>;
     selectImages: () => Promise<string[]>;
+    selectPaperImageDirectory: () => Promise<string | null>;
     selectJsonSavePath: (defaultFileName: string) => Promise<string | null>;
     openPath: (targetPath: string) => Promise<void>;
     openDevTools: () => Promise<void>;
@@ -454,6 +692,10 @@ export interface NeuromarkApi {
       projectId: string,
       filePaths: string[],
     ) => Promise<ImportOriginalImagesResult>;
+    importOriginalImageDirectory: (
+      projectId: string,
+      directoryPath: string,
+    ) => Promise<ImportOriginalImagesResult>;
     updateSettings: (
       projectId: string,
       settings: ProjectSettings,
@@ -462,14 +704,21 @@ export interface NeuromarkApi {
       projectId: string,
       markdown: string,
     ) => Promise<ProjectMeta>;
+    onUpdated: (handler: ProjectUpdateHandler) => () => void;
   };
   scan: {
-    start: (projectId: string, options?: StartJobOptions) => Promise<BackgroundJob>;
+    start: (
+      projectId: string,
+      options?: StartJobOptions,
+    ) => Promise<BackgroundJob>;
     cancel: (jobId: string) => Promise<void>;
     list: (projectId: string) => Promise<PaperRecord[]>;
   };
   grading: {
-    start: (projectId: string, options?: StartJobOptions) => Promise<BackgroundJob>;
+    start: (
+      projectId: string,
+      options?: StartJobOptions,
+    ) => Promise<BackgroundJob>;
     cancel: (jobId: string) => Promise<void>;
     resume: (projectId: string) => Promise<BackgroundJob>;
   };
@@ -483,14 +732,22 @@ export interface NeuromarkApi {
       options?: SaveFinalResultOptions,
     ) => Promise<ResultRecord>;
     delete: (projectId: string, paperId: string) => Promise<void>;
-    exportJson: (projectId: string, options?: ExportResultsOptions) => Promise<string>;
-    getSmartNameMatchSnapshot: (projectId: string) => Promise<SmartNameMatchSnapshot>;
+    exportJson: (
+      projectId: string,
+      options?: ExportResultsOptions,
+    ) => Promise<string>;
+    getSmartNameMatchSnapshot: (
+      projectId: string,
+    ) => Promise<SmartNameMatchSnapshot>;
     startSmartNameMatch: (
       projectId: string,
       rosterText: string,
+      options?: StartSmartNameMatchOptions,
     ) => Promise<SmartNameMatchSnapshot>;
     applySmartNameMatch: (projectId: string) => Promise<string[]>;
-    onSmartNameMatchUpdated: (handler: SmartNameMatchUpdateHandler) => () => void;
+    onSmartNameMatchUpdated: (
+      handler: SmartNameMatchUpdateHandler,
+    ) => () => void;
   };
   settings: {
     get: () => Promise<GlobalLlmSettings>;
@@ -498,6 +755,42 @@ export interface NeuromarkApi {
     testLlmConnection: (
       payload: TestLlmConnectionPayload,
     ) => Promise<TestLlmConnectionResult>;
+  };
+  scorePostProcess: {
+    listPresets: () => Promise<ScorePostProcessPreset[]>;
+    savePreset: (
+      input: ScorePostProcessPresetInput,
+    ) => Promise<ScorePostProcessPreset>;
+    deletePreset: (presetId: string) => Promise<void>;
+    getProjectSnapshot: (
+      projectId: string,
+    ) => Promise<ScorePostProcessProjectSnapshot>;
+    execute: (
+      projectId: string,
+      input: ExecuteScorePostProcessInput,
+    ) => Promise<ScorePostProcessExecutionResult>;
+    getAiScriptSnapshot: (
+      projectId: string,
+    ) => Promise<ScorePostProcessAiScriptSnapshot>;
+    startAiScriptGeneration: (
+      projectId: string,
+      input: GenerateScorePostProcessAiScriptInput,
+    ) => Promise<ScorePostProcessAiScriptSnapshot>;
+    onAiScriptUpdated: (
+      handler: ScorePostProcessAiUpdateHandler,
+    ) => () => void;
+    exportLatest: (
+      projectId: string,
+      options?: ExportScorePostProcessOptions,
+    ) => Promise<string>;
+  };
+  llmUsage: {
+    getSummary: () => Promise<LlmUsageSummary>;
+    getRecordPage: (
+      page?: number,
+      pageSize?: number,
+    ) => Promise<LlmUsageRecordPage>;
+    savePricing: (input: LlmPricingSettings) => Promise<LlmPricingSettings>;
   };
   answerGenerator: {
     getState: () => Promise<AnswerGeneratorSnapshot>;
@@ -507,7 +800,10 @@ export interface NeuromarkApi {
     deletePromptPreset: (presetId: string) => Promise<void>;
     createDraft: (input: AnswerDraftInput) => Promise<AnswerDraftRecord>;
     startGeneration: (draftId: string) => Promise<AnswerDraftRecord>;
-    updateDraft: (draftId: string, markdown: string) => Promise<AnswerDraftRecord>;
+    updateDraft: (
+      draftId: string,
+      markdown: string,
+    ) => Promise<AnswerDraftRecord>;
     deleteDraft: (draftId: string) => Promise<void>;
     onUpdated: (handler: AnswerGeneratorUpdateHandler) => () => void;
   };
@@ -525,7 +821,10 @@ export interface NeuromarkApi {
       activeQuestionId?: string,
       displayOptions?: PreviewDisplayOptions,
     ) => Promise<string>;
-    setActiveQuestion: (token: string | null, activeQuestionId: string) => Promise<void>;
+    setActiveQuestion: (
+      token: string | null,
+      activeQuestionId: string,
+    ) => Promise<void>;
     setDisplayOptions: (
       token: string | null,
       displayOptions: PreviewDisplayOptions,
@@ -537,6 +836,9 @@ export interface NeuromarkApi {
       handler: (payload: PreviewDisplayOptionsPayload) => void,
     ) => () => void;
     copyImage: (source: string) => Promise<void>;
-    saveImage: (source: string, suggestedName?: string) => Promise<string | null>;
+    saveImage: (
+      source: string,
+      suggestedName?: string,
+    ) => Promise<string | null>;
   };
 }

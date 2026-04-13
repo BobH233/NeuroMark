@@ -1,4 +1,4 @@
-import { ipcMain } from 'electron';
+import { BrowserWindow, ipcMain } from 'electron';
 import { z } from 'zod';
 import type { CreateProjectInput, ProjectSettings } from '@preload/contracts';
 import type { ServiceBundle } from '@main/services/types';
@@ -10,6 +10,7 @@ const createProjectSchema = z.object({
   drawRegions: z.boolean().optional(),
   defaultImageDetail: z.enum(['low', 'high', 'auto']).optional(),
   enableScanPostProcess: z.boolean().optional(),
+  skipScanProcessing: z.boolean().optional(),
 });
 
 const projectNameSchema = z.string().trim().min(1);
@@ -19,12 +20,18 @@ const projectSettingsSchema = z.object({
   drawRegions: z.boolean(),
   defaultImageDetail: z.enum(['low', 'high', 'auto']),
   enableScanPostProcess: z.boolean(),
+  skipScanProcessing: z.boolean(),
 });
 
 const referenceAnswerSchema = z.string().trim().min(1);
 
 export function registerProjectIpc(services: ServiceBundle): void {
   ipcMain.handle('projects:list', () => services.projects.listProjects());
+  services.projects.onUpdated((projects) => {
+    for (const win of BrowserWindow.getAllWindows()) {
+      win.webContents.send('projects:updated', projects);
+    }
+  });
   ipcMain.handle('projects:validate-create', (_event, payload: Pick<CreateProjectInput, 'name' | 'basePath'>) =>
     services.projects.validateCreateProject(createProjectSchema.parse(payload)),
   );
@@ -50,6 +57,11 @@ export function registerProjectIpc(services: ServiceBundle): void {
     'projects:import-original-images',
     (_event, projectId: string, filePaths: string[]) =>
       services.projects.importOriginalImages(projectId, filePaths),
+  );
+  ipcMain.handle(
+    'projects:import-original-image-directory',
+    (_event, projectId: string, directoryPath: string) =>
+      services.projects.importOriginalImageDirectory(projectId, directoryPath),
   );
   ipcMain.handle(
     'projects:update-settings',

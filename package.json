@@ -42,6 +42,7 @@
     "markdown-it": "^14.1.1",
     "markdown-it-katex": "^2.0.3",
     "md-editor-v3": "^6.4.1",
+    "monaco-editor": "^0.52.2",
     "naive-ui": "^2.44.1",
     "nanoid": "^5.1.7",
     "openai": "^6.33.0",

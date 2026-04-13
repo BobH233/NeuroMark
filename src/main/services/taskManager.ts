@@ -53,6 +53,8 @@ function toJob(row: typeof tasksTable.$inferSelect): BackgroundJob {
     currentPaperLabel: row.currentPaperLabel ?? undefined,
     summary: row.summary,
     runtimeLogs: extractRuntimeLogs(row.runtimeLogsJson),
+    streamPreviewText: row.streamPreviewText ?? '',
+    streamReasoningText: row.streamReasoningText ?? '',
   };
 }
 
@@ -80,6 +82,10 @@ function getSecondsPerPaper(progress: number, elapsedSeconds: number, totalPaper
   }
 
   return Number((elapsedSeconds / completedPaperEquivalent).toFixed(2));
+}
+
+function isArchivableStatus(status: JobStatus): boolean {
+  return status === 'completed' || status === 'failed' || status === 'cancelled';
 }
 
 export function shouldGradePaper(
@@ -194,6 +200,8 @@ export class TaskManager {
         currentPaperLabel: input.currentPaperLabel ?? null,
         summary: input.summary,
         runtimeLogsJson: JSON.stringify([]),
+        streamPreviewText: '',
+        streamReasoningText: '',
         createdAt: now,
         updatedAt: now,
       })
@@ -216,6 +224,8 @@ export class TaskManager {
         | 'abortable'
         | 'currentPaperLabel'
         | 'summary'
+        | 'streamPreviewText'
+        | 'streamReasoningText'
         | 'startedAt'
         | 'finishedAt'
       >
@@ -259,6 +269,14 @@ export class TaskManager {
             ? current.currentPaperLabel
             : patch.currentPaperLabel,
         summary: patch.summary ?? current.summary,
+        streamPreviewText:
+          patch.streamPreviewText === undefined
+            ? current.streamPreviewText
+            : patch.streamPreviewText,
+        streamReasoningText:
+          patch.streamReasoningText === undefined
+            ? current.streamReasoningText
+            : patch.streamReasoningText,
         updatedAt: now,
       })
       .where(eq(tasksTable.id, jobId))
@@ -282,6 +300,8 @@ export class TaskManager {
         | 'abortable'
         | 'currentPaperLabel'
         | 'summary'
+        | 'streamPreviewText'
+        | 'streamReasoningText'
         | 'startedAt'
         | 'finishedAt'
       >
@@ -326,6 +346,14 @@ export class TaskManager {
             ? current.currentPaperLabel
             : patch.currentPaperLabel,
         summary: patch?.summary ?? current.summary,
+        streamPreviewText:
+          patch?.streamPreviewText === undefined
+            ? current.streamPreviewText
+            : patch.streamPreviewText,
+        streamReasoningText:
+          patch?.streamReasoningText === undefined
+            ? current.streamReasoningText
+            : patch.streamReasoningText,
         runtimeLogsJson: JSON.stringify(logs),
         updatedAt: now,
       })
@@ -340,14 +368,22 @@ export class TaskManager {
   async archiveVisible(): Promise<void> {
     const db = getDatabase();
     const now = new Date().toISOString();
-
-    db.update(tasksTable)
-      .set({
-        archivedAt: now,
-        updatedAt: now,
-      })
+    const visibleTasks = db
+      .select()
+      .from(tasksTable)
       .where(isNull(tasksTable.archivedAt))
-      .run();
+      .all()
+      .filter((task) => isArchivableStatus(task.status as JobStatus));
+
+    for (const task of visibleTasks) {
+      db.update(tasksTable)
+        .set({
+          archivedAt: now,
+          updatedAt: now,
+        })
+        .where(eq(tasksTable.id, task.id))
+        .run();
+    }
 
     await this.emit();
   }
@@ -440,15 +476,24 @@ export class TaskManager {
   ): Promise<BackgroundJob> {
     const project = await this.projects.getProjectById(projectId);
     const papers = await this.projects.listProjectPapers(projectId);
-    const pendingPaperCount = papers.filter((paper) =>
-      paper.originalPages.some(
-        (page) => !(options?.skipCompleted ?? true) || !page.scannedPath || !page.debugPreviewPath,
-      ),
-    ).length;
+    const pendingPageCount = papers.reduce(
+      (count, paper) =>
+        count +
+        paper.originalPages.filter(
+          (page) =>
+            !(options?.skipCompleted ?? true) ||
+            !page.scannedPath ||
+            !page.debugPreviewPath,
+        ).length,
+      0,
+    );
     const db = getDatabase();
     const now = new Date().toISOString();
     const jobId = nanoid();
     const controller = new AbortController();
+    const runningSummary = project.settings.skipScanProcessing
+      ? '正在直通复用原始图片'
+      : '正在批量扫描识别答卷';
 
     db.insert(tasksTable)
       .values({
@@ -466,7 +511,7 @@ export class TaskManager {
         archivedAt: null,
         abortable: true,
         currentPaperLabel: papers[0]?.paperCode ?? '准备中',
-        summary: '正在批量扫描识别答卷',
+        summary: runningSummary,
         createdAt: now,
         updatedAt: now,
       })
@@ -474,7 +519,7 @@ export class TaskManager {
 
     this.scanControllers.set(jobId, controller);
     await this.emit();
-    void this.runScanJob(jobId, projectId, controller, Math.max(pendingPaperCount, 0), options);
+    void this.runScanJob(jobId, projectId, controller, Math.max(pendingPageCount, 0), options);
 
     const row = db.select().from(tasksTable).where(eq(tasksTable.id, jobId)).get();
     return toJob(row!);
@@ -660,11 +705,18 @@ export class TaskManager {
     jobId: string,
     projectId: string,
     controller: AbortController,
-    totalPaperCount: number,
+    totalPageCount: number,
     options?: StartJobOptions,
   ): Promise<void> {
     const db = getDatabase();
     const startedAt = Date.now();
+    const project = await this.projects.getProjectById(projectId);
+    const runningSummaryPrefix = project.settings.skipScanProcessing
+      ? '正在直通复用原始图片'
+      : '正在识别纸张边界与扫描效果';
+    const completedSummaryPrefix = project.settings.skipScanProcessing
+      ? '直通扫描任务已完成'
+      : '扫描任务已完成';
 
     try {
       const result = await this.projects.scanProjectDocuments(projectId, {
@@ -676,15 +728,15 @@ export class TaskManager {
               ? Number((completedPageCount / totalPageCount).toFixed(3))
               : 1;
           const elapsedSeconds = Math.max((Date.now() - startedAt) / 1000, 1);
-          const speed = getSecondsPerPaper(progress, elapsedSeconds, totalPaperCount);
+          const speed = getSecondsPerPaper(progress, elapsedSeconds, totalPageCount);
 
           db.update(tasksTable)
             .set({
               progress,
               speed,
-              eta: estimateEta(progress, speed * totalPaperCount),
+              eta: estimateEta(progress, speed * totalPageCount),
               currentPaperLabel,
-              summary: `正在识别纸张边界与扫描效果，已完成 ${completedPageCount}/${Math.max(totalPageCount, 1)} 页`,
+              summary: `${runningSummaryPrefix}，已完成 ${completedPageCount}/${Math.max(totalPageCount, 1)} 页`,
               updatedAt: new Date().toISOString(),
             })
             .where(eq(tasksTable.id, jobId))
@@ -709,13 +761,13 @@ export class TaskManager {
           speed: getSecondsPerPaper(
             1,
             Math.max((Date.now() - startedAt) / 1000, 1),
-            totalPaperCount,
+            totalPageCount,
           ),
           eta: null,
           finishedAt: new Date().toISOString(),
           summary:
             result.totalPageCount > 0
-              ? `扫描任务已完成，共处理 ${result.processedPageCount} 页`
+              ? `${completedSummaryPrefix}，共处理 ${result.processedPageCount} 页`
               : '没有需要扫描的新答卷',
           updatedAt: new Date().toISOString(),
         })
@@ -757,6 +809,8 @@ export class TaskManager {
       await this.appendJobLog(jobId, '开始加载项目配置与参考答案', {
         summary: '正在加载项目配置与参考答案',
         currentPaperLabel: '准备批阅',
+        streamPreviewText: '',
+        streamReasoningText: '',
       });
       const { project, referenceAnswerMarkdown, settings } =
         await this.gradingService.prepareProjectGrading(projectId);
@@ -779,6 +833,13 @@ export class TaskManager {
         onLog: async (message) => {
           await this.appendJobLog(jobId, `[rubric] ${message}`);
         },
+        onStreamProgress: async ({ rawText, reasoningText }) => {
+          await this.updateJob(jobId, {
+            currentPaperLabel: '编译 rubric',
+            streamPreviewText: rawText,
+            streamReasoningText: reasoningText,
+          });
+        },
       });
       await this.appendJobLog(jobId, `评分 rubric 已就绪，共 ${rubric.questions.length} 道题`, {
         summary: 'rubric 已就绪，开始批阅答卷',
@@ -797,6 +858,7 @@ export class TaskManager {
       let settledCount = 0;
       let succeededCount = 0;
       let failedCount = 0;
+      let retryCount = 0;
       const activeLabels = new Set<string>();
       const queue = new PQueue({
         concurrency: Math.max(project.settings.gradingConcurrency, 1),
@@ -811,8 +873,8 @@ export class TaskManager {
           activeLabels.size > 0 ? Array.from(activeLabels).slice(0, 3).join(', ') : '等待收尾';
         const summary =
           settledCount >= totalPaperCount
-            ? `批阅结束，成功 ${succeededCount} 份，失败 ${failedCount} 份`
-            : `正在批阅答卷，已完成 ${settledCount}/${totalPaperCount}，成功 ${succeededCount}，失败 ${failedCount}`;
+            ? `批阅结束，成功 ${succeededCount} 份，失败 ${failedCount} 份，重试 ${retryCount} 次`
+            : `正在批阅答卷，已完成 ${settledCount}/${totalPaperCount}，成功 ${succeededCount}，失败 ${failedCount}，重试 ${retryCount} 次`;
 
         db.update(tasksTable)
           .set({
@@ -857,6 +919,17 @@ export class TaskManager {
               signal: controller.signal,
               onLog: async (message) => {
                 await this.appendJobLog(jobId, `[${paper.paperCode}] ${message}`);
+              },
+              onRetry: async () => {
+                retryCount += 1;
+                await updateProgress();
+              },
+              onStreamProgress: async ({ rawText, reasoningText }) => {
+                await this.updateJob(jobId, {
+                  currentPaperLabel: paper.paperCode,
+                  streamPreviewText: rawText,
+                  streamReasoningText: reasoningText,
+                });
               },
             });
             if (controller.signal.aborted) {
@@ -913,7 +986,7 @@ export class TaskManager {
           eta: null,
           finishedAt: new Date().toISOString(),
           currentPaperLabel: failedCount > 0 ? '存在失败答卷待处理' : '全部完成',
-          summary: `批阅任务已完成，成功 ${succeededCount} 份，失败 ${failedCount} 份`,
+          summary: `批阅任务已完成，成功 ${succeededCount} 份，失败 ${failedCount} 份，重试 ${retryCount} 次`,
           updatedAt: new Date().toISOString(),
         })
         .where(eq(tasksTable.id, jobId))

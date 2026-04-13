@@ -62,8 +62,12 @@ function goToSettings() {
           打开开发者工具
         </n-button>
         <n-button tertiary type="primary" :disabled="!outputText.trim()" @click="copyOutput">
-          复制全部日志
+          复制当前显示日志
         </n-button>
+      </div>
+
+      <div class="detail-subtitle">
+        面板仅渲染最近 1000 行，内存中最多保留最近 3000 行运行日志。
       </div>
 
       <div v-if="formattedOutputText.trim()" ref="outputRef" class="debug-output-panel">

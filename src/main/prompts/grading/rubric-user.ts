@@ -23,7 +23,10 @@ export function buildRubricCompilationUserPrompt(input: {
 12. 在 answerSummary 和 scoringPoints.description 中，只要出现任何数学表达，都必须带数学定界符 $：行内公式使用 $...$，独立成段的公式使用 $$...$$。
 13. 这里的“数学表达”包括但不限于：\\frac{2}{3}、\\approx、\\parallel、R_L、x^2、A_u、r_{be}、带上下标的字母、希腊字母公式、单独出现的关键变量名或符号。以上内容即使只是在一句中文里出现一个符号，也必须写成带 $ 的形式。
 14. 裸写 \\frac{2}{3}、-\\frac{1000}{11}、\\approx -60.61、R_L、A_u 都是格式错误。输出前你必须自检：answerSummary、scoringPoints.description 中不得出现未被 $...$ 或 $$...$$ 包裹的数学表达。
-15. 输出必须严格符合下面这份 JSON Schema：
+15. 输出必须是可被 JSON.parse 直接解析的合法 JSON。JSON 字符串里的反斜杠必须双写；如果要输出 LaTeX，如 \\frac、\\mathrm、\\alpha、\\,，在 JSON 里必须分别写成 \\\\frac、\\\\mathrm、\\\\alpha、\\\\,。
+16. 绝对禁止出现非法 JSON 转义，例如 \\,、\\m、\\l 这种单反斜杠写法；双引号和换行也必须按 JSON 规则正确转义。
+17. 输出前必须自检：在保证数学公式原样保留的同时，整个输出仍然必须是合法 JSON。
+18. 输出必须严格符合下面这份 JSON Schema：
 
 ${JSON.stringify(GRADING_RUBRIC_JSON_SCHEMA, null, 2)}
 

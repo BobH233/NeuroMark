@@ -36,10 +36,14 @@ describe('grading prompt guards', () => {
     expect(GRADING_RUBRIC_SYSTEM_PROMPT).toContain('必须尽量保留原始写法');
     expect(GRADING_RUBRIC_SYSTEM_PROMPT).toContain('不得擅自删除、补全、改写公式中的上下标');
     expect(GRADING_RUBRIC_SYSTEM_PROMPT).toContain('必须带数学定界符 `$`');
+    expect(GRADING_RUBRIC_SYSTEM_PROMPT).toContain('可被 `JSON.parse` 直接解析');
+    expect(GRADING_RUBRIC_SYSTEM_PROMPT).toContain('`\\\\frac`');
     expect(GRADING_RUBRIC_SYSTEM_PROMPT).toContain('行内公式使用 `$...$`');
     expect(GRADING_RUBRIC_SYSTEM_PROMPT).toContain('裸写 `\\frac{2}{3}`');
     expect(rubricUserPrompt).toContain('不得私自改掉上下标、括号、分式、符号');
     expect(rubricUserPrompt).toContain('必须带数学定界符 $');
+    expect(rubricUserPrompt).toContain('可被 JSON.parse 直接解析的合法 JSON');
+    expect(rubricUserPrompt).toContain('JSON 字符串里的反斜杠必须双写');
     expect(rubricUserPrompt).toContain('行内公式使用 $...$');
     expect(rubricUserPrompt).toContain('裸写 \\frac{2}{3}');
   });
@@ -60,6 +64,8 @@ describe('grading prompt guards', () => {
     expect(gradingSystemPrompt).toContain('`scoreBreakdown.evidence`、`scoreBreakdown.criterion`');
     expect(gradingSystemPrompt).toContain('只要出现任何数学表达，都必须带数学定界符 `$`');
     expect(gradingSystemPrompt).toContain('绝对禁止用反引号包裹任何数学表达');
+    expect(gradingSystemPrompt).toContain('可被 `JSON.parse` 直接解析');
+    expect(gradingSystemPrompt).toContain('`\\\\frac`');
     expect(gradingSystemPrompt).toContain('把数学表达写成行内代码同样是格式错误');
     expect(gradingSystemPrompt).toContain('裸写 `\\frac{2}{3}`');
     expect(gradingUserPrompt).toContain('rubric 只提供固定评分单元、满分和采分点约束');
@@ -67,6 +73,8 @@ describe('grading prompt guards', () => {
     expect(gradingUserPrompt).toContain('scoreBreakdown.evidence、scoreBreakdown.criterion');
     expect(gradingUserPrompt).toContain('只要出现任何数学表达，都必须带数学定界符 $');
     expect(gradingUserPrompt).toContain('绝对禁止用反引号包裹任何数学表达');
+    expect(gradingUserPrompt).toContain('可被 JSON.parse 直接解析的合法 JSON');
+    expect(gradingUserPrompt).toContain('JSON 字符串里的反斜杠必须双写');
     expect(gradingUserPrompt).toContain('不得出现被反引号包裹的数学表达');
     expect(gradingUserPrompt).toContain('裸写 \\frac{2}{3}');
   });

@@ -5,13 +5,16 @@ import type {
   ResultRecord,
   SmartNameMatchDecision,
   SmartNameMatchDuplicateGroup,
+  SmartNameMatchScope,
   SmartNameMatchSnapshot,
   SmartNameMatchSuggestion,
+  StartSmartNameMatchOptions,
   StudentInfo,
 } from '@preload/contracts';
 import { SMART_NAME_MATCH_SYSTEM_PROMPT } from '@main/prompts/smart-name-match/system';
 import { buildSmartNameMatchUserPrompt } from '@main/prompts/smart-name-match/user';
 import { logLlmRequest, logLlmResult } from './llmRequestLogger';
+import { LlmUsageService, normalizeLlmUsage } from './llmUsageService';
 import {
   compactErrorMessage,
   extractReasoningText,
@@ -238,6 +241,7 @@ export class SmartNameMatchService {
   constructor(
     private readonly projects: ProjectService,
     private readonly settings: SettingsService,
+    private readonly llmUsage: LlmUsageService,
   ) {}
 
   onUpdated(listener: SmartNameMatchListener): () => void {
@@ -251,11 +255,16 @@ export class SmartNameMatchService {
     return cloneSnapshot(this.snapshots.get(projectId) ?? createEmptySnapshot(projectId));
   }
 
-  async start(projectId: string, rosterText: string): Promise<SmartNameMatchSnapshot> {
+  async start(
+    projectId: string,
+    rosterText: string,
+    options?: StartSmartNameMatchOptions,
+  ): Promise<SmartNameMatchSnapshot> {
     const trimmedRosterText = rosterText.trim();
     if (!trimmedRosterText) {
       throw new Error('请先输入班级名册内容。');
     }
+    const scope = options?.scope ?? 'unverified';
 
     const current = this.snapshots.get(projectId);
     if (current?.status === 'running') {
@@ -275,7 +284,7 @@ export class SmartNameMatchService {
     };
     this.setSnapshot(nextSnapshot);
 
-    void this.run(projectId, trimmedRosterText);
+    void this.run(projectId, trimmedRosterText, scope);
     return cloneSnapshot(nextSnapshot);
   }
 
@@ -292,30 +301,45 @@ export class SmartNameMatchService {
       throw new Error('当前没有 100% 确定的核名方案可应用。');
     }
 
-    const updatedPaperIds: string[] = [];
+    const appliedAt = new Date().toISOString();
+    const updates = (
+      await Promise.all(applicable.map(async (suggestion) => {
+        const current = await this.projects.getResult(projectId, suggestion.paperId);
+        if (!current?.finalResult) {
+          return null;
+        }
 
-    for (const suggestion of applicable) {
-      const current = await this.projects.getResult(projectId, suggestion.paperId);
-      if (!current?.finalResult) {
-        continue;
-      }
+        const nextResult = JSON.parse(JSON.stringify(current.finalResult)) as NonNullable<
+          ResultRecord['finalResult']
+        >;
+        nextResult.studentInfo = mergeStudentInfo(
+          nextResult.studentInfo,
+          suggestion.suggestedStudentInfo,
+          suggestion.changedFields,
+        );
 
-      const nextResult = JSON.parse(JSON.stringify(current.finalResult)) as NonNullable<
-        ResultRecord['finalResult']
-      >;
-      nextResult.studentInfo = mergeStudentInfo(
-        nextResult.studentInfo,
-        suggestion.suggestedStudentInfo,
-        suggestion.changedFields,
-      );
+        return {
+          paperId: suggestion.paperId,
+          finalResult: nextResult,
+          options: {
+            nameMatchStatus: 'verified' as const,
+            nameMatchSource: 'smart-name-llm' as const,
+            nameMatchUpdatedAt: appliedAt,
+          },
+        };
+      }))
+    ).filter((item): item is {
+      paperId: string;
+      finalResult: NonNullable<ResultRecord['finalResult']>;
+      options: {
+        nameMatchStatus: 'verified';
+        nameMatchSource: 'smart-name-llm';
+        nameMatchUpdatedAt: string;
+      };
+    } => Boolean(item));
 
-      await this.projects.saveFinalResult(projectId, suggestion.paperId, nextResult, {
-        nameMatchStatus: 'verified',
-        nameMatchSource: 'smart-name-llm',
-        nameMatchUpdatedAt: new Date().toISOString(),
-      });
-      updatedPaperIds.push(suggestion.paperId);
-    }
+    await this.projects.saveFinalResultsBatch(projectId, updates);
+    const updatedPaperIds = updates.map((item) => item.paperId);
 
     const nextSnapshot = cloneSnapshot(snapshot);
     nextSnapshot.stage = `已应用 ${updatedPaperIds.length} 份 100% 确定的核名结果`;
@@ -325,7 +349,7 @@ export class SmartNameMatchService {
     return updatedPaperIds;
   }
 
-  private async run(projectId: string, rosterText: string): Promise<void> {
+  private async run(projectId: string, rosterText: string, scope: SmartNameMatchScope): Promise<void> {
     try {
       const settings = await this.settings.getSettings();
       if (!settings.apiKey.trim()) {
@@ -333,7 +357,7 @@ export class SmartNameMatchService {
       }
 
       const detail = await this.projects.getProjectDetail(projectId);
-      const results = detail.results.filter(
+      const allGradedResults = detail.results.filter(
         (
           item,
         ): item is ResultRecord & {
@@ -342,12 +366,23 @@ export class SmartNameMatchService {
         } => Boolean(item.finalResult && item.modelResult),
       );
 
-      if (results.length === 0) {
+      if (allGradedResults.length === 0) {
         throw new Error('当前项目还没有已批阅完成的答卷。');
       }
 
+      const results =
+        scope === 'all'
+          ? allGradedResults
+          : allGradedResults.filter((item) => item.nameMatchStatus !== 'verified');
+
+      if (results.length === 0) {
+        throw new Error('当前项目没有待核名的已批阅答卷。');
+      }
+
+      const scopeLabel = scope === 'all' ? '全部已批阅答卷' : '未核名答卷';
+
       this.patchSnapshot(projectId, {
-        stage: `正在向模型提交 ${results.length} 份答卷的核名请求`,
+        stage: `正在向模型提交 ${results.length} 份${scopeLabel}的核名请求`,
       });
 
       const requestPayload: ChatCompletionCreateParamsNonStreaming = {
@@ -374,10 +409,10 @@ export class SmartNameMatchService {
           baseURL: settings.baseUrl,
           model: settings.model,
           timeoutMs: settings.timeoutMs,
+          apiKey: settings.apiKey,
+          reasoningEffort: settings.reasoningEffort,
+          gradingTemperature: settings.gradingTemperature,
         },
-        apiKey: settings.apiKey,
-        reasoningEffort: settings.reasoningEffort,
-        gradingTemperature: settings.gradingTemperature,
         payload: requestPayload,
       });
 
@@ -387,11 +422,12 @@ export class SmartNameMatchService {
         timeout: settings.timeoutMs,
       });
 
-      const rawText = await this.collectModelResponseText({
+      const response = await this.collectModelResponseText({
         client,
         requestPayload,
         projectId,
       });
+      const rawText = response.rawText;
       const parsed = this.parseSuggestions(rawText, results);
 
       this.patchSnapshot(projectId, {
@@ -428,7 +464,10 @@ export class SmartNameMatchService {
     client: OpenAI;
     requestPayload: ChatCompletionCreateParamsNonStreaming;
     projectId: string;
-  }): Promise<string> {
+  }): Promise<{
+    rawText: string;
+    mode: 'stream' | 'non-stream';
+  }> {
     try {
       return await this.collectStreamingResponseText(input);
     } catch (error) {
@@ -447,19 +486,27 @@ export class SmartNameMatchService {
     client: OpenAI;
     requestPayload: ChatCompletionCreateParamsNonStreaming;
     projectId: string;
-  }): Promise<string> {
+  }): Promise<{
+    rawText: string;
+    mode: 'stream';
+  }> {
     const stream = await input.client.chat.completions.create({
       ...input.requestPayload,
       stream: true,
+      stream_options: {
+        include_usage: true,
+      },
     });
 
     let rawText = '';
     let reasoningText = '';
+    let usage = null;
     let lastFlushedLength = 0;
     let lastReasoningFlushedLength = 0;
     let lastFlushAt = 0;
 
     for await (const chunk of stream) {
+      usage = normalizeLlmUsage(chunk.usage) ?? usage;
       const delta = chunk.choices[0]?.delta;
       const chunkText = extractStreamingDeltaText(delta?.content);
       const chunkReasoningText = extractReasoningText(delta);
@@ -496,17 +543,31 @@ export class SmartNameMatchService {
       reasoningText,
     });
 
-    return rawText;
+    await this.llmUsage.recordUsage({
+      source: 'smart-name-match',
+      label: '智能核名',
+      model: input.requestPayload.model,
+      usage,
+    });
+
+    return {
+      rawText,
+      mode: 'stream',
+    };
   }
 
   private async collectNonStreamingResponseText(input: {
     client: OpenAI;
     requestPayload: ChatCompletionCreateParamsNonStreaming;
     projectId: string;
-  }): Promise<string> {
+  }): Promise<{
+    rawText: string;
+    mode: 'non-stream';
+  }> {
     const response = await input.client.chat.completions.create(input.requestPayload);
     const rawText = readAssistantText(response);
     const reasoningText = extractReasoningText(response.choices[0]?.message);
+    const usage = normalizeLlmUsage(response.usage);
 
     this.patchSnapshot(input.projectId, {
       previewText: rawText,
@@ -514,7 +575,17 @@ export class SmartNameMatchService {
       stage: '模型已返回完整结果，正在解析',
     });
 
-    return rawText;
+    await this.llmUsage.recordUsage({
+      source: 'smart-name-match',
+      label: '智能核名',
+      model: input.requestPayload.model,
+      usage,
+    });
+
+    return {
+      rawText,
+      mode: 'non-stream',
+    };
   }
 
   private parseSuggestions(

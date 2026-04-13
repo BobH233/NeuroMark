@@ -29,6 +29,7 @@ const model = reactive<CreateProjectInput>({
   drawRegions: false,
   defaultImageDetail: 'high',
   enableScanPostProcess: true,
+  skipScanProcessing: false,
 });
 
 async function fillDefaultBasePath(force = false) {
@@ -48,6 +49,7 @@ watch(
       model.drawRegions = false;
       model.defaultImageDetail = 'high';
       model.enableScanPostProcess = true;
+      model.skipScanProcessing = false;
       return;
     }
 
@@ -105,10 +107,17 @@ function submit() {
       </div>
       <div class="create-project-toggle-row">
         <div class="create-project-toggle-copy">
+          <div class="field-label">跳过扫描处理</div>
+          <div class="field-hint">开启后不做边界识别、拉平或裁剪，直接将原始答卷图片作为扫描结果。</div>
+        </div>
+        <n-switch v-model:value="model.skipScanProcessing" />
+      </div>
+      <div class="create-project-toggle-row">
+        <div class="create-project-toggle-copy">
           <div class="field-label">启用扫描后处理</div>
           <div class="field-hint">关闭后仅按识别到的纸张边界进行裁剪与拉平，不做增强和二值化。</div>
         </div>
-        <n-switch v-model:value="model.enableScanPostProcess" />
+        <n-switch v-model:value="model.enableScanPostProcess" :disabled="model.skipScanProcessing" />
       </div>
       <div class="create-project-toggle-row">
         <div class="create-project-toggle-copy">

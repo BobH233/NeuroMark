@@ -2,6 +2,7 @@ import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import fs from 'fs-extra';
+import sharp from 'sharp';
 import { app } from 'electron';
 import type { CornerPoint } from '@preload/contracts';
 
@@ -43,6 +44,7 @@ export interface ScanDocumentResult {
 interface ProcessDocumentImageOptions {
   writeDebugArtifacts?: boolean;
   applyPostProcess?: boolean;
+  skipScanProcessing?: boolean;
 }
 
 let scannerPromise: Promise<NativeScannerInstance> | null = null;
@@ -145,6 +147,38 @@ export async function processDocumentImage(
   cornersPath: string,
   options?: ProcessDocumentImageOptions,
 ): Promise<ScanDocumentResult> {
+  await fs.ensureDir(path.dirname(scannedPath));
+  await fs.ensureDir(path.dirname(debugPreviewPath));
+  await fs.ensureDir(path.dirname(cornersPath));
+
+  if (options?.skipScanProcessing) {
+    await Promise.all([
+      fs.copyFile(inputPath, scannedPath),
+      fs.copyFile(inputPath, debugPreviewPath),
+    ]);
+
+    const corners: CornerPoint[] = [];
+    await fs.writeJson(
+      cornersPath,
+      {
+        scanner: 'passthrough',
+        sourcePath: inputPath,
+        scannedPath,
+        skippedScanProcessing: true,
+        applyPostProcess: false,
+        generatedAt: new Date().toISOString(),
+      },
+      { spaces: 2 },
+    );
+
+    return {
+      scannedPath,
+      debugPreviewPath,
+      cornersPath,
+      corners,
+    };
+  }
+
   const scanner = await getScanner();
   const writeDebugArtifacts = shouldWriteDebugArtifacts(options);
   const debugOutputPrefix = writeDebugArtifacts
@@ -153,10 +187,6 @@ export async function processDocumentImage(
         `${path.basename(cornersPath, path.extname(cornersPath))}_native`,
       )
     : undefined;
-
-  await fs.ensureDir(path.dirname(scannedPath));
-  await fs.ensureDir(path.dirname(debugPreviewPath));
-  await fs.ensureDir(path.dirname(cornersPath));
 
   const nativeResult = await scanner.scanDocument({
     inputPath,

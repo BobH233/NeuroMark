@@ -5,7 +5,7 @@ import { drizzle } from 'drizzle-orm/better-sqlite3';
 import * as schema from './schema';
 
 let database:
-  | ReturnType<typeof drizzle<typeof schema>> & { $client: Database.Database }
+  | (ReturnType<typeof drizzle<typeof schema>> & { $client: Database.Database })
   | null = null;
 
 function ensureColumn(
@@ -76,6 +76,8 @@ function ensureSchema(connection: Database.Database): void {
       current_paper_label TEXT,
       summary TEXT NOT NULL,
       runtime_logs_json TEXT NOT NULL DEFAULT '[]',
+      stream_preview_text TEXT NOT NULL DEFAULT '',
+      stream_reasoning_text TEXT NOT NULL DEFAULT '',
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
@@ -89,7 +91,27 @@ function ensureSchema(connection: Database.Database): void {
       reasoning_effort TEXT NOT NULL DEFAULT 'medium',
       answer_generation_temperature REAL NOT NULL DEFAULT 0.2,
       grading_temperature REAL NOT NULL DEFAULT 0,
+      pricing_input_per_million REAL NOT NULL DEFAULT 2,
+      pricing_output_per_million REAL NOT NULL DEFAULT 12,
+      pricing_cache_read_per_million REAL NOT NULL DEFAULT 0.2,
+      pricing_cache_write_per_million REAL NOT NULL DEFAULT 0,
+      pricing_reasoning_per_million REAL NOT NULL DEFAULT 0,
+      pricing_currency TEXT NOT NULL DEFAULT 'USD',
       storage_mode TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS llm_usage_records (
+      id TEXT PRIMARY KEY,
+      source TEXT NOT NULL,
+      label TEXT NOT NULL,
+      model TEXT NOT NULL,
+      input_tokens INTEGER NOT NULL,
+      output_tokens INTEGER NOT NULL,
+      cache_read_tokens INTEGER NOT NULL,
+      cache_write_tokens INTEGER NOT NULL,
+      reasoning_tokens INTEGER NOT NULL,
+      total_tokens INTEGER NOT NULL,
+      created_at TEXT NOT NULL
     );
 
     CREATE TABLE IF NOT EXISTS answer_drafts (
@@ -120,6 +142,15 @@ function ensureSchema(connection: Database.Database): void {
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS score_postprocess_presets (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      description TEXT NOT NULL,
+      code TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
   `);
 
   ensureColumn(
@@ -134,18 +165,8 @@ function ensureSchema(connection: Database.Database): void {
     'reference_answer_version',
     'reference_answer_version INTEGER NOT NULL DEFAULT 1',
   );
-  ensureColumn(
-    connection,
-    'tasks',
-    'started_at',
-    'started_at TEXT',
-  );
-  ensureColumn(
-    connection,
-    'tasks',
-    'finished_at',
-    'finished_at TEXT',
-  );
+  ensureColumn(connection, 'tasks', 'started_at', 'started_at TEXT');
+  ensureColumn(connection, 'tasks', 'finished_at', 'finished_at TEXT');
   ensureColumn(
     connection,
     'tasks',
@@ -155,9 +176,16 @@ function ensureSchema(connection: Database.Database): void {
   ensureColumn(
     connection,
     'tasks',
-    'archived_at',
-    'archived_at TEXT',
+    'stream_preview_text',
+    "stream_preview_text TEXT NOT NULL DEFAULT ''",
   );
+  ensureColumn(
+    connection,
+    'tasks',
+    'stream_reasoning_text',
+    "stream_reasoning_text TEXT NOT NULL DEFAULT ''",
+  );
+  ensureColumn(connection, 'tasks', 'archived_at', 'archived_at TEXT');
   ensureColumn(
     connection,
     'settings',
@@ -168,24 +196,80 @@ function ensureSchema(connection: Database.Database): void {
     connection,
     'settings',
     'answer_generation_temperature',
-    "answer_generation_temperature REAL NOT NULL DEFAULT 0.2",
+    'answer_generation_temperature REAL NOT NULL DEFAULT 0.2',
   );
   ensureColumn(
     connection,
     'settings',
     'grading_temperature',
-    "grading_temperature REAL NOT NULL DEFAULT 0",
+    'grading_temperature REAL NOT NULL DEFAULT 0',
   );
-  ensureColumn(connection, 'answer_drafts', 'prompt_text', "prompt_text TEXT NOT NULL DEFAULT ''");
+  ensureColumn(
+    connection,
+    'settings',
+    'pricing_input_per_million',
+    'pricing_input_per_million REAL NOT NULL DEFAULT 2',
+  );
+  ensureColumn(
+    connection,
+    'settings',
+    'pricing_output_per_million',
+    'pricing_output_per_million REAL NOT NULL DEFAULT 12',
+  );
+  ensureColumn(
+    connection,
+    'settings',
+    'pricing_cache_read_per_million',
+    'pricing_cache_read_per_million REAL NOT NULL DEFAULT 0.2',
+  );
+  ensureColumn(
+    connection,
+    'settings',
+    'pricing_cache_write_per_million',
+    'pricing_cache_write_per_million REAL NOT NULL DEFAULT 0',
+  );
+  ensureColumn(
+    connection,
+    'settings',
+    'pricing_reasoning_per_million',
+    'pricing_reasoning_per_million REAL NOT NULL DEFAULT 0',
+  );
+  ensureColumn(
+    connection,
+    'settings',
+    'pricing_currency',
+    "pricing_currency TEXT NOT NULL DEFAULT 'USD'",
+  );
+  ensureColumn(
+    connection,
+    'answer_drafts',
+    'prompt_text',
+    "prompt_text TEXT NOT NULL DEFAULT ''",
+  );
   ensureColumn(
     connection,
     'answer_drafts',
     'generation_status',
     "generation_status TEXT NOT NULL DEFAULT 'idle'",
   );
-  ensureColumn(connection, 'answer_drafts', 'generation_error', 'generation_error TEXT');
-  ensureColumn(connection, 'answer_drafts', 'generation_task_id', 'generation_task_id TEXT');
-  ensureColumn(connection, 'answer_drafts', 'generation_stage', 'generation_stage TEXT');
+  ensureColumn(
+    connection,
+    'answer_drafts',
+    'generation_error',
+    'generation_error TEXT',
+  );
+  ensureColumn(
+    connection,
+    'answer_drafts',
+    'generation_task_id',
+    'generation_task_id TEXT',
+  );
+  ensureColumn(
+    connection,
+    'answer_drafts',
+    'generation_stage',
+    'generation_stage TEXT',
+  );
   ensureColumn(
     connection,
     'answer_drafts',

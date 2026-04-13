@@ -19,12 +19,15 @@ import type {
   ScoreBreakdownItem,
 } from '@preload/contracts';
 import { logLlmProgress, logLlmRequest, logLlmResult } from './llmRequestLogger';
+import { LlmUsageService, normalizeLlmUsage } from './llmUsageService';
 import {
   compactErrorMessage,
+  createStreamingInactivityTimeoutError,
   extractReasoningText,
   extractStreamingDeltaText,
   formatStreamPreview,
   isStreamingFallbackCandidate,
+  readStreamChunkWithInactivityTimeout,
   readAssistantText,
   shortenText,
 } from './llmStreamUtils';
@@ -34,6 +37,10 @@ import type {
   CompiledRubric,
   GradingServiceSettings,
 } from './gradingTypes';
+import {
+  shouldWriteLlmJsonDebugArtifact,
+  writeLlmJsonDebugArtifact,
+} from './llmJsonDebug';
 
 const FENCED_JSON_PATTERN = /```(?:json)?\s*(\{[\s\S]*\})\s*```/i;
 
@@ -41,6 +48,40 @@ function ensureAbort(signal?: AbortSignal): void {
   if (signal?.aborted) {
     throw new Error('批阅任务已取消');
   }
+}
+
+function createLinkedAbortController(signal?: AbortSignal): {
+  controller: AbortController;
+  dispose: () => void;
+} {
+  const controller = new AbortController();
+
+  if (!signal) {
+    return {
+      controller,
+      dispose: () => undefined,
+    };
+  }
+
+  if (signal.aborted) {
+    controller.abort(signal.reason);
+    return {
+      controller,
+      dispose: () => undefined,
+    };
+  }
+
+  const forwardAbort = () => {
+    controller.abort(signal.reason);
+  };
+  signal.addEventListener('abort', forwardAbort, { once: true });
+
+  return {
+    controller,
+    dispose: () => {
+      signal.removeEventListener('abort', forwardAbort);
+    },
+  };
 }
 
 function extractFirstJsonObject(text: string): string | null {
@@ -302,8 +343,14 @@ function validateScoreBreakdown(
       parsed.criterion,
       `${question.questionId}.scoreBreakdown[${index}].criterion`,
     );
+    if (!criterion.trim()) {
+      throw new Error(`${question.questionId} 的第 ${index + 1} 个采分点描述不能为空。`);
+    }
     if (criterion !== point.description) {
-      throw new Error(`${question.questionId} 的第 ${index + 1} 个采分点描述不匹配。`);
+      console.warn(
+        `[grading] normalized criterion text for ${question.questionId}#${point.criterionId}:` +
+          ` model=${JSON.stringify(criterion)} rubric=${JSON.stringify(point.description)}`,
+      );
     }
 
     const maxScore = asNumber(
@@ -329,7 +376,8 @@ function validateScoreBreakdown(
 
     return {
       criterionId,
-      criterion,
+      // Keep the rubric wording stable even if the model paraphrases the criterion text.
+      criterion: point.description,
       maxScore,
       score,
       verdict,
@@ -492,6 +540,7 @@ export class GradingService {
   constructor(
     private readonly projects: ProjectService,
     private readonly settingsService: SettingsService,
+    private readonly llmUsage: LlmUsageService,
   ) {}
 
   async getRuntimeSettings(imageDetail: GradingServiceSettings['imageDetail']) {
@@ -516,6 +565,7 @@ export class GradingService {
     settings: GradingServiceSettings;
     signal?: AbortSignal;
     onLog?: (message: string) => void | Promise<void>;
+    onStreamProgress?: (payload: { rawText: string; reasoningText: string }) => void | Promise<void>;
   }): Promise<CompiledRubric> {
     const rubricPath = path.join(
       input.projectRootPath,
@@ -587,6 +637,7 @@ export class GradingService {
         signal: input.signal,
         startedAtMs: startedAt,
         onLog: input.onLog,
+        onStreamProgress: input.onStreamProgress,
       });
       ensureAbort(input.signal);
       rawOutput = response.rawText;
@@ -617,6 +668,15 @@ export class GradingService {
       return parsed;
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : '未知错误';
+      const debugDumpPath =
+        rawOutput && shouldWriteLlmJsonDebugArtifact(error)
+          ? await writeLlmJsonDebugArtifact({
+              scope: 'grading-rubric',
+              identifier: `${input.projectName}-v${input.referenceAnswerVersion}`,
+              rawOutput,
+              errorMessage,
+            })
+          : null;
       logLlmResult('grading-rubric', {
         status: 'error',
         detail: {
@@ -624,10 +684,11 @@ export class GradingService {
           message: errorMessage,
           rawOutput: rawOutput ? shortenText(rawOutput) : '(empty)',
           parsedCandidate,
+          debugDumpPath,
         },
       });
       throw new Error(
-        `${errorMessage}\n模型原始返回：\n${rawOutput ? shortenText(rawOutput, 1200) : '(empty)'}`,
+        `${errorMessage}${debugDumpPath ? `\n调试原文已写入：${debugDumpPath}` : ''}\n模型原始返回：\n${rawOutput ? shortenText(rawOutput, 1200) : '(empty)'}`,
       );
     }
   }
@@ -642,6 +703,8 @@ export class GradingService {
     settings: GradingServiceSettings;
     signal?: AbortSignal;
     onLog?: (message: string) => void | Promise<void>;
+    onRetry?: () => void | Promise<void>;
+    onStreamProgress?: (payload: { rawText: string; reasoningText: string }) => void | Promise<void>;
   }): Promise<{
     modelResult: ModelResult;
     finalResult: FinalResult;
@@ -725,7 +788,9 @@ export class GradingService {
           paperCode: input.paper.paperCode,
           startedAtMs: startedAt,
           attempt,
+          timeoutMs: input.settings.timeoutMs,
           onLog: input.onLog,
+          onStreamProgress: input.onStreamProgress,
         });
         lastParsedCandidate = parseJsonObject(lastRawOutput);
         const modelResult = validateModelResult(lastParsedCandidate, input.rubric, input.drawRegions);
@@ -750,10 +815,20 @@ export class GradingService {
         if (attempt >= attempts || /已取消/.test(lastError.message)) {
           break;
         }
+        await input.onRetry?.();
         await input.onLog?.(`准备开始第 ${attempt + 1} 次重试`);
       }
     }
 
+    const debugDumpPath =
+      lastRawOutput && shouldWriteLlmJsonDebugArtifact(lastError)
+        ? await writeLlmJsonDebugArtifact({
+            scope: 'grading-paper',
+            identifier: input.paper.paperCode,
+            rawOutput: lastRawOutput,
+            errorMessage: lastError?.message ?? '未知批阅错误',
+          })
+        : null;
     logLlmResult(`grading-paper:${input.paper.paperCode}`, {
       status: 'error',
       detail: {
@@ -761,8 +836,12 @@ export class GradingService {
         message: lastError?.message ?? '未知批阅错误',
         rawOutput: lastRawOutput ? shortenText(lastRawOutput) : '(empty)',
         parsedCandidate: lastParsedCandidate,
+        debugDumpPath,
       },
     });
+    if (lastError && debugDumpPath) {
+      throw new Error(`${lastError.message}\n调试原文已写入：${debugDumpPath}`);
+    }
     throw lastError ?? new Error('批阅失败');
   }
 
@@ -773,7 +852,9 @@ export class GradingService {
     paperCode: string;
     startedAtMs: number;
     attempt: number;
+    timeoutMs: number;
     onLog?: (message: string) => void | Promise<void>;
+    onStreamProgress?: (payload: { rawText: string; reasoningText: string }) => void | Promise<void>;
   }): Promise<string> {
     try {
       logLlmProgress(`grading-paper:${input.paperCode}`, {
@@ -806,69 +887,107 @@ export class GradingService {
     paperCode: string;
     startedAtMs: number;
     attempt: number;
+    timeoutMs: number;
     onLog?: (message: string) => void | Promise<void>;
+    onStreamProgress?: (payload: { rawText: string; reasoningText: string }) => void | Promise<void>;
   }): Promise<string> {
+    const { controller, dispose } = createLinkedAbortController(input.signal);
     const stream = await input.client.chat.completions.create(
       {
         ...input.requestPayload,
         stream: true,
+        stream_options: {
+          include_usage: true,
+        },
       },
       {
-        signal: input.signal,
+        signal: controller.signal,
       },
     );
 
     let rawText = '';
     let reasoningText = '';
+    let usage = null;
     let lastFlushedLength = 0;
     let lastReasoningFlushedLength = 0;
     let lastFlushAt = 0;
+    let hasReceivedStreamChunk = false;
+    const iterator = stream[Symbol.asyncIterator]();
 
-    for await (const chunk of stream) {
-      ensureAbort(input.signal);
-      const delta = chunk.choices[0]?.delta;
-      const chunkText = extractStreamingDeltaText(delta?.content);
-      const chunkReasoningText = extractReasoningText(delta);
-      if (chunkText) {
-        rawText += chunkText;
-      }
-      if (chunkReasoningText) {
-        reasoningText += chunkReasoningText;
-      }
-      if (!chunkText && !chunkReasoningText) {
-        continue;
-      }
-
-      const now = Date.now();
-      const shouldFlush =
-        rawText.length - lastFlushedLength >= 120 ||
-        reasoningText.length - lastReasoningFlushedLength >= 160 ||
-        now - lastFlushAt >= 1000;
-
-      if (shouldFlush) {
-        lastFlushedLength = rawText.length;
-        lastReasoningFlushedLength = reasoningText.length;
-        lastFlushAt = now;
-        await this.logPaperStreamProgress(input.paperCode, {
-          attempt: input.attempt,
-          rawText,
-          reasoningText,
-          elapsedMs: now - input.startedAtMs,
-          onLog: input.onLog,
+    try {
+      while (true) {
+        const result = await readStreamChunkWithInactivityTimeout(iterator, {
+          timeoutMs: input.timeoutMs,
+          createTimeoutError: () =>
+            createStreamingInactivityTimeoutError(input.timeoutMs, hasReceivedStreamChunk),
+          onTimeout: (error) => {
+            controller.abort(error);
+          },
         });
+
+        if (result.done) {
+          break;
+        }
+
+        hasReceivedStreamChunk = true;
+        ensureAbort(input.signal);
+        const chunk = result.value;
+        usage = normalizeLlmUsage(chunk.usage) ?? usage;
+        const delta = chunk.choices[0]?.delta;
+        const chunkText = extractStreamingDeltaText(delta?.content);
+        const chunkReasoningText = extractReasoningText(delta);
+        if (chunkText) {
+          rawText += chunkText;
+        }
+        if (chunkReasoningText) {
+          reasoningText += chunkReasoningText;
+        }
+        if (!chunkText && !chunkReasoningText) {
+          continue;
+        }
+
+        const now = Date.now();
+        const shouldFlush =
+          rawText.length - lastFlushedLength >= 120 ||
+          reasoningText.length - lastReasoningFlushedLength >= 160 ||
+          now - lastFlushAt >= 1000;
+
+        if (shouldFlush) {
+          lastFlushedLength = rawText.length;
+          lastReasoningFlushedLength = reasoningText.length;
+          lastFlushAt = now;
+          await this.logPaperStreamProgress(input.paperCode, {
+            attempt: input.attempt,
+            rawText,
+            reasoningText,
+            elapsedMs: now - input.startedAtMs,
+            onLog: input.onLog,
+            onStreamProgress: input.onStreamProgress,
+          });
+        }
       }
+
+      await this.logPaperStreamProgress(input.paperCode, {
+        attempt: input.attempt,
+        rawText,
+        reasoningText,
+        elapsedMs: Date.now() - input.startedAtMs,
+        done: true,
+        onLog: input.onLog,
+        onStreamProgress: input.onStreamProgress,
+      });
+
+      await this.llmUsage.recordUsage({
+        source: 'grading-paper',
+        label: `答卷 ${input.paperCode}`,
+        model: input.requestPayload.model,
+        usage,
+      });
+
+      return rawText;
+    } finally {
+      dispose();
     }
-
-    await this.logPaperStreamProgress(input.paperCode, {
-      attempt: input.attempt,
-      rawText,
-      reasoningText,
-      elapsedMs: Date.now() - input.startedAtMs,
-      done: true,
-      onLog: input.onLog,
-    });
-
-    return rawText;
   }
 
   private async collectNonStreamingPaperResponseText(input: {
@@ -879,6 +998,7 @@ export class GradingService {
     startedAtMs: number;
     attempt: number;
     onLog?: (message: string) => void | Promise<void>;
+    onStreamProgress?: (payload: { rawText: string; reasoningText: string }) => void | Promise<void>;
   }): Promise<string> {
     const response = await input.client.chat.completions.create(input.requestPayload, {
       signal: input.signal,
@@ -886,6 +1006,7 @@ export class GradingService {
     ensureAbort(input.signal);
     const rawText = readAssistantText(response);
     const reasoningText = extractReasoningText(response.choices[0]?.message);
+    const usage = normalizeLlmUsage(response.usage);
     await this.logPaperStreamProgress(input.paperCode, {
       attempt: input.attempt,
       rawText,
@@ -894,7 +1015,16 @@ export class GradingService {
       done: true,
       mode: 'non-stream',
       onLog: input.onLog,
+      onStreamProgress: input.onStreamProgress,
     });
+
+    await this.llmUsage.recordUsage({
+      source: 'grading-paper',
+      label: `答卷 ${input.paperCode}`,
+      model: input.requestPayload.model,
+      usage,
+    });
+
     return rawText;
   }
 
@@ -908,6 +1038,7 @@ export class GradingService {
       done?: boolean;
       mode?: 'stream' | 'non-stream';
       onLog?: (message: string) => void | Promise<void>;
+      onStreamProgress?: (payload: { rawText: string; reasoningText: string }) => void | Promise<void>;
     },
   ): Promise<void> {
     const rawPreview = formatStreamPreview(input.rawText);
@@ -923,6 +1054,10 @@ export class GradingService {
       reasoningChars: input.reasoningText.length,
       textPreview: rawPreview,
       reasoningPreview,
+    });
+    await input.onStreamProgress?.({
+      rawText: input.rawText,
+      reasoningText: input.reasoningText,
     });
     if (input.onLog) {
       if (status === 'done') {
@@ -945,6 +1080,7 @@ export class GradingService {
     signal?: AbortSignal;
     startedAtMs: number;
     onLog?: (message: string) => void | Promise<void>;
+    onStreamProgress?: (payload: { rawText: string; reasoningText: string }) => void | Promise<void>;
   }): Promise<{
     rawText: string;
     reasoningText: string;
@@ -977,6 +1113,7 @@ export class GradingService {
     signal?: AbortSignal;
     startedAtMs: number;
     onLog?: (message: string) => void | Promise<void>;
+    onStreamProgress?: (payload: { rawText: string; reasoningText: string }) => void | Promise<void>;
   }): Promise<{
     rawText: string;
     reasoningText: string;
@@ -986,6 +1123,9 @@ export class GradingService {
       {
         ...input.requestPayload,
         stream: true,
+        stream_options: {
+          include_usage: true,
+        },
       },
       {
         signal: input.signal,
@@ -994,12 +1134,14 @@ export class GradingService {
 
     let rawText = '';
     let reasoningText = '';
+    let usage = null;
     let lastFlushedLength = 0;
     let lastReasoningFlushedLength = 0;
     let lastFlushAt = 0;
 
     for await (const chunk of stream) {
       ensureAbort(input.signal);
+      usage = normalizeLlmUsage(chunk.usage) ?? usage;
       const delta = chunk.choices[0]?.delta;
       const chunkText = extractStreamingDeltaText(delta?.content);
       const chunkReasoningText = extractReasoningText(delta);
@@ -1028,6 +1170,7 @@ export class GradingService {
           reasoningText,
           elapsedMs: now - input.startedAtMs,
           onLog: input.onLog,
+          onStreamProgress: input.onStreamProgress,
         });
       }
     }
@@ -1038,6 +1181,14 @@ export class GradingService {
       elapsedMs: Date.now() - input.startedAtMs,
       done: true,
       onLog: input.onLog,
+      onStreamProgress: input.onStreamProgress,
+    });
+
+    await this.llmUsage.recordUsage({
+      source: 'grading-rubric',
+      label: '评分标准整理',
+      model: input.requestPayload.model,
+      usage,
     });
 
     return {
@@ -1053,6 +1204,7 @@ export class GradingService {
     signal?: AbortSignal;
     startedAtMs: number;
     onLog?: (message: string) => void | Promise<void>;
+    onStreamProgress?: (payload: { rawText: string; reasoningText: string }) => void | Promise<void>;
   }): Promise<{
     rawText: string;
     reasoningText: string;
@@ -1064,6 +1216,7 @@ export class GradingService {
     ensureAbort(input.signal);
     const rawText = readAssistantText(response);
     const reasoningText = extractReasoningText(response.choices[0]?.message);
+    const usage = normalizeLlmUsage(response.usage);
     await this.logRubricStreamProgress({
       rawText,
       reasoningText,
@@ -1071,7 +1224,16 @@ export class GradingService {
       done: true,
       mode: 'non-stream',
       onLog: input.onLog,
+      onStreamProgress: input.onStreamProgress,
     });
+
+    await this.llmUsage.recordUsage({
+      source: 'grading-rubric',
+      label: '评分标准整理',
+      model: input.requestPayload.model,
+      usage,
+    });
+
     return {
       rawText,
       reasoningText,
@@ -1086,6 +1248,7 @@ export class GradingService {
     done?: boolean;
     mode?: 'stream' | 'non-stream';
     onLog?: (message: string) => void | Promise<void>;
+    onStreamProgress?: (payload: { rawText: string; reasoningText: string }) => void | Promise<void>;
   }): Promise<void> {
     const mode = input.mode ?? 'stream';
     const status = input.done ? 'done' : 'progress';
@@ -1097,6 +1260,10 @@ export class GradingService {
       reasoningChars: input.reasoningText.length,
       textPreview: formatStreamPreview(input.rawText),
       reasoningPreview: formatStreamPreview(input.reasoningText),
+    });
+    await input.onStreamProgress?.({
+      rawText: input.rawText,
+      reasoningText: input.reasoningText,
     });
 
     if (!input.onLog) {

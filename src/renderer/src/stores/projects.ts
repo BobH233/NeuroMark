@@ -12,6 +12,8 @@ import type {
   SaveFinalResultOptions,
 } from '@preload/contracts';
 
+let latestProjectDetailRequestId = 0;
+
 export const useProjectsStore = defineStore('projects', {
   state: () => ({
     projects: [] as ProjectMeta[],
@@ -19,6 +21,7 @@ export const useProjectsStore = defineStore('projects', {
     detail: null as ProjectDetail | null,
     rubricDebug: null as ProjectRubricDebug | null,
     loading: false,
+    unbind: null as null | (() => void),
   }),
   getters: {
     selectedProject(state) {
@@ -28,6 +31,25 @@ export const useProjectsStore = defineStore('projects', {
   actions: {
     async bootstrap() {
       await this.loadProjects();
+      if (!this.unbind) {
+        this.unbind = window.neuromark.projects.onUpdated((projects) => {
+          this.projects = projects;
+          if (!this.projects.some((item) => item.id === this.selectedProjectId)) {
+            this.clearSelection();
+            return;
+          }
+
+          const selectedProjectMeta = this.projects.find(
+            (item) => item.id === this.selectedProjectId,
+          );
+          if (selectedProjectMeta && this.detail?.project.id === selectedProjectMeta.id) {
+            this.detail = {
+              ...this.detail,
+              project: selectedProjectMeta,
+            };
+          }
+        });
+      }
     },
     async loadProjects() {
       this.projects = await window.neuromark.projects.list();
@@ -41,16 +63,41 @@ export const useProjectsStore = defineStore('projects', {
       this.detail = null;
       this.rubricDebug = null;
     },
+    applyProjectMeta(project: ProjectMeta) {
+      const projectIndex = this.projects.findIndex((item) => item.id === project.id);
+      if (projectIndex >= 0) {
+        this.projects.splice(projectIndex, 1, project);
+      } else {
+        this.projects.unshift(project);
+      }
+
+      if (this.detail?.project.id === project.id) {
+        this.detail = {
+          ...this.detail,
+          project,
+        };
+      }
+    },
     async selectProject(projectId: string) {
       this.selectedProjectId = projectId;
       await this.loadProjectDetail(projectId);
     },
     async loadProjectDetail(projectId: string) {
+      const requestId = latestProjectDetailRequestId + 1;
+      latestProjectDetailRequestId = requestId;
       this.loading = true;
       try {
-        this.detail = await window.neuromark.projects.getDetail(projectId);
+        const nextDetail = await window.neuromark.projects.getDetail(projectId);
+        if (requestId !== latestProjectDetailRequestId || this.selectedProjectId !== projectId) {
+          return this.detail;
+        }
+
+        this.detail = nextDetail;
+        return this.detail;
       } finally {
-        this.loading = false;
+        if (requestId === latestProjectDetailRequestId) {
+          this.loading = false;
+        }
       }
     },
     async loadProjectRubricDebug(projectId: string) {
@@ -76,9 +123,9 @@ export const useProjectsStore = defineStore('projects', {
       }
     },
     async updateProjectName(projectId: string, name: string) {
-      await window.neuromark.projects.updateName(projectId, name);
-      await this.loadProjects();
-      await this.loadProjectDetail(projectId);
+      const updated = await window.neuromark.projects.updateName(projectId, name);
+      this.applyProjectMeta(updated);
+      return updated;
     },
     async removePaper(projectId: string, paperId: string) {
       this.detail = await window.neuromark.projects.removePaper(projectId, paperId);
@@ -86,19 +133,30 @@ export const useProjectsStore = defineStore('projects', {
       return this.detail;
     },
     async importOriginalImages(projectId: string, filePaths: string[]) {
-      await window.neuromark.projects.importOriginalImages(projectId, filePaths);
+      const result = await window.neuromark.projects.importOriginalImages(projectId, filePaths);
       await this.loadProjects();
       await this.loadProjectDetail(projectId);
+      return result;
+    },
+    async importOriginalImageDirectory(projectId: string, directoryPath: string) {
+      const result = await window.neuromark.projects.importOriginalImageDirectory(
+        projectId,
+        directoryPath,
+      );
+      await this.loadProjects();
+      await this.loadProjectDetail(projectId);
+      return result;
     },
     async updateProjectSettings(projectId: string, settings: ProjectSettings) {
-      await window.neuromark.projects.updateSettings(projectId, {
+      const updated = await window.neuromark.projects.updateSettings(projectId, {
         gradingConcurrency: settings.gradingConcurrency,
         drawRegions: settings.drawRegions,
         defaultImageDetail: settings.defaultImageDetail,
         enableScanPostProcess: settings.enableScanPostProcess,
+        skipScanProcessing: settings.skipScanProcessing,
       });
-      await this.loadProjects();
-      await this.loadProjectDetail(projectId);
+      this.applyProjectMeta(updated);
+      return updated;
     },
     async updateReferenceAnswer(projectId: string, markdown: string) {
       await window.neuromark.projects.updateReferenceAnswer(projectId, markdown);

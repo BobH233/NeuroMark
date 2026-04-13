@@ -3,8 +3,65 @@ import type { DebugLogEntry } from '@preload/contracts';
 
 const CLICK_WINDOW_MS = 1800;
 const REQUIRED_LOGO_CLICKS = 5;
-const MAX_RENDER_ENTRIES = 1500;
+const MAX_BUFFERED_LOG_LINES = 3000;
+const MAX_RENDER_LOG_LINES = 1000;
 let initializePromise: Promise<void> | null = null;
+
+function countLogLines(text: string): number {
+  if (!text) {
+    return 0;
+  }
+
+  let lineCount = 1;
+  for (let index = 0; index < text.length; index += 1) {
+    if (text[index] === '\n') {
+      lineCount += 1;
+    }
+  }
+
+  return lineCount;
+}
+
+function takeLastLines(text: string, maxLines: number): string {
+  if (!text || maxLines <= 0) {
+    return '';
+  }
+
+  const normalized = text.replace(/\r\n/g, '\n');
+  const lines = normalized.split('\n');
+  return lines.slice(-maxLines).join('\n');
+}
+
+function getTailEntries(entries: DebugLogEntry[], maxLines: number): DebugLogEntry[] {
+  if (!entries.length || maxLines <= 0) {
+    return [];
+  }
+
+  const selected: DebugLogEntry[] = [];
+  let remainingLines = maxLines;
+
+  for (let index = entries.length - 1; index >= 0 && remainingLines > 0; index -= 1) {
+    const entry = entries[index];
+    const lineCount = countLogLines(entry.text);
+    if (lineCount <= 0) {
+      continue;
+    }
+
+    if (lineCount <= remainingLines) {
+      selected.push(entry);
+      remainingLines -= lineCount;
+      continue;
+    }
+
+    selected.push({
+      ...entry,
+      text: takeLastLines(entry.text, remainingLines),
+    });
+    remainingLines = 0;
+  }
+
+  return selected.reverse();
+}
 
 export const useDebugPanelStore = defineStore('debug-panel', {
   state: () => ({
@@ -15,11 +72,14 @@ export const useDebugPanelStore = defineStore('debug-panel', {
     lastLogoClickAt: 0,
   }),
   getters: {
-    output(state) {
-      return state.entries.map((entry) => entry.text).join('');
+    renderedEntries(state) {
+      return getTailEntries(state.entries, MAX_RENDER_LOG_LINES);
     },
-    formattedOutput(state) {
-      return state.entries
+    output(): string {
+      return this.renderedEntries.map((entry) => entry.text).join('');
+    },
+    formattedOutput(): string {
+      return this.renderedEntries
         .map((entry) => {
           const date = new Date(entry.timestamp);
           const timeLabel = Number.isNaN(date.getTime())
@@ -94,8 +154,13 @@ export const useDebugPanelStore = defineStore('debug-panel', {
       return true;
     },
     trimEntries() {
-      if (this.entries.length > MAX_RENDER_ENTRIES) {
-        this.entries.splice(0, this.entries.length - MAX_RENDER_ENTRIES);
+      let totalLines = 0;
+      for (let index = this.entries.length - 1; index >= 0; index -= 1) {
+        totalLines += countLogLines(this.entries[index].text);
+        if (totalLines > MAX_BUFFERED_LOG_LINES) {
+          this.entries.splice(0, index + 1);
+          break;
+        }
       }
     },
   },

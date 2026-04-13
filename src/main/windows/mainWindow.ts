@@ -11,7 +11,7 @@ export async function createMainWindow(): Promise<BrowserWindow> {
     minWidth: 1200,
     minHeight: 760,
     title: 'NeuroMark',
-    backgroundColor: '#ecf4f4',
+    backgroundColor: '#ffffff',
     autoHideMenuBar: process.platform !== 'darwin',
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
     ...(process.platform === 'darwin'
