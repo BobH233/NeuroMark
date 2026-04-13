@@ -3447,11 +3447,11 @@ textarea {
 
   .page-stack--result-print .result-subsection-card,
   .page-stack--result-print .question-card {
-    break-inside: avoid;
+    break-inside: auto !important;
+    page-break-inside: auto !important;
     border-radius: 12px !important;
     border: 1px solid rgba(148, 163, 184, 0.18) !important;
     box-shadow: none !important;
-    background: #ffffff !important;
     margin-bottom: 12px !important;
   }
 
@@ -3462,6 +3462,16 @@ textarea {
 
   .page-stack--result-print .paper-stage-image {
     max-height: none !important;
+  }
+
+  .page-stack--result-print .issues-box,
+  .page-stack--result-print .score-breakdown-badge,
+  .page-stack--result-print .n-tag,
+  .page-stack--result-print .n-alert,
+  .page-stack--result-print .n-alert-body,
+  .page-stack--result-print .result-version-alert {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
   }
 
   .page-stack--result-print .markdown-preview pre,

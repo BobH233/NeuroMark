@@ -139,6 +139,7 @@ const canScrollOuterToBottom = ref(false);
 let lockedShellContent: HTMLElement | null = null;
 let smartNameMatchUnsubscribe: (() => void) | null = null;
 let shellScrollObserver: ResizeObserver | null = null;
+let resultPrintDocumentTitleBeforePrint: string | null = null;
 
 function setShellScrollLocked(locked: boolean) {
   if (typeof document === 'undefined') {
@@ -1374,6 +1375,62 @@ function normalizeExportFileName(name: string): string {
   return normalized || 'neuromark-project';
 }
 
+function sanitizeResultPdfFileNamePart(value: string): string {
+  return value
+    .trim()
+    .replace(/[\\/:*?"<>|]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function buildSelectedResultPdfBaseName(): string {
+  const paperFallback = sanitizeResultPdfFileNamePart(
+    selectedPaper.value?.paperCode ?? '批阅结果',
+  );
+  const studentInfo = editableResult.value?.studentInfo;
+  const shouldUseVerifiedStudentInfo =
+    selectedResult.value?.nameMatchStatus === 'verified' ||
+    editableStudentInfoChanged.value;
+
+  if (!shouldUseVerifiedStudentInfo || !studentInfo) {
+    return paperFallback;
+  }
+
+  const verifiedParts = [
+    studentInfo.name,
+    studentInfo.studentId,
+    studentInfo.className,
+  ]
+    .map((item) => sanitizeResultPdfFileNamePart(item))
+    .filter(Boolean);
+
+  return verifiedParts.join('_') || paperFallback;
+}
+
+function applySelectedResultPrintTitle(): void {
+  if (typeof document === 'undefined') {
+    return;
+  }
+
+  if (resultPrintDocumentTitleBeforePrint == null) {
+    resultPrintDocumentTitleBeforePrint = document.title;
+  }
+
+  document.title = buildSelectedResultPdfBaseName();
+}
+
+function restoreSelectedResultPrintTitle(): void {
+  if (
+    typeof document === 'undefined' ||
+    resultPrintDocumentTitleBeforePrint == null
+  ) {
+    return;
+  }
+
+  document.title = resultPrintDocumentTitleBeforePrint;
+  resultPrintDocumentTitleBeforePrint = null;
+}
+
 function buildExportDefaultFileName(
   projectName: string,
   scope: ResultExportScope,
@@ -1432,6 +1489,8 @@ async function confirmExportResults() {
 
 function restoreResultPrintMode() {
   if (!isResultPrintMode.value) {
+    restoreSelectedResultPrintTitle();
+    printResultLoading.value = false;
     return;
   }
 
@@ -1440,7 +1499,38 @@ function restoreResultPrintMode() {
     expandedQuestionIds.value = [...expandedQuestionIdsBeforePrint.value];
   }
   expandedQuestionIdsBeforePrint.value = null;
+  restoreSelectedResultPrintTitle();
   printResultLoading.value = false;
+}
+
+async function waitForSelectedResultPrintReady() {
+  await nextTick();
+
+  if (typeof document !== 'undefined' && 'fonts' in document) {
+    try {
+      await (document as Document & { fonts?: FontFaceSet }).fonts?.ready;
+    } catch {
+      // Ignore font readiness failures and continue with the best effort render.
+    }
+  }
+
+  await new Promise<void>((resolve) => {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => resolve());
+      });
+    });
+  });
+}
+
+async function prepareSelectedResultForPrint() {
+  applySelectedResultPrintTitle();
+  expandedQuestionIdsBeforePrint.value = [...expandedQuestionIds.value];
+  expandedQuestionIds.value = editableResult.value!.questionScores.map(
+    (question) => question.questionId,
+  );
+  isResultPrintMode.value = true;
+  await waitForSelectedResultPrintReady();
 }
 
 async function printSelectedResult() {
@@ -1455,13 +1545,7 @@ async function printSelectedResult() {
 
   printResultLoading.value = true;
   try {
-    expandedQuestionIdsBeforePrint.value = [...expandedQuestionIds.value];
-    expandedQuestionIds.value = editableResult.value.questionScores.map(
-      (question) => question.questionId,
-    );
-    isResultPrintMode.value = true;
-    await nextTick();
-    await new Promise((resolve) => window.setTimeout(resolve, 80));
+    await prepareSelectedResultForPrint();
     window.print();
   } catch (error) {
     restoreResultPrintMode();
