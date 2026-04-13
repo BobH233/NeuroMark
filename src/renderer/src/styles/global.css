@@ -435,6 +435,78 @@ textarea {
   min-width: 0;
 }
 
+.project-scroll-fab-stack {
+  position: fixed;
+  left: calc(
+    var(--sidebar-footprint)
+    + ((100vw - var(--sidebar-footprint) - var(--shell-gutter)) / 2)
+  );
+  top: calc(var(--top-bar-safe-space) + 10px);
+  bottom: 28px;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  pointer-events: none;
+  transform: translateX(-50%);
+}
+
+.project-scroll-fab {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 88px;
+  padding: 10px 14px;
+  border: 1px solid rgba(120, 164, 176, 0.26);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 16px 40px rgba(76, 108, 128, 0.2);
+  color: #285768;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  backdrop-filter: blur(14px);
+  pointer-events: auto;
+  transition:
+    transform 160ms ease,
+    box-shadow 160ms ease,
+    background-color 160ms ease,
+    border-color 160ms ease;
+}
+
+.project-scroll-fab:hover {
+  transform: translateY(-2px);
+  border-color: rgba(74, 146, 166, 0.4);
+  background: rgba(241, 251, 253, 0.96);
+  box-shadow: 0 18px 44px rgba(63, 121, 140, 0.24);
+}
+
+.project-scroll-fab:focus-visible {
+  outline: 2px solid rgba(47, 142, 168, 0.34);
+  outline-offset: 2px;
+}
+
+.project-scroll-fab__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  background: rgba(96, 187, 209, 0.16);
+  color: #24839a;
+  font-size: 15px;
+  line-height: 1;
+}
+
+.project-scroll-fab__label {
+  white-space: nowrap;
+}
+
+.project-scroll-fab--bottom {
+  margin-top: auto;
+}
+
 .llm-usage-stat-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
@@ -3082,5 +3154,32 @@ textarea {
 
   .smart-name-diff-values {
     grid-template-columns: 1fr;
+  }
+
+  .project-scroll-fab-stack {
+    left: calc(
+      var(--sidebar-footprint)
+      + ((100vw - var(--sidebar-footprint) - var(--shell-gutter)) / 2)
+    );
+  }
+}
+
+@media (max-width: 768px) {
+  .project-scroll-fab-stack {
+    left: calc(
+      var(--sidebar-footprint)
+      + ((100vw - var(--sidebar-footprint) - var(--shell-gutter)) / 2)
+    );
+    top: calc(var(--top-bar-safe-space) + 8px);
+    bottom: 22px;
+  }
+
+  .project-scroll-fab {
+    min-width: 0;
+    padding: 10px 12px;
+  }
+
+  .project-scroll-fab__label {
+    display: none;
   }
 }

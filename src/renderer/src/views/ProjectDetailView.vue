@@ -119,9 +119,14 @@ const isReviewScrollActive = ref(false);
 const expandedQuestionIds = ref<string[]>([]);
 const isResultPrintMode = ref(false);
 const expandedQuestionIdsBeforePrint = ref<string[] | null>(null);
+const pageStackRef = ref<HTMLElement | null>(null);
+const shellScrollHost = ref<HTMLElement | null>(null);
+const canScrollOuterToTop = ref(false);
+const canScrollOuterToBottom = ref(false);
 
 let lockedShellContent: HTMLElement | null = null;
 let smartNameMatchUnsubscribe: (() => void) | null = null;
+let shellScrollObserver: ResizeObserver | null = null;
 
 function setShellScrollLocked(locked: boolean) {
   if (typeof document === 'undefined') {
@@ -176,6 +181,86 @@ function persistPreviewDisplayOptions(
     getPreviewDisplayOptionsStorageKey(targetProjectId),
     JSON.stringify(displayOptions),
   );
+}
+
+function shouldHideOuterScrollButtons(): boolean {
+  return false;
+}
+
+function detachShellScrollHost() {
+  shellScrollObserver?.disconnect();
+  shellScrollObserver = null;
+
+  if (shellScrollHost.value) {
+    shellScrollHost.value.removeEventListener('scroll', updateOuterScrollState);
+  }
+
+  shellScrollHost.value = null;
+}
+
+function attachShellScrollHost() {
+  if (typeof document === 'undefined') {
+    return;
+  }
+
+  const nextHost = document.querySelector<HTMLElement>('.shell-content');
+  if (!nextHost) {
+    detachShellScrollHost();
+    return;
+  }
+
+  if (shellScrollHost.value === nextHost) {
+    return;
+  }
+
+  detachShellScrollHost();
+  shellScrollHost.value = nextHost;
+  shellScrollHost.value.addEventListener('scroll', updateOuterScrollState, { passive: true });
+
+  if (typeof ResizeObserver !== 'undefined') {
+    shellScrollObserver = new ResizeObserver(() => {
+      updateOuterScrollState();
+    });
+    shellScrollObserver.observe(shellScrollHost.value);
+    if (pageStackRef.value) {
+      shellScrollObserver.observe(pageStackRef.value);
+    }
+  }
+}
+
+function updateOuterScrollState() {
+  const host = shellScrollHost.value;
+  if (!host || shouldHideOuterScrollButtons()) {
+    canScrollOuterToTop.value = false;
+    canScrollOuterToBottom.value = false;
+    return;
+  }
+
+  const threshold = 12;
+  const maxScrollTop = Math.max(host.scrollHeight - host.clientHeight, 0);
+  const remainingBottom = maxScrollTop - host.scrollTop;
+
+  canScrollOuterToTop.value = host.scrollTop > threshold;
+  canScrollOuterToBottom.value = remainingBottom > threshold;
+}
+
+async function refreshOuterScrollState() {
+  await nextTick();
+  attachShellScrollHost();
+  updateOuterScrollState();
+}
+
+function scrollOuterToTop() {
+  shellScrollHost.value?.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function scrollOuterToBottom() {
+  const host = shellScrollHost.value;
+  if (!host) {
+    return;
+  }
+
+  host.scrollTo({ top: host.scrollHeight, behavior: 'smooth' });
 }
 
 const projectId = computed(() => String(route.params.projectId ?? ''));
@@ -744,6 +829,7 @@ watch(
     setShellScrollLocked(
       (tab === 'results' || tab === 'smart-name-match') && reviewScrollActive,
     );
+    void refreshOuterScrollState();
   },
   { immediate: true },
 );
@@ -825,6 +911,7 @@ watch(
 
 onMounted(async () => {
   window.addEventListener('afterprint', restoreResultPrintMode);
+  window.addEventListener('resize', updateOuterScrollState);
   await debugPanelStore.initialize();
   smartNameMatchUnsubscribe = window.neuromark.results.onSmartNameMatchUpdated((snapshot) => {
     if (snapshot.projectId === projectId.value) {
@@ -838,19 +925,44 @@ onMounted(async () => {
   if (projectsStore.projects.length === 0) {
     await projectsStore.bootstrap();
   }
+
+  await refreshOuterScrollState();
 });
 
 onBeforeUnmount(() => {
   window.removeEventListener('afterprint', restoreResultPrintMode);
+  window.removeEventListener('resize', updateOuterScrollState);
   restoreResultPrintMode();
   smartNameMatchUnsubscribe?.();
   smartNameMatchUnsubscribe = null;
   smartNameContextMenu.value.visible = false;
+  detachShellScrollHost();
   if (lockedShellContent) {
     lockedShellContent.classList.remove('shell-content--scroll-locked');
     lockedShellContent = null;
   }
 });
+
+watch(projectId, () => {
+  void refreshOuterScrollState();
+});
+
+watch(
+  () => [
+    activeTab.value,
+    selectedProject.value?.id ?? '',
+    detail.value?.recentJobs.length ?? 0,
+    papers.value.length,
+    results.value.length,
+    reviewResultEntries.value.length,
+    reviewUngradedPapers.value.length,
+    selectedResultId.value,
+    isResultPrintMode.value,
+  ] as const,
+  () => {
+    void refreshOuterScrollState();
+  },
+);
 
 watch(
   () => [projectId.value, latestReferenceAnswerVersion.value] as const,
@@ -1631,7 +1743,11 @@ function goBack() {
 </script>
 
 <template>
-  <div class="page-stack" :class="{ 'page-stack--result-print': isResultPrintMode }">
+  <div
+    ref="pageStackRef"
+    class="page-stack"
+    :class="{ 'page-stack--result-print': isResultPrintMode }"
+  >
     <n-modal
       :show="exportDialogVisible"
       preset="card"
@@ -3183,5 +3299,31 @@ function goBack() {
         </template>
       </n-empty>
     </n-card>
+
+    <div
+      v-if="!isResultPrintMode && (canScrollOuterToTop || canScrollOuterToBottom)"
+      class="project-scroll-fab-stack"
+    >
+      <button
+        v-if="canScrollOuterToTop"
+        type="button"
+        class="project-scroll-fab project-scroll-fab--top"
+        aria-label="滚动到页面顶部"
+        @click="scrollOuterToTop"
+      >
+        <span class="project-scroll-fab__icon">↑</span>
+        <span class="project-scroll-fab__label">顶部</span>
+      </button>
+      <button
+        v-if="canScrollOuterToBottom"
+        type="button"
+        class="project-scroll-fab project-scroll-fab--bottom"
+        aria-label="滚动到页面底部"
+        @click="scrollOuterToBottom"
+      >
+        <span class="project-scroll-fab__icon">↓</span>
+        <span class="project-scroll-fab__label">底部</span>
+      </button>
+    </div>
   </div>
 </template>
