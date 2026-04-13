@@ -113,6 +113,59 @@ export function formatStreamPreview(text: string, limit = STREAM_PREVIEW_LIMIT):
   return `${normalized.slice(-limit)}...`;
 }
 
+export function createStreamingInactivityTimeoutError(
+  timeoutMs: number,
+  hasReceivedStreamChunk: boolean,
+): Error {
+  const timeoutSeconds = Math.max(1, Math.ceil(timeoutMs / 1000));
+  return new Error(
+    hasReceivedStreamChunk
+      ? `流式响应中断超时，连续 ${timeoutSeconds} 秒未收到新的增量消息。`
+      : `流式响应启动超时，${timeoutSeconds} 秒内未收到任何增量消息。`,
+  );
+}
+
+export async function readStreamChunkWithInactivityTimeout<T>(
+  iterator: AsyncIterator<T>,
+  input: {
+    timeoutMs: number;
+    createTimeoutError: () => Error;
+    onTimeout?: (error: Error) => void;
+  },
+): Promise<IteratorResult<T>> {
+  return new Promise<IteratorResult<T>>((resolve, reject) => {
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      const error = input.createTimeoutError();
+      input.onTimeout?.(error);
+      reject(error);
+    }, input.timeoutMs);
+
+    iterator.next().then(
+      (result) => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        clearTimeout(timer);
+        resolve(result);
+      },
+      (error) => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
+}
+
 export function isStreamingFallbackCandidate(error: unknown): boolean {
   if (!(error instanceof Error)) {
     return false;

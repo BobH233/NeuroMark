@@ -22,10 +22,12 @@ import { logLlmProgress, logLlmRequest, logLlmResult } from './llmRequestLogger'
 import { LlmUsageService, normalizeLlmUsage } from './llmUsageService';
 import {
   compactErrorMessage,
+  createStreamingInactivityTimeoutError,
   extractReasoningText,
   extractStreamingDeltaText,
   formatStreamPreview,
   isStreamingFallbackCandidate,
+  readStreamChunkWithInactivityTimeout,
   readAssistantText,
   shortenText,
 } from './llmStreamUtils';
@@ -46,6 +48,40 @@ function ensureAbort(signal?: AbortSignal): void {
   if (signal?.aborted) {
     throw new Error('批阅任务已取消');
   }
+}
+
+function createLinkedAbortController(signal?: AbortSignal): {
+  controller: AbortController;
+  dispose: () => void;
+} {
+  const controller = new AbortController();
+
+  if (!signal) {
+    return {
+      controller,
+      dispose: () => undefined,
+    };
+  }
+
+  if (signal.aborted) {
+    controller.abort(signal.reason);
+    return {
+      controller,
+      dispose: () => undefined,
+    };
+  }
+
+  const forwardAbort = () => {
+    controller.abort(signal.reason);
+  };
+  signal.addEventListener('abort', forwardAbort, { once: true });
+
+  return {
+    controller,
+    dispose: () => {
+      signal.removeEventListener('abort', forwardAbort);
+    },
+  };
 }
 
 function extractFirstJsonObject(text: string): string | null {
@@ -752,6 +788,7 @@ export class GradingService {
           paperCode: input.paper.paperCode,
           startedAtMs: startedAt,
           attempt,
+          timeoutMs: input.settings.timeoutMs,
           onLog: input.onLog,
           onStreamProgress: input.onStreamProgress,
         });
@@ -815,6 +852,7 @@ export class GradingService {
     paperCode: string;
     startedAtMs: number;
     attempt: number;
+    timeoutMs: number;
     onLog?: (message: string) => void | Promise<void>;
     onStreamProgress?: (payload: { rawText: string; reasoningText: string }) => void | Promise<void>;
   }): Promise<string> {
@@ -849,9 +887,11 @@ export class GradingService {
     paperCode: string;
     startedAtMs: number;
     attempt: number;
+    timeoutMs: number;
     onLog?: (message: string) => void | Promise<void>;
     onStreamProgress?: (payload: { rawText: string; reasoningText: string }) => void | Promise<void>;
   }): Promise<string> {
+    const { controller, dispose } = createLinkedAbortController(input.signal);
     const stream = await input.client.chat.completions.create(
       {
         ...input.requestPayload,
@@ -861,7 +901,7 @@ export class GradingService {
         },
       },
       {
-        signal: input.signal,
+        signal: controller.signal,
       },
     );
 
@@ -871,62 +911,83 @@ export class GradingService {
     let lastFlushedLength = 0;
     let lastReasoningFlushedLength = 0;
     let lastFlushAt = 0;
+    let hasReceivedStreamChunk = false;
+    const iterator = stream[Symbol.asyncIterator]();
 
-    for await (const chunk of stream) {
-      ensureAbort(input.signal);
-      usage = normalizeLlmUsage(chunk.usage) ?? usage;
-      const delta = chunk.choices[0]?.delta;
-      const chunkText = extractStreamingDeltaText(delta?.content);
-      const chunkReasoningText = extractReasoningText(delta);
-      if (chunkText) {
-        rawText += chunkText;
-      }
-      if (chunkReasoningText) {
-        reasoningText += chunkReasoningText;
-      }
-      if (!chunkText && !chunkReasoningText) {
-        continue;
-      }
-
-      const now = Date.now();
-      const shouldFlush =
-        rawText.length - lastFlushedLength >= 120 ||
-        reasoningText.length - lastReasoningFlushedLength >= 160 ||
-        now - lastFlushAt >= 1000;
-
-      if (shouldFlush) {
-        lastFlushedLength = rawText.length;
-        lastReasoningFlushedLength = reasoningText.length;
-        lastFlushAt = now;
-        await this.logPaperStreamProgress(input.paperCode, {
-          attempt: input.attempt,
-          rawText,
-          reasoningText,
-          elapsedMs: now - input.startedAtMs,
-          onLog: input.onLog,
-          onStreamProgress: input.onStreamProgress,
+    try {
+      while (true) {
+        const result = await readStreamChunkWithInactivityTimeout(iterator, {
+          timeoutMs: input.timeoutMs,
+          createTimeoutError: () =>
+            createStreamingInactivityTimeoutError(input.timeoutMs, hasReceivedStreamChunk),
+          onTimeout: (error) => {
+            controller.abort(error);
+          },
         });
+
+        if (result.done) {
+          break;
+        }
+
+        hasReceivedStreamChunk = true;
+        ensureAbort(input.signal);
+        const chunk = result.value;
+        usage = normalizeLlmUsage(chunk.usage) ?? usage;
+        const delta = chunk.choices[0]?.delta;
+        const chunkText = extractStreamingDeltaText(delta?.content);
+        const chunkReasoningText = extractReasoningText(delta);
+        if (chunkText) {
+          rawText += chunkText;
+        }
+        if (chunkReasoningText) {
+          reasoningText += chunkReasoningText;
+        }
+        if (!chunkText && !chunkReasoningText) {
+          continue;
+        }
+
+        const now = Date.now();
+        const shouldFlush =
+          rawText.length - lastFlushedLength >= 120 ||
+          reasoningText.length - lastReasoningFlushedLength >= 160 ||
+          now - lastFlushAt >= 1000;
+
+        if (shouldFlush) {
+          lastFlushedLength = rawText.length;
+          lastReasoningFlushedLength = reasoningText.length;
+          lastFlushAt = now;
+          await this.logPaperStreamProgress(input.paperCode, {
+            attempt: input.attempt,
+            rawText,
+            reasoningText,
+            elapsedMs: now - input.startedAtMs,
+            onLog: input.onLog,
+            onStreamProgress: input.onStreamProgress,
+          });
+        }
       }
+
+      await this.logPaperStreamProgress(input.paperCode, {
+        attempt: input.attempt,
+        rawText,
+        reasoningText,
+        elapsedMs: Date.now() - input.startedAtMs,
+        done: true,
+        onLog: input.onLog,
+        onStreamProgress: input.onStreamProgress,
+      });
+
+      await this.llmUsage.recordUsage({
+        source: 'grading-paper',
+        label: `答卷 ${input.paperCode}`,
+        model: input.requestPayload.model,
+        usage,
+      });
+
+      return rawText;
+    } finally {
+      dispose();
     }
-
-    await this.logPaperStreamProgress(input.paperCode, {
-      attempt: input.attempt,
-      rawText,
-      reasoningText,
-      elapsedMs: Date.now() - input.startedAtMs,
-      done: true,
-      onLog: input.onLog,
-      onStreamProgress: input.onStreamProgress,
-    });
-
-    await this.llmUsage.recordUsage({
-      source: 'grading-paper',
-      label: `答卷 ${input.paperCode}`,
-      model: input.requestPayload.model,
-      usage,
-    });
-
-    return rawText;
   }
 
   private async collectNonStreamingPaperResponseText(input: {
