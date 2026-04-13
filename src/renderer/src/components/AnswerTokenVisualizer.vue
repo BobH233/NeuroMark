@@ -43,6 +43,7 @@ const burstCount = ref(0);
 let canvasContext: CanvasRenderingContext2D | null = null;
 let animationFrame = 0;
 let resizeObserver: ResizeObserver | null = null;
+let backgroundLayer: HTMLCanvasElement | null = null;
 let latestWidth = 0;
 let latestHeight = 0;
 let lastFrameAt = 0;
@@ -89,6 +90,7 @@ function resizeCanvas() {
 
   canvasContext.setTransform(1, 0, 0, 1, 0, 0);
   canvasContext.scale(ratio, ratio);
+  rebuildBackgroundLayer();
 }
 
 function clamp(value: number, min: number, max: number) {
@@ -313,59 +315,95 @@ function updateBlocks(deltaSeconds: number) {
   blockCount.value = blocks.length;
 }
 
-function drawBackground(context: CanvasRenderingContext2D) {
-  context.clearRect(0, 0, latestWidth, latestHeight);
+function paintBackgroundLayer(
+  context: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+) {
+  context.clearRect(0, 0, width, height);
 
-  const backgroundGradient = context.createLinearGradient(0, 0, latestWidth, latestHeight);
+  const backgroundGradient = context.createLinearGradient(0, 0, width, height);
   backgroundGradient.addColorStop(0, '#04131d');
   backgroundGradient.addColorStop(0.4, '#0f2740');
   backgroundGradient.addColorStop(1, '#091018');
   context.fillStyle = backgroundGradient;
-  context.fillRect(0, 0, latestWidth, latestHeight);
+  context.fillRect(0, 0, width, height);
 
   const spotlight = context.createRadialGradient(
-    latestWidth * 0.5,
-    latestHeight * 0.18,
+    width * 0.5,
+    height * 0.18,
     30,
-    latestWidth * 0.5,
-    latestHeight * 0.18,
-    latestWidth * 0.62,
+    width * 0.5,
+    height * 0.18,
+    width * 0.62,
   );
   spotlight.addColorStop(0, 'rgba(255,255,255,0.16)');
   spotlight.addColorStop(0.35, 'rgba(67,225,255,0.12)');
   spotlight.addColorStop(1, 'rgba(4,19,29,0)');
   context.fillStyle = spotlight;
-  context.fillRect(0, 0, latestWidth, latestHeight);
+  context.fillRect(0, 0, width, height);
 
   for (let index = 0; index < 12; index += 1) {
-    const x = (index / 11) * latestWidth;
+    const x = (index / 11) * width;
     context.strokeStyle = `rgba(85, 226, 255, ${index % 2 === 0 ? 0.07 : 0.04})`;
     context.lineWidth = 1;
     context.beginPath();
     context.moveTo(x, 0);
-    context.lineTo(x - latestWidth * 0.15, latestHeight);
+    context.lineTo(x - width * 0.15, height);
     context.stroke();
   }
 
-  const poolGradient = context.createLinearGradient(0, latestHeight - 180, 0, latestHeight);
+  const poolGradient = context.createLinearGradient(0, height - 180, 0, height);
   poolGradient.addColorStop(0, 'rgba(16, 132, 184, 0)');
   poolGradient.addColorStop(0.45, 'rgba(11, 214, 245, 0.14)');
   poolGradient.addColorStop(1, 'rgba(255, 130, 78, 0.18)');
   context.fillStyle = poolGradient;
   context.beginPath();
-  context.moveTo(24, latestHeight - 108);
-  context.quadraticCurveTo(latestWidth * 0.5, latestHeight - 16, latestWidth - 24, latestHeight - 108);
-  context.lineTo(latestWidth - 24, latestHeight);
-  context.lineTo(24, latestHeight);
+  context.moveTo(24, height - 108);
+  context.quadraticCurveTo(width * 0.5, height - 16, width - 24, height - 108);
+  context.lineTo(width - 24, height);
+  context.lineTo(24, height);
   context.closePath();
   context.fill();
 
   context.strokeStyle = 'rgba(132, 245, 255, 0.35)';
   context.lineWidth = 2;
   context.beginPath();
-  context.moveTo(24, latestHeight - 108);
-  context.quadraticCurveTo(latestWidth * 0.5, latestHeight - 16, latestWidth - 24, latestHeight - 108);
+  context.moveTo(24, height - 108);
+  context.quadraticCurveTo(width * 0.5, height - 16, width - 24, height - 108);
   context.stroke();
+}
+
+function rebuildBackgroundLayer() {
+  if (latestWidth <= 0 || latestHeight <= 0) {
+    backgroundLayer = null;
+    return;
+  }
+
+  const nextLayer = document.createElement('canvas');
+  nextLayer.width = latestWidth;
+  nextLayer.height = latestHeight;
+  const context = nextLayer.getContext('2d');
+  if (!context) {
+    backgroundLayer = null;
+    return;
+  }
+
+  paintBackgroundLayer(context, latestWidth, latestHeight);
+  backgroundLayer = nextLayer;
+}
+
+function drawBackground(context: CanvasRenderingContext2D) {
+  if (!backgroundLayer) {
+    rebuildBackgroundLayer();
+  }
+
+  context.clearRect(0, 0, latestWidth, latestHeight);
+  if (!backgroundLayer) {
+    return;
+  }
+
+  context.drawImage(backgroundLayer, 0, 0, latestWidth, latestHeight);
 }
 
 function drawBlocks(context: CanvasRenderingContext2D) {

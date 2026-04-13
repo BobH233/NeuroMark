@@ -838,17 +838,6 @@ onMounted(async () => {
   if (projectsStore.projects.length === 0) {
     await projectsStore.bootstrap();
   }
-
-  if (projectId.value) {
-    await projectsStore.selectProject(projectId.value);
-    smartNameMatchSnapshot.value = await window.neuromark.results.getSmartNameMatchSnapshot(projectId.value);
-    if (smartNameMatchSnapshot.value.rosterText.trim()) {
-      smartNameRosterText.value = smartNameMatchSnapshot.value.rosterText;
-    }
-    if (showRubricDebugTab.value) {
-      await loadRubricDebug();
-    }
-  }
 });
 
 onBeforeUnmount(() => {
@@ -871,6 +860,35 @@ watch(
     }
     await loadRubricDebug();
   },
+);
+
+watch(
+  projectId,
+  async (nextProjectId) => {
+    if (!nextProjectId) {
+      projectsStore.clearSelection();
+      smartNameMatchSnapshot.value = null;
+      smartNameRosterText.value = '';
+      return;
+    }
+
+    await projectsStore.selectProject(nextProjectId);
+
+    const snapshot = await window.neuromark.results.getSmartNameMatchSnapshot(nextProjectId);
+    if (projectId.value !== nextProjectId) {
+      return;
+    }
+
+    smartNameMatchSnapshot.value = snapshot;
+    if (snapshot.rosterText.trim()) {
+      smartNameRosterText.value = snapshot.rosterText;
+    }
+
+    if (showRubricDebugTab.value) {
+      await loadRubricDebug();
+    }
+  },
+  { immediate: true },
 );
 
 watch(
@@ -1423,7 +1441,9 @@ async function saveProjectSettings() {
       await projectsStore.updateProjectName(projectIdToSave, nextName);
     }
     await projectsStore.updateProjectSettings(projectIdToSave, nextSettings);
-    await tasksStore.refresh();
+    if (nameChanged) {
+      await tasksStore.refresh();
+    }
     message.success(nameChanged ? '项目名称和设置已保存。' : '项目设置已保存。');
   } catch (error) {
     message.error(error instanceof Error ? error.message : '保存项目设置失败。');
@@ -3151,6 +3171,10 @@ function goBack() {
         </n-tab-pane>
       </n-tabs>
     </section>
+
+    <n-card v-else-if="projectsStore.loading" class="surface-card projects-empty-state">
+      <n-spin size="large" />
+    </n-card>
 
     <n-card v-else class="surface-card projects-empty-state">
       <n-empty description="未找到这个项目，或者项目数据还没有加载成功。">

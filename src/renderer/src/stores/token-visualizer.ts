@@ -9,6 +9,22 @@ export interface TokenVisualizerBurst {
   createdAt: number;
 }
 
+interface PendingSyncItem {
+  streamKey: string;
+  source: TokenSource;
+  text: string;
+}
+
+const lastTextByStreamKey: Record<string, string> = {};
+const pendingBursts: TokenVisualizerBurst[] = [];
+const queuedSyncs = new Map<string, PendingSyncItem>();
+const MAX_SYNC_BATCH_SIZE = 4;
+const FLUSH_DELAY_MS = 16;
+
+let burstSequence = 0;
+let visualizerEnabled = false;
+let flushTimer: number | null = null;
+
 function splitIntoTokens(value: string): string[] {
   const normalized = value
     .replace(/[{}[\]":,]/g, ' ')
@@ -42,12 +58,77 @@ function getCommonPrefixLength(left: string, right: string) {
   return index;
 }
 
+function clearFlushTimer() {
+  if (flushTimer === null) {
+    return;
+  }
+
+  window.clearTimeout(flushTimer);
+  flushTimer = null;
+}
+
+function scheduleSyncFlush() {
+  if (flushTimer !== null) {
+    return;
+  }
+
+  flushTimer = window.setTimeout(() => {
+    flushTimer = null;
+    flushQueuedSyncs();
+  }, FLUSH_DELAY_MS);
+}
+
+function flushQueuedSyncs() {
+  if (queuedSyncs.size === 0) {
+    return;
+  }
+
+  let processedCount = 0;
+  for (const [queueKey, item] of queuedSyncs) {
+    queuedSyncs.delete(queueKey);
+    processedCount += 1;
+
+    const cacheKey = `${item.streamKey}:${item.source}`;
+    const lastText = lastTextByStreamKey[cacheKey] ?? '';
+    const nextText = item.text;
+    const appended = nextText.startsWith(lastText)
+      ? nextText.slice(lastText.length)
+      : nextText.slice(getCommonPrefixLength(lastText, nextText));
+
+    lastTextByStreamKey[cacheKey] = nextText;
+
+    if (!visualizerEnabled || !appended.trim()) {
+      if (processedCount >= MAX_SYNC_BATCH_SIZE) {
+        break;
+      }
+      continue;
+    }
+
+    const tokens = splitIntoTokens(appended);
+    const now = Date.now();
+    for (const token of tokens) {
+      burstSequence += 1;
+      pendingBursts.push({
+        id: `${now}-${burstSequence}`,
+        text: token,
+        source: item.source,
+        createdAt: now,
+      });
+    }
+
+    if (processedCount >= MAX_SYNC_BATCH_SIZE) {
+      break;
+    }
+  }
+
+  if (queuedSyncs.size > 0) {
+    scheduleSyncFlush();
+  }
+}
+
 export const useTokenVisualizerStore = defineStore('token-visualizer', {
   state: () => ({
     enabled: false,
-    lastTextByStreamKey: {} as Record<string, string>,
-    pendingBursts: [] as TokenVisualizerBurst[],
-    burstSequence: 0,
   }),
   getters: {
     isReady() {
@@ -57,9 +138,11 @@ export const useTokenVisualizerStore = defineStore('token-visualizer', {
   actions: {
     setEnabled(nextValue: boolean) {
       this.enabled = nextValue;
+      visualizerEnabled = nextValue;
     },
     toggle() {
       this.enabled = !this.enabled;
+      visualizerEnabled = this.enabled;
     },
     syncText(streamKey: string, source: TokenSource, nextText: string | null | undefined) {
       const normalizedStreamKey = streamKey.trim();
@@ -68,50 +151,37 @@ export const useTokenVisualizerStore = defineStore('token-visualizer', {
       }
 
       const normalizedText = nextText ?? '';
-      const cacheKey = `${normalizedStreamKey}:${source}`;
-      const lastText = this.lastTextByStreamKey[cacheKey] ?? '';
-      const commonPrefixLength = getCommonPrefixLength(lastText, normalizedText);
-      const appended = normalizedText.slice(commonPrefixLength);
-
-      this.lastTextByStreamKey[cacheKey] = normalizedText;
-
-      if (!this.enabled || !appended.trim()) {
-        return;
-      }
-
-      const tokens = splitIntoTokens(appended);
-      const now = Date.now();
-      for (const token of tokens) {
-        this.burstSequence += 1;
-        this.pendingBursts.push({
-          id: `${now}-${this.burstSequence}`,
-          text: token,
-          source,
-          createdAt: now,
-        });
-      }
+      const queueKey = `${normalizedStreamKey}:${source}`;
+      queuedSyncs.set(queueKey, {
+        streamKey: normalizedStreamKey,
+        source,
+        text: normalizedText,
+      });
+      scheduleSyncFlush();
     },
     drainPending(limit = 12) {
-      if (limit <= 0 || this.pendingBursts.length === 0) {
+      if (limit <= 0 || pendingBursts.length === 0) {
         return [] as TokenVisualizerBurst[];
       }
-      return this.pendingBursts.splice(0, limit);
+      return pendingBursts.splice(0, limit);
     },
     trimPending(limit = 0) {
       if (limit < 0) {
         return;
       }
-      if (this.pendingBursts.length <= limit) {
+      if (pendingBursts.length <= limit) {
         return;
       }
-      const overflow = this.pendingBursts.length - limit;
-      this.pendingBursts.splice(0, overflow);
+      const overflow = pendingBursts.length - limit;
+      pendingBursts.splice(0, overflow);
     },
     getPendingCount() {
-      return this.pendingBursts.length;
+      return pendingBursts.length;
     },
     resetScene() {
-      this.pendingBursts = [];
+      clearFlushTimer();
+      queuedSyncs.clear();
+      pendingBursts.length = 0;
     },
   },
 });

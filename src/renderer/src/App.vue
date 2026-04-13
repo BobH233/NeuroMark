@@ -42,7 +42,7 @@ watch(
       visualizerStore.syncText(channelKey, 'preview', draft.generationPreviewText);
     }
   },
-  { deep: true, immediate: true },
+  { immediate: true },
 );
 
 watch(
@@ -57,7 +57,7 @@ watch(
       visualizerStore.syncText(channelKey, 'preview', task.streamPreviewText);
     }
   },
-  { deep: true, immediate: true },
+  { immediate: true },
 );
 
 watch(
