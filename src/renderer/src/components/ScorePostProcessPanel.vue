@@ -34,11 +34,18 @@ const props = defineProps<{
 const message = useMessage();
 const store = useScorePostProcessStore();
 
+type ProcessedResultSortMode =
+  | 'input-order'
+  | 'score-desc'
+  | 'score-asc'
+  | 'student-id';
+
 const scriptName = ref('');
 const selectedPresetId = ref<string | null>(null);
 const scriptCode = ref('');
 const searchKeyword = ref('');
 const selectedPaperId = ref('');
+const processedResultSortMode = ref<ProcessedResultSortMode>('input-order');
 const running = ref(false);
 const exporting = ref(false);
 const executionError = ref<ScorePostProcessScriptError | null>(null);
@@ -51,6 +58,9 @@ const lastAppliedAiSnapshotAt = ref('');
 
 const gradedResults = computed(() =>
   props.results.filter((result) => result.finalResult && result.modelResult),
+);
+const paperOrderMap = computed(
+  () => new Map(props.papers.map((paper, index) => [paper.id, index])),
 );
 const latestSnapshot = computed(() =>
   store.getProjectSnapshot(props.project.id),
@@ -73,6 +83,12 @@ const presetOptions = computed(() =>
     value: preset.id,
   })),
 );
+const processedResultSortOptions = [
+  { label: '按录入顺序', value: 'input-order' },
+  { label: '按分数由高到低', value: 'score-desc' },
+  { label: '按分数由低到高', value: 'score-asc' },
+  { label: '按学号排序', value: 'student-id' },
+];
 const editorMarkers = computed(() => {
   if (!executionError.value?.lineNumber) {
     return [];
@@ -91,7 +107,48 @@ const editorMarkers = computed(() => {
 });
 const filteredResults = computed(() => {
   const keyword = searchKeyword.value.trim().toLocaleLowerCase('zh-CN');
-  const rows = latestRun.value?.results ?? [];
+  const rows = [...(latestRun.value?.results ?? [])].sort((left, right) => {
+    const leftPaperOrder =
+      paperOrderMap.value.get(left.paperId) ?? Number.MAX_SAFE_INTEGER;
+    const rightPaperOrder =
+      paperOrderMap.value.get(right.paperId) ?? Number.MAX_SAFE_INTEGER;
+    const fallback =
+      leftPaperOrder - rightPaperOrder ||
+      left.paperCode.localeCompare(right.paperCode, 'zh-CN', {
+        numeric: true,
+      });
+
+    if (processedResultSortMode.value === 'score-desc') {
+      return right.processedScore - left.processedScore || fallback;
+    }
+
+    if (processedResultSortMode.value === 'score-asc') {
+      return left.processedScore - right.processedScore || fallback;
+    }
+
+    if (processedResultSortMode.value === 'student-id') {
+      const leftStudentId = left.studentInfo.studentId.trim();
+      const rightStudentId = right.studentInfo.studentId.trim();
+
+      if (leftStudentId && rightStudentId) {
+        return (
+          leftStudentId.localeCompare(rightStudentId, 'zh-CN', {
+            numeric: true,
+          }) || fallback
+        );
+      }
+
+      if (leftStudentId) {
+        return -1;
+      }
+
+      if (rightStudentId) {
+        return 1;
+      }
+    }
+
+    return fallback;
+  });
   if (!keyword) {
     return rows;
   }
@@ -643,6 +700,14 @@ watch(
             <div>
               <div class="result-section-title">处理后成绩</div>
               <div class="detail-subtitle">{{ latestRun.scriptName }}</div>
+            </div>
+            <div class="result-sidebar-sort">
+              <span class="result-sidebar-sort-label">排序方式</span>
+              <n-select
+                v-model:value="processedResultSortMode"
+                size="small"
+                :options="processedResultSortOptions"
+              />
             </div>
             <n-input
               v-model:value="searchKeyword"
