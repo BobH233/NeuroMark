@@ -265,11 +265,21 @@ export class SettingsService {
     let reasoningText = '';
     let usage = null;
 
-    for await (const chunk of stream) {
-      usage = normalizeLlmUsage(chunk.usage) ?? usage;
-      const delta = chunk.choices[0]?.delta;
-      rawText += extractStreamingDeltaText(delta?.content);
-      reasoningText += extractReasoningText(delta);
+    try {
+      for await (const chunk of stream) {
+        usage = normalizeLlmUsage(chunk.usage) ?? usage;
+        const delta = chunk.choices[0]?.delta;
+        rawText += extractStreamingDeltaText(delta?.content);
+        reasoningText += extractReasoningText(delta);
+      }
+    } catch (error) {
+      await this.llmUsage?.recordUsage({
+        source: 'settings-test',
+        label: '连接测试',
+        model: input.requestPayload.model,
+        usage,
+      });
+      throw error;
     }
 
     logLlmProgress('settings-test', {

@@ -985,6 +985,14 @@ export class GradingService {
       });
 
       return rawText;
+    } catch (error) {
+      await this.llmUsage.recordUsage({
+        source: 'grading-paper',
+        label: `答卷 ${input.paperCode}`,
+        model: input.requestPayload.model,
+        usage,
+      });
+      throw error;
     } finally {
       dispose();
     }
@@ -1139,40 +1147,50 @@ export class GradingService {
     let lastReasoningFlushedLength = 0;
     let lastFlushAt = 0;
 
-    for await (const chunk of stream) {
-      ensureAbort(input.signal);
-      usage = normalizeLlmUsage(chunk.usage) ?? usage;
-      const delta = chunk.choices[0]?.delta;
-      const chunkText = extractStreamingDeltaText(delta?.content);
-      const chunkReasoningText = extractReasoningText(delta);
-      if (chunkText) {
-        rawText += chunkText;
-      }
-      if (chunkReasoningText) {
-        reasoningText += chunkReasoningText;
-      }
-      if (!chunkText && !chunkReasoningText) {
-        continue;
-      }
+    try {
+      for await (const chunk of stream) {
+        ensureAbort(input.signal);
+        usage = normalizeLlmUsage(chunk.usage) ?? usage;
+        const delta = chunk.choices[0]?.delta;
+        const chunkText = extractStreamingDeltaText(delta?.content);
+        const chunkReasoningText = extractReasoningText(delta);
+        if (chunkText) {
+          rawText += chunkText;
+        }
+        if (chunkReasoningText) {
+          reasoningText += chunkReasoningText;
+        }
+        if (!chunkText && !chunkReasoningText) {
+          continue;
+        }
 
-      const now = Date.now();
-      const shouldFlush =
-        rawText.length - lastFlushedLength >= 80 ||
-        reasoningText.length - lastReasoningFlushedLength >= 120 ||
-        now - lastFlushAt >= 1000;
+        const now = Date.now();
+        const shouldFlush =
+          rawText.length - lastFlushedLength >= 80 ||
+          reasoningText.length - lastReasoningFlushedLength >= 120 ||
+          now - lastFlushAt >= 1000;
 
-      if (shouldFlush) {
-        lastFlushedLength = rawText.length;
-        lastReasoningFlushedLength = reasoningText.length;
-        lastFlushAt = now;
-        await this.logRubricStreamProgress({
-          rawText,
-          reasoningText,
-          elapsedMs: now - input.startedAtMs,
-          onLog: input.onLog,
-          onStreamProgress: input.onStreamProgress,
-        });
+        if (shouldFlush) {
+          lastFlushedLength = rawText.length;
+          lastReasoningFlushedLength = reasoningText.length;
+          lastFlushAt = now;
+          await this.logRubricStreamProgress({
+            rawText,
+            reasoningText,
+            elapsedMs: now - input.startedAtMs,
+            onLog: input.onLog,
+            onStreamProgress: input.onStreamProgress,
+          });
+        }
       }
+    } catch (error) {
+      await this.llmUsage.recordUsage({
+        source: 'grading-rubric',
+        label: '评分标准整理',
+        model: input.requestPayload.model,
+        usage,
+      });
+      throw error;
     }
 
     await this.logRubricStreamProgress({

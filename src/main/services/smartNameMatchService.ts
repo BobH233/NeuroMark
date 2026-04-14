@@ -505,37 +505,47 @@ export class SmartNameMatchService {
     let lastReasoningFlushedLength = 0;
     let lastFlushAt = 0;
 
-    for await (const chunk of stream) {
-      usage = normalizeLlmUsage(chunk.usage) ?? usage;
-      const delta = chunk.choices[0]?.delta;
-      const chunkText = extractStreamingDeltaText(delta?.content);
-      const chunkReasoningText = extractReasoningText(delta);
-      if (chunkText) {
-        rawText += chunkText;
-      }
-      if (chunkReasoningText) {
-        reasoningText += chunkReasoningText;
-      }
-      if (!chunkText && !chunkReasoningText) {
-        continue;
-      }
+    try {
+      for await (const chunk of stream) {
+        usage = normalizeLlmUsage(chunk.usage) ?? usage;
+        const delta = chunk.choices[0]?.delta;
+        const chunkText = extractStreamingDeltaText(delta?.content);
+        const chunkReasoningText = extractReasoningText(delta);
+        if (chunkText) {
+          rawText += chunkText;
+        }
+        if (chunkReasoningText) {
+          reasoningText += chunkReasoningText;
+        }
+        if (!chunkText && !chunkReasoningText) {
+          continue;
+        }
 
-      const now = Date.now();
-      const shouldFlush =
-        rawText.length - lastFlushedLength >= 80 ||
-        reasoningText.length - lastReasoningFlushedLength >= 120 ||
-        now - lastFlushAt >= 800;
+        const now = Date.now();
+        const shouldFlush =
+          rawText.length - lastFlushedLength >= 80 ||
+          reasoningText.length - lastReasoningFlushedLength >= 120 ||
+          now - lastFlushAt >= 800;
 
-      if (shouldFlush) {
-        lastFlushedLength = rawText.length;
-        lastReasoningFlushedLength = reasoningText.length;
-        lastFlushAt = now;
-        this.patchSnapshot(input.projectId, {
-          stage: rawText.trim().length > 0 ? '正在接收模型输出草稿' : '模型正在推理',
-          previewText: rawText,
-          reasoningText,
-        });
+        if (shouldFlush) {
+          lastFlushedLength = rawText.length;
+          lastReasoningFlushedLength = reasoningText.length;
+          lastFlushAt = now;
+          this.patchSnapshot(input.projectId, {
+            stage: rawText.trim().length > 0 ? '正在接收模型输出草稿' : '模型正在推理',
+            previewText: rawText,
+            reasoningText,
+          });
+        }
       }
+    } catch (error) {
+      await this.llmUsage.recordUsage({
+        source: 'smart-name-match',
+        label: '智能核名',
+        model: input.requestPayload.model,
+        usage,
+      });
+      throw error;
     }
 
     this.patchSnapshot(input.projectId, {

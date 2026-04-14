@@ -1066,35 +1066,56 @@ export class AnswerGeneratorService {
     let lastReasoningFlushedLength = 0;
     let lastFlushAt = 0;
 
-    for await (const chunk of stream) {
-      usage = normalizeLlmUsage(chunk.usage) ?? usage;
-      const delta = chunk.choices[0]?.delta;
-      const chunkText = extractStreamingDeltaText(delta?.content);
-      const chunkReasoningText = extractReasoningText(delta);
-      if (chunkText) {
-        rawText += chunkText;
-      }
-      if (chunkReasoningText) {
-        reasoningText += chunkReasoningText;
-      }
-      if (!chunkText && !chunkReasoningText) {
-        continue;
-      }
-      const now = Date.now();
-      const shouldFlush =
-        rawText.length - lastFlushedLength >= 80 ||
-        reasoningText.length - lastReasoningFlushedLength >= 120 ||
-        now - lastFlushAt >= 800;
+    try {
+      for await (const chunk of stream) {
+        usage = normalizeLlmUsage(chunk.usage) ?? usage;
+        const delta = chunk.choices[0]?.delta;
+        const chunkText = extractStreamingDeltaText(delta?.content);
+        const chunkReasoningText = extractReasoningText(delta);
+        if (chunkText) {
+          rawText += chunkText;
+        }
+        if (chunkReasoningText) {
+          reasoningText += chunkReasoningText;
+        }
+        if (!chunkText && !chunkReasoningText) {
+          continue;
+        }
+        const now = Date.now();
+        const shouldFlush =
+          rawText.length - lastFlushedLength >= 80 ||
+          reasoningText.length - lastReasoningFlushedLength >= 120 ||
+          now - lastFlushAt >= 800;
 
-      if (shouldFlush) {
-        lastFlushedLength = rawText.length;
-        lastReasoningFlushedLength = reasoningText.length;
-        lastFlushAt = now;
-        await this.flushStreamingPreview(input.draftId, input.taskId, {
-          rawText,
-          reasoningText,
-        });
+        if (shouldFlush) {
+          lastFlushedLength = rawText.length;
+          lastReasoningFlushedLength = reasoningText.length;
+          lastFlushAt = now;
+          await this.flushStreamingPreview(input.draftId, input.taskId, {
+            rawText,
+            reasoningText,
+          });
+        }
       }
+    } catch (error) {
+      logLlmResult(`answer-generation:${input.draftId}`, {
+        status: 'error',
+        detail: {
+          elapsedMs: Date.now() - input.startedAtMs,
+          mode: 'stream',
+          usage,
+          reasoningTextLength: reasoningText.length,
+          responseTextLength: rawText.length,
+          message: error instanceof Error ? error.message : String(error),
+        },
+      });
+      await this.llmUsage.recordUsage({
+        source: 'answer-generation',
+        label: '参考答案生成',
+        model: input.requestPayload.model,
+        usage,
+      });
+      throw error;
     }
 
     await this.flushStreamingPreview(input.draftId, input.taskId, {
