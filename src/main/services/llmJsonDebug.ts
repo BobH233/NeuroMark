@@ -15,6 +15,39 @@ export function isLlmJsonDebugEnabled(): boolean {
   return !app.isPackaged || process.env.NEUROMARK_DEBUG_JSON === '1';
 }
 
+function getDebugDir(): string {
+  return path.join(app.getPath('userData'), 'llm-json-debug');
+}
+
+function buildDebugFilePath(scope: string, identifier?: string, suffix?: string): string {
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const segments = [timestamp, sanitizeSegment(scope)];
+  if (identifier) {
+    segments.push(sanitizeSegment(identifier));
+  }
+  if (suffix) {
+    segments.push(sanitizeSegment(suffix));
+  }
+  return path.join(getDebugDir(), `${segments.join('__')}.txt`);
+}
+
+export async function writeLlmDebugTextArtifact(input: {
+  scope: string;
+  identifier?: string;
+  suffix?: string;
+  text: string;
+}): Promise<string | null> {
+  if (!isLlmJsonDebugEnabled() || !input.text.trim()) {
+    return null;
+  }
+
+  const debugDir = getDebugDir();
+  const filePath = buildDebugFilePath(input.scope, input.identifier, input.suffix);
+  await fs.ensureDir(debugDir);
+  await fs.writeFile(filePath, input.text, 'utf8');
+  return filePath;
+}
+
 export async function writeLlmJsonDebugArtifact(input: {
   scope: string;
   identifier?: string;
@@ -25,13 +58,8 @@ export async function writeLlmJsonDebugArtifact(input: {
     return null;
   }
 
-  const debugDir = path.join(app.getPath('userData'), 'llm-json-debug');
-  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-  const segments = [timestamp, sanitizeSegment(input.scope)];
-  if (input.identifier) {
-    segments.push(sanitizeSegment(input.identifier));
-  }
-  const filePath = path.join(debugDir, `${segments.join('__')}.txt`);
+  const debugDir = getDebugDir();
+  const filePath = buildDebugFilePath(input.scope, input.identifier);
 
   await fs.ensureDir(debugDir);
   await fs.writeFile(

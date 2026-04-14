@@ -17,7 +17,7 @@
 
 <p>
   <a href="https://github.com/BobH233/NeuroMark/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/BobH233/NeuroMark/ci.yml?branch=main&style=for-the-badge&label=CI"></a>
-  <a href="https://github.com/BobH233/NeuroMark/actions/workflows/electron-build.yml"><img alt="Release Electron" src="https://img.shields.io/github/actions/workflow/status/BobH233/NeuroMark/electron-build.yml?style=for-the-badge&label=Release"></a>
+  <a href="https://github.com/BobH233/NeuroMark/actions/workflows/electron-build.yml?query=branch%3Av0.2.0"><img alt="Release v0.2.0" src="https://img.shields.io/github/actions/workflow/status/BobH233/NeuroMark/electron-build.yml?branch=v0.2.0&style=for-the-badge&label=Release%20v0.2.0"></a>
 </p>
 
 <p>
