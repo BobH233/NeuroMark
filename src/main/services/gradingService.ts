@@ -4,7 +4,6 @@ import fs from 'fs-extra';
 import OpenAI from 'openai';
 import type { ChatCompletionCreateParamsNonStreaming } from 'openai/resources/chat/completions';
 import sharp from 'sharp';
-import { buildGradingJsonSchema } from '@main/prompts/grading/schema';
 import { buildGradingSystemPrompt } from '@main/prompts/grading/system';
 import { buildGradingUserPrompt } from '@main/prompts/grading/user';
 import { GRADING_RUBRIC_SYSTEM_PROMPT } from '@main/prompts/grading/rubric-system';
@@ -39,6 +38,7 @@ import type {
 } from './gradingTypes';
 import {
   shouldWriteLlmJsonDebugArtifact,
+  writeLlmDebugTextArtifact,
   writeLlmJsonDebugArtifact,
 } from './llmJsonDebug';
 
@@ -170,6 +170,147 @@ function buildAttemptFailureMessage(error: Error, rawOutput: string): string {
   }
 
   return base;
+}
+
+type GradingAttemptDebugContext = {
+  rawOutput?: string;
+  reasoningText?: string;
+  mode?: 'stream' | 'non-stream';
+};
+
+function getGradingAttemptDebugContext(error: unknown): GradingAttemptDebugContext {
+  if (!error || typeof error !== 'object') {
+    return {};
+  }
+
+  const candidate = error as {
+    rawOutput?: unknown;
+    reasoningText?: unknown;
+    mode?: unknown;
+  };
+
+  return {
+    rawOutput: typeof candidate.rawOutput === 'string' ? candidate.rawOutput : undefined,
+    reasoningText: typeof candidate.reasoningText === 'string' ? candidate.reasoningText : undefined,
+    mode:
+      candidate.mode === 'stream' || candidate.mode === 'non-stream'
+        ? candidate.mode
+        : undefined,
+  };
+}
+
+function attachGradingAttemptDebugContext(
+  error: unknown,
+  context: GradingAttemptDebugContext,
+): Error {
+  const nextError = error instanceof Error ? error : new Error(String(error ?? '未知错误'));
+  const target = nextError as Error & GradingAttemptDebugContext;
+
+  if (context.rawOutput !== undefined) {
+    target.rawOutput = context.rawOutput;
+  }
+  if (context.reasoningText !== undefined) {
+    target.reasoningText = context.reasoningText;
+  }
+  if (context.mode !== undefined) {
+    target.mode = context.mode;
+  }
+
+  return nextError;
+}
+
+function buildPaperDebugMetadata(input: {
+  projectName: string;
+  paper: PaperRecord;
+  referenceAnswerVersion: number;
+  drawRegions: boolean;
+  settings: GradingServiceSettings;
+}): Record<string, unknown> {
+  return {
+    projectName: input.projectName,
+    paper: {
+      id: input.paper.id,
+      projectId: input.paper.projectId,
+      paperCode: input.paper.paperCode,
+      pageCount: input.paper.pageCount,
+      scanStatus: input.paper.scanStatus,
+      gradingStatus: input.paper.gradingStatus,
+      gradingReferenceAnswerVersion: input.paper.gradingReferenceAnswerVersion ?? null,
+      gradingUpdatedAt: input.paper.gradingUpdatedAt ?? null,
+      originalPages: input.paper.originalPages.map((page) => ({
+        pageIndex: page.pageIndex,
+        originalPath: page.originalPath,
+        scannedPath: page.scannedPath ?? null,
+        debugPreviewPath: page.debugPreviewPath ?? null,
+      })),
+    },
+    grading: {
+      referenceAnswerVersion: input.referenceAnswerVersion,
+      drawRegions: input.drawRegions,
+      model: input.settings.model,
+      baseUrl: input.settings.baseUrl,
+      timeoutMs: input.settings.timeoutMs,
+      reasoningEffort: input.settings.reasoningEffort,
+      imageDetail: input.settings.imageDetail,
+      temperature: input.settings.gradingTemperature,
+    },
+  };
+}
+
+function buildPaperAttemptDebugReport(input: {
+  event: 'retry' | 'failed';
+  projectName: string;
+  paper: PaperRecord;
+  referenceAnswerVersion: number;
+  drawRegions: boolean;
+  settings: GradingServiceSettings;
+  attempt: number;
+  attempts: number;
+  startedAt: string;
+  failedAt: string;
+  retryAt?: string;
+  error: Error;
+  rawOutput: string;
+  reasoningText: string;
+  mode?: 'stream' | 'non-stream';
+  parsedCandidate?: Record<string, unknown> | null;
+}): string {
+  const isTimeout = input.error.message.includes('超时');
+
+  return [
+    `event=${input.event}`,
+    `projectName=${input.projectName}`,
+    `paperCode=${input.paper.paperCode}`,
+    `attempt=${input.attempt}/${input.attempts}`,
+    `mode=${input.mode ?? 'unknown'}`,
+    `startedAt=${input.startedAt}`,
+    `failedAt=${input.failedAt}`,
+    `retryAt=${input.retryAt ?? ''}`,
+    `timedOut=${isTimeout ? 'true' : 'false'}`,
+    `error=${input.error.message}`,
+    '',
+    '[paper-metadata]',
+    JSON.stringify(
+      buildPaperDebugMetadata({
+        projectName: input.projectName,
+        paper: input.paper,
+        referenceAnswerVersion: input.referenceAnswerVersion,
+        drawRegions: input.drawRegions,
+        settings: input.settings,
+      }),
+      null,
+      2,
+    ),
+    '',
+    '[parsed-candidate]',
+    input.parsedCandidate ? JSON.stringify(input.parsedCandidate, null, 2) : '(null)',
+    '',
+    '[reasoning-text]',
+    input.reasoningText || '(empty)',
+    '',
+    '[raw-output]',
+    input.rawOutput || '(empty)',
+  ].join('\n');
 }
 
 export function getReferenceAnswerFingerprint(markdown: string): string {
@@ -627,8 +768,8 @@ export class GradingService {
     const startedAt = Date.now();
     let rawOutput = '';
     let parsedCandidate: Record<string, unknown> | null = null;
-    let reasoningText = '';
-    let mode: 'stream' | 'non-stream' = 'stream';
+    let reasoningText: string;
+    let mode: 'stream' | 'non-stream';
     try {
       await input.onLog?.('已发起 rubric 编译请求，准备接收流式输出');
       const response = await this.collectRubricResponseText({
@@ -689,6 +830,7 @@ export class GradingService {
       });
       throw new Error(
         `${errorMessage}${debugDumpPath ? `\n调试原文已写入：${debugDumpPath}` : ''}\n模型原始返回：\n${rawOutput ? shortenText(rawOutput, 1200) : '(empty)'}`,
+        { cause: error },
       );
     }
   }
@@ -776,10 +918,15 @@ export class GradingService {
     const attempts = 3;
     let lastError: Error | null = null;
     let lastRawOutput = '';
+    let lastReasoningText = '';
     let lastParsedCandidate: Record<string, unknown> | null = null;
+    let lastAttempt = 0;
+    let lastMode: 'stream' | 'non-stream' | undefined;
 
     for (let attempt = 1; attempt <= attempts; attempt += 1) {
       ensureAbort(input.signal);
+      const attemptStartedAt = new Date().toISOString();
+      lastAttempt = attempt;
       try {
         lastRawOutput = await this.collectPaperResponseText({
           client,
@@ -792,6 +939,7 @@ export class GradingService {
           onLog: input.onLog,
           onStreamProgress: input.onStreamProgress,
         });
+        lastReasoningText = '';
         lastParsedCandidate = parseJsonObject(lastRawOutput);
         const modelResult = validateModelResult(lastParsedCandidate, input.rubric, input.drawRegions);
         logLlmResult(`grading-paper:${input.paper.paperCode}`, {
@@ -811,14 +959,73 @@ export class GradingService {
         };
       } catch (error) {
         lastError = error instanceof Error ? error : new Error('未知批阅错误');
+        const debugContext = getGradingAttemptDebugContext(lastError);
+        if (debugContext.rawOutput !== undefined) {
+          lastRawOutput = debugContext.rawOutput;
+        }
+        if (debugContext.reasoningText !== undefined) {
+          lastReasoningText = debugContext.reasoningText;
+        }
+        if (debugContext.mode !== undefined) {
+          lastMode = debugContext.mode;
+        }
+        const failedAt = new Date().toISOString();
         await input.onLog?.(`第 ${attempt} 次尝试失败：${buildAttemptFailureMessage(lastError, lastRawOutput)}`);
         if (attempt >= attempts || /已取消/.test(lastError.message)) {
           break;
         }
+        const retryAt = new Date().toISOString();
+        await writeLlmDebugTextArtifact({
+          scope: 'grading-paper-retry',
+          identifier: input.paper.paperCode,
+          suffix: `attempt-${attempt}`,
+          text: buildPaperAttemptDebugReport({
+            event: 'retry',
+            projectName: input.projectName,
+            paper: input.paper,
+            referenceAnswerVersion: input.referenceAnswerVersion,
+            drawRegions: input.drawRegions,
+            settings: input.settings,
+            attempt,
+            attempts,
+            startedAt: attemptStartedAt,
+            failedAt,
+            retryAt,
+            error: lastError,
+            rawOutput: lastRawOutput,
+            reasoningText: lastReasoningText,
+            mode: debugContext.mode,
+            parsedCandidate: lastParsedCandidate,
+          }),
+        });
         await input.onRetry?.();
         await input.onLog?.(`准备开始第 ${attempt + 1} 次重试`);
       }
     }
+
+    const finalFailedAt = new Date().toISOString();
+    await writeLlmDebugTextArtifact({
+      scope: 'grading-paper-failed',
+      identifier: input.paper.paperCode,
+      suffix: 'final',
+      text: buildPaperAttemptDebugReport({
+        event: 'failed',
+        projectName: input.projectName,
+        paper: input.paper,
+        referenceAnswerVersion: input.referenceAnswerVersion,
+        drawRegions: input.drawRegions,
+        settings: input.settings,
+        attempt: lastAttempt || attempts,
+        attempts,
+        startedAt: new Date(startedAt).toISOString(),
+        failedAt: finalFailedAt,
+        error: lastError ?? new Error('批阅失败'),
+        rawOutput: lastRawOutput,
+        reasoningText: lastReasoningText,
+        mode: lastMode,
+        parsedCandidate: lastParsedCandidate,
+      }),
+    });
 
     const debugDumpPath =
       lastRawOutput && shouldWriteLlmJsonDebugArtifact(lastError)
@@ -992,7 +1199,11 @@ export class GradingService {
         model: input.requestPayload.model,
         usage,
       });
-      throw error;
+      throw this.wrapPaperAttemptError(error, {
+        rawOutput: rawText,
+        reasoningText,
+        mode: 'stream',
+      });
     } finally {
       dispose();
     }
@@ -1008,32 +1219,51 @@ export class GradingService {
     onLog?: (message: string) => void | Promise<void>;
     onStreamProgress?: (payload: { rawText: string; reasoningText: string }) => void | Promise<void>;
   }): Promise<string> {
-    const response = await input.client.chat.completions.create(input.requestPayload, {
-      signal: input.signal,
-    });
-    ensureAbort(input.signal);
-    const rawText = readAssistantText(response);
-    const reasoningText = extractReasoningText(response.choices[0]?.message);
-    const usage = normalizeLlmUsage(response.usage);
-    await this.logPaperStreamProgress(input.paperCode, {
-      attempt: input.attempt,
-      rawText,
-      reasoningText,
-      elapsedMs: Date.now() - input.startedAtMs,
-      done: true,
-      mode: 'non-stream',
-      onLog: input.onLog,
-      onStreamProgress: input.onStreamProgress,
-    });
+    try {
+      const response = await input.client.chat.completions.create(input.requestPayload, {
+        signal: input.signal,
+      });
+      ensureAbort(input.signal);
+      const rawText = readAssistantText(response);
+      const reasoningText = extractReasoningText(response.choices[0]?.message);
+      const usage = normalizeLlmUsage(response.usage);
+      await this.logPaperStreamProgress(input.paperCode, {
+        attempt: input.attempt,
+        rawText,
+        reasoningText,
+        elapsedMs: Date.now() - input.startedAtMs,
+        done: true,
+        mode: 'non-stream',
+        onLog: input.onLog,
+        onStreamProgress: input.onStreamProgress,
+      });
 
-    await this.llmUsage.recordUsage({
-      source: 'grading-paper',
-      label: `答卷 ${input.paperCode}`,
-      model: input.requestPayload.model,
-      usage,
-    });
+      await this.llmUsage.recordUsage({
+        source: 'grading-paper',
+        label: `答卷 ${input.paperCode}`,
+        model: input.requestPayload.model,
+        usage,
+      });
 
-    return rawText;
+      return rawText;
+    } catch (error) {
+      throw this.wrapPaperAttemptError(error, {
+        rawOutput: '',
+        reasoningText: '',
+        mode: 'non-stream',
+      });
+    }
+  }
+
+  private wrapPaperAttemptError(
+    error: unknown,
+    context: {
+      rawOutput: string;
+      reasoningText: string;
+      mode: 'stream' | 'non-stream';
+    },
+  ): Error {
+    return attachGradingAttemptDebugContext(error, context);
   }
 
   private async logPaperStreamProgress(
