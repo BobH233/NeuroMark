@@ -547,6 +547,8 @@ export interface PromptPreset {
   name: string;
   description: string;
   prompt: string;
+  source: 'builtin' | 'custom';
+  readonly: boolean;
 }
 
 export interface PromptPresetInput {

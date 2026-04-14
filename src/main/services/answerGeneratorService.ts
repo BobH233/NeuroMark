@@ -37,6 +37,54 @@ import {
 
 type AnswerGeneratorListener = (snapshot: AnswerGeneratorSnapshot) => void;
 
+type BuiltinPromptPresetDefinition = Omit<PromptPreset, 'source' | 'readonly'>;
+
+const BUILTIN_PROMPT_PRESETS: BuiltinPromptPresetDefinition[] = [
+  {
+    id: 'builtin-general-grading-template',
+    name: '通用批改模板',
+    description: '通用生成评分细则的模板。',
+    prompt: [
+      '请将这份试题整理为适合教师阅卷直接使用的参考答案与评分细则。',
+      '',
+      '请尽量遵守下面的结构要求：',
+      '1. 先按题号、小题顺序整理答案，不要遗漏题干中可识别出的任何小问。',
+      '2. 每道题都尽量包含：题目要求概述、标准答案、关键步骤、采分点、常见失分点。',
+      '3. 如果题目含有分值，请保留原始分值；如果图片中分值不清晰，请明确标注“需要教师确认分值”。',
+      '4. 如果是主观题，请把评分标准拆成可执行的分步给分规则，尽量写清楚每一步对应的得分依据。',
+      '5. 如果存在多种合理解法，请按“标准解法 + 可接受替代解法”的方式整理，并说明给分原则。',
+      '6. 如果题目要求作图、作函数图像、画几何图形或示意图，请改为文字描述图形应具备的关键特征、判分点与扣分点。',
+      '7. 对图片模糊、题干残缺、公式辨识不清、题号不明确等情况，必须单独标记“需要教师确认”，不要自行臆造。',
+      '',
+      '建议输出的 Markdown 结构可以参考：',
+      '# 参考答案与评分细则',
+      '## 一、总体说明',
+      '- 说明本卷是否存在需要教师确认的信息',
+      '',
+      '## 1. 题号',
+      '### 题目概述',
+      '### 标准答案',
+      '### 关键步骤 / 解题过程',
+      '### 评分细则',
+      '- 采分点 1：x 分',
+      '- 采分点 2：x 分',
+      '### 常见失分情况',
+      '',
+      '如果试卷是作文、简答、论述、实验设计、证明题等开放性题目，请把评分标准写得更细，优先保证可操作性、一致性和可复核性。',
+    ].join('\n'),
+  },
+];
+
+function toBuiltinPromptPreset(
+  preset: BuiltinPromptPresetDefinition,
+): PromptPreset {
+  return {
+    ...preset,
+    source: 'builtin',
+    readonly: true,
+  };
+}
+
 const answerGenerationResponseSchema = z
   .object({
     summary: z.string().trim().min(1),
@@ -51,6 +99,8 @@ function toPromptPresetRecord(item: typeof promptPresetsTable.$inferSelect): Pro
     name: item.name,
     description: item.description,
     prompt: item.prompt,
+    source: 'custom',
+    readonly: false,
   };
 }
 
@@ -380,15 +430,30 @@ export class AnswerGeneratorService {
 
   async listPromptPresets(): Promise<PromptPreset[]> {
     const db = getDatabase();
-    return db
+    const customPresets = db
       .select()
       .from(promptPresetsTable)
       .orderBy(desc(promptPresetsTable.updatedAt))
       .all()
+      .filter(
+        (item) => !BUILTIN_PROMPT_PRESETS.some((preset) => preset.id === item.id),
+      )
       .map(toPromptPresetRecord);
+
+    return [
+      ...BUILTIN_PROMPT_PRESETS.map(toBuiltinPromptPreset),
+      ...customPresets,
+    ];
   }
 
   async savePromptPreset(input: PromptPresetInput): Promise<PromptPreset> {
+    if (
+      input.id &&
+      BUILTIN_PROMPT_PRESETS.some((preset) => preset.id === input.id.trim())
+    ) {
+      throw new Error('系统内置模板不能直接修改，请先复制为自定义模板。');
+    }
+
     const db = getDatabase();
     const now = new Date().toISOString();
     const id = input.id?.trim() || nanoid();
@@ -423,6 +488,10 @@ export class AnswerGeneratorService {
   }
 
   async deletePromptPreset(presetId: string): Promise<void> {
+    if (BUILTIN_PROMPT_PRESETS.some((preset) => preset.id === presetId)) {
+      throw new Error('系统内置模板不能删除。');
+    }
+
     const db = getDatabase();
     db.delete(promptPresetsTable).where(eq(promptPresetsTable.id, presetId)).run();
     await this.emit();

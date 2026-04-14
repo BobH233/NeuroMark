@@ -11,6 +11,7 @@ import {
   NInputNumber,
   NPopconfirm,
   NSelect,
+  NTag,
 } from 'naive-ui';
 import type { LlmReasoningEffort, PromptPreset } from '@preload/contracts';
 import ScorePostProcessPresetManager from '@/components/ScorePostProcessPresetManager.vue';
@@ -41,11 +42,17 @@ const presetForm = reactive({
   name: '',
   description: '',
   prompt: '',
+  readonly: false,
+  source: 'custom' as 'builtin' | 'custom',
 });
 
 const presets = computed(() => answerGeneratorStore.presets);
 const presetEditorTitle = computed(() =>
-  presetForm.id ? '编辑模板' : '新建模板',
+  presetForm.readonly
+    ? '查看内置模板'
+    : presetForm.id
+      ? '编辑自定义模板'
+      : '新建自定义模板',
 );
 const testFeedback = ref<{
   type: 'success' | 'error';
@@ -116,6 +123,8 @@ function startCreatePreset() {
   presetForm.name = '';
   presetForm.description = '';
   presetForm.prompt = '';
+  presetForm.readonly = false;
+  presetForm.source = 'custom';
 }
 
 function editPreset(preset: PromptPreset) {
@@ -123,11 +132,13 @@ function editPreset(preset: PromptPreset) {
   presetForm.name = preset.name;
   presetForm.description = preset.description;
   presetForm.prompt = preset.prompt;
+  presetForm.readonly = preset.readonly;
+  presetForm.source = preset.source;
 }
 
 async function savePreset() {
   await answerGeneratorStore.savePromptPreset({
-    id: presetForm.id || undefined,
+    id: presetForm.readonly ? undefined : presetForm.id || undefined,
     name: presetForm.name,
     description: presetForm.description,
     prompt: presetForm.prompt,
@@ -254,8 +265,18 @@ async function deletePreset(presetId: string) {
             :class="{ active: presetForm.id === preset.id }"
             @click="editPreset(preset)"
           >
-            <div class="settings-template-item-head">
+            <div
+              class="settings-template-item-head settings-template-item-head--with-tag"
+            >
               <div class="settings-template-item-title">{{ preset.name }}</div>
+              <n-tag
+                size="small"
+                round
+                :type="preset.source === 'builtin' ? 'info' : 'success'"
+                :bordered="false"
+              >
+                {{ preset.source === 'builtin' ? '内置' : '自定义' }}
+              </n-tag>
             </div>
             <div class="settings-template-item-copy">
               {{ preset.description || '未填写模板说明' }}
@@ -282,13 +303,13 @@ async function deletePreset(presetId: string) {
             克隆模板
           </n-button>
           <n-popconfirm
-            v-if="presetForm.id"
+            v-if="presetForm.id && !presetForm.readonly"
             positive-text="删除"
             negative-text="取消"
             @positive-click="deletePreset(presetForm.id)"
           >
             <template #trigger>
-              <n-button tertiary type="error">删除当前模板</n-button>
+              <n-button tertiary type="error">删除模板</n-button>
             </template>
             删除这个模板后将无法恢复，确认继续吗？
           </n-popconfirm>
@@ -300,12 +321,14 @@ async function deletePreset(presetId: string) {
           <n-form-item label="模板名称">
             <n-input
               v-model:value="presetForm.name"
+              :disabled="presetForm.readonly"
               placeholder="例如：物理计算题模板"
             />
           </n-form-item>
           <n-form-item label="模板说明">
             <n-input
               v-model:value="presetForm.description"
+              :disabled="presetForm.readonly"
               placeholder="简单说明这个模板适合什么场景"
             />
           </n-form-item>
@@ -314,18 +337,23 @@ async function deletePreset(presetId: string) {
               v-model:value="presetForm.prompt"
               type="textarea"
               :autosize="{ minRows: 12, maxRows: 20 }"
+              :disabled="presetForm.readonly"
               placeholder="在这里填写 Markdown 格式的参考答案生成模板内容"
             />
           </n-form-item>
 
           <div class="settings-actions">
             <n-button
+              v-if="!presetForm.readonly"
               type="primary"
               :disabled="!presetForm.name.trim() || !presetForm.prompt.trim()"
               @click="savePreset"
             >
               保存模板
             </n-button>
+            <div v-else class="detail-subtitle">
+              当前是系统内置模板，不能直接修改或删除；如需调整，请先复制为自定义模板。
+            </div>
           </div>
         </n-form>
       </n-card>
