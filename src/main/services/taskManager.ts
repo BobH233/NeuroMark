@@ -535,7 +535,6 @@ export class TaskManager {
     const db = getDatabase();
     const now = new Date().toISOString();
     const jobId = nanoid();
-    const baseSpeed = kind === 'scan' ? 0.12 : 0.08;
     const totalPaperCount = Math.max(papers.length, 0);
     const startedAtMs = Date.now();
     db.insert(tasksTable)

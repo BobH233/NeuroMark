@@ -21,12 +21,15 @@ extraResources:
       - '*.onnx'
 mac:
   category: public.app-category.education
+  artifactName: NeuroMark-${version}-macos-${arch}.${ext}
   target:
-    - zip
+    - dmg
 win:
+  artifactName: NeuroMark-${version}-windows-${arch}-setup.${ext}
   target:
     - nsis
 linux:
+  artifactName: NeuroMark-${version}-linux-${arch}.${ext}
   target:
     - AppImage
     - deb

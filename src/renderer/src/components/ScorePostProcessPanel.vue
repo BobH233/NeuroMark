@@ -322,13 +322,6 @@ async function exportLatest() {
   }
 }
 
-async function openExportPath() {
-  if (!latestRun.value?.exportPath) {
-    return;
-  }
-  await window.neuromark.app.openPath(latestRun.value.exportPath);
-}
-
 onMounted(async () => {
   await Promise.all([
     store.presets.length ? Promise.resolve() : store.loadPresets(),

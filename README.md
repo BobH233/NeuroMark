@@ -139,6 +139,24 @@ your-project/
 
 ## 快速开始
 
+### 直接下载成品
+
+如果你只是想直接使用 NeuroMark，不需要自己编译，可以前往 GitHub Releases 下载已打包好的安装包或压缩包：
+
+- [NeuroMark Releases](https://github.com/BobH233/NeuroMark/releases)
+
+下载后解压或安装，首次启动后：
+
+1. 在 `全局设置` 中填写模型后端、模型名和 API Key。
+2. 创建一个项目目录。
+3. 导入答卷图片并执行扫描。
+4. 准备或生成参考答案。
+5. 发起批阅并在项目详情中复核结果。
+
+### 源码开发
+
+如果你希望参与开发、调试或自行构建，请继续参考下面的源码运行说明。
+
 ### 环境要求
 
 - Node.js `>= 22`
@@ -181,9 +199,26 @@ npm run package
 ### 测试
 
 ```bash
+npm run lint
+npm run typecheck
 npm run test:unit
 npm run test:e2e
 ```
+
+日常本地校验建议至少执行：
+
+```bash
+npm run lint
+npm run typecheck
+npm run test:unit
+```
+
+其中：
+
+- `npm run lint` 用于执行 ESLint 校验
+- `npm run typecheck` 用于执行 Vue 与 Node 侧 TypeScript 类型检查
+- `npm run test:unit` 用于运行 Vitest 单元测试
+- `npm run test:e2e` 用于运行 Playwright 端到端测试
 
 ## 当前适合谁使用
 
@@ -191,30 +226,6 @@ npm run test:e2e
 - 希望把题目图片、参考答案、批阅结果统一管理的教师或助教
 - 对 OCR、文档扫描、评分系统、教育工作流有兴趣的开源贡献者
 - 需要一个 Electron + Vue + Native Addon + LLM 组合项目作为参考实现的工程团队
-
-## 路线图
-
-### 近期计划
-
-- 完善 README、贡献指南、Issue 模板和路线图管理
-- 补充安装文档与跨平台构建说明
-- 打磨项目详情页的批阅复核体验
-- 继续增强扫描鲁棒性与调试可观测性
-
-### 中期计划
-
-- 更强的名册匹配与智能核名工作流
-- 更细粒度的评分细则编辑与版本管理
-- 更稳定的导出格式与结果二次分析能力
-- 更完整的自动化测试覆盖
-- 社区 demo 数据集与示例项目
-
-### 长期方向
-
-- 面向社区的插件化评分策略
-- 多模型 / 多后端切换能力
-- 更成熟的协作与共享工作流
-- 面向真实教学场景的可部署发行版
 
 ## 参与共建
 
@@ -233,7 +244,7 @@ npm run test:e2e
 ## 开源说明
 
 - License: MIT
-- 当前版本：`0.1.0`
+- 当前版本：`0.2.0`
 - 项目状态：可运行、可演示、适合继续打磨，不建议在高风险正式场景中直接无验证投入使用
 
 ## 致谢

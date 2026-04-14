@@ -863,8 +863,6 @@ export class GradingService {
       });
       ensureAbort(input.signal);
       rawOutput = response.rawText;
-      reasoningText = response.reasoningText;
-      mode = response.mode;
       parsedCandidate = parseJsonObject(rawOutput);
       const parsed = validateCompiledRubric(parsedCandidate, input.projectName);
       await fs.writeJson(
@@ -880,10 +878,10 @@ export class GradingService {
         status: 'success',
         detail: {
           latencyMs: Date.now() - startedAt,
-          mode,
+          mode: response.mode,
           rubricPath,
           questionCount: parsed.questions.length,
-          reasoningTextLength: reasoningText.length,
+          reasoningTextLength: response.reasoningText.length,
           rawOutput: shortenText(rawOutput),
         },
       });

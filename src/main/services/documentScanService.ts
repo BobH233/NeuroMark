@@ -2,7 +2,6 @@ import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import fs from 'fs-extra';
-import sharp from 'sharp';
 import { app } from 'electron';
 import type { CornerPoint } from '@preload/contracts';
 

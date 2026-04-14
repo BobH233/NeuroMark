@@ -508,30 +508,31 @@ function formatRegionScore(score?: number | null, maxScore?: number | null): str
                 :alt="activeImage.title"
                 draggable="false"
               >
-              <div
-                v-if="hasVisibleRegionOverlay"
-                v-for="region in activeImage.regions"
-                :key="`${activeImage.title}-${region.questionId}`"
-                class="preview-region"
-                :class="{
-                  'preview-region--active': region.questionId === activeQuestionId,
-                  'preview-region--box-hidden': !displayOptions.showQuestionBoxes
-                }"
-                :style="{
-                  left: `${region.x * 100}%`,
-                  top: `${region.y * 100}%`,
-                  width: `${region.width * 100}%`,
-                  height: `${region.height * 100}%`
-                }"
-              >
-                <span v-if="displayOptions.showQuestionTags">{{ region.questionId }}</span>
-                <strong
+              <template v-if="hasVisibleRegionOverlay">
+                <div
+                  v-for="region in activeImage.regions"
+                  :key="`${activeImage.title}-${region.questionId}`"
+                  class="preview-region"
+                  :class="{
+                    'preview-region--active': region.questionId === activeQuestionId,
+                    'preview-region--box-hidden': !displayOptions.showQuestionBoxes
+                  }"
+                  :style="{
+                    left: `${region.x * 100}%`,
+                    top: `${region.y * 100}%`,
+                    width: `${region.width * 100}%`,
+                    height: `${region.height * 100}%`
+                  }"
+                >
+                  <span v-if="displayOptions.showQuestionTags">{{ region.questionId }}</span>
+                  <strong
                   v-if="displayOptions.showQuestionScores"
                   class="preview-region-score"
                 >
                   {{ formatRegionScore(region.score, region.maxScore) }}
-                </strong>
-              </div>
+                  </strong>
+                </div>
+              </template>
             </div>
 
             <button
