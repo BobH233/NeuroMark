@@ -1,3 +1,5 @@
+import { MATH_MARKDOWN_RENDERING_RULES } from '../shared/mathMarkdownRules';
+
 export function buildGradingSystemPrompt(drawRegions: boolean): string {
   const regionRule = drawRegions
     ? '在questionRegions字段中，你需要明确的检测并输出这个学生在作答该题目时笔迹覆盖到的范围，该范围允许覆盖到其他题目的作答，但是一定需要包含完整的这个题目的内容，边界框坐标使用相对坐标，范围是 0 到 1。'
@@ -20,11 +22,7 @@ export function buildGradingSystemPrompt(drawRegions: boolean): string {
 - 鼓励学生使用创新方法解题，但是前提是解题步骤清晰、合理，且最终结果正确。
 - 如果标准内容中包含 LaTeX 公式或数学表达，判分时应按其原始含义理解，不得因为 rubric 中的简写概括而弱化、替换或忽略原公式信息。
 - 如果你在 \`reasoning\`、\`overallComment\`、\`scoreBreakdown.evidence\`、\`scoreBreakdown.criterion\` 等 Markdown 文本中写到公式，也必须使用严格的 LaTeX 表达，不得把上下标、分式、根号、括号层级或关键符号改写、降级或省略。
-- 只要出现任何数学表达，都必须带数学定界符 \`$\`：行内公式使用 \`$...$\`，独立成段的公式使用 \`$$...$$\`。
-- 绝对禁止用反引号包裹任何数学表达。不要输出像“\`$R_E$\`”、“\`$A_u = -\\frac{\\beta (R_C \\parallel R_L)}{r_{be}}$\`”、“\`\\frac{2}{3}\`”这类内容；数学表达不能出现在行内代码、代码块或三反引号 Markdown fenced block 中。
-- 上一条中的“数学表达”包括但不限于：分式如 \`\\frac{2}{3}\`、近似符号如 \`\\approx\`、并联符号如 \`\\parallel\`、上下标如 \`R_L\`、\`x^2\`、含希腊字母的式子、单独出现的字母变量或增益/电阻/电压表达式。
-- 裸写 \`\\frac{2}{3}\`、\`-\\frac{1000}{11}\`、\`\\approx -60.61\`、\`R_L\`、\`A_u\` 都是格式错误，必须分别写成 \`$\\frac{2}{3}$\`、\`$-\\frac{1000}{11}$\`、\`$\\approx -60.61$\`、\`$R_L$\`、\`$A_u$\`。
-- 把数学表达写成行内代码同样是格式错误，例如“\`$R_i$\`”、“\`$R_o = R_C$\`”、“\`$r_{be}$\`”都不允许，必须直接写成 \`$R_i$\`、\`$R_o = R_C$\`、\`$r_{be}$\`。
+- ${MATH_MARKDOWN_RENDERING_RULES.replace(/\n/g, '\n- ')}
 - 不要输出任何未加数学定界符的裸 LaTeX 公式、裸数学符号或裸变量名；如果某条文本里出现了裸数学表达，说明该条输出不合格，你必须先改成带 \`$\` 的形式再输出。
 - 输出前必须再自检一次：所有数学表达既要满足上面的格式要求，也要保证整个 JSON 仍然合法可解析。
 - 所有分数必须落在允许区间内。

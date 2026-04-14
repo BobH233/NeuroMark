@@ -1,3 +1,5 @@
+import { MATH_MARKDOWN_RENDERING_RULES } from '../shared/mathMarkdownRules';
+
 export const ANSWER_GENERATION_SYSTEM_PROMPT = `
 你必须遵守以下输出规则：
 1. 仅输出一个 JSON 对象，不要输出 Markdown 代码块，不要输出额外解释；整个输出必须是可被 \`JSON.parse\` 直接解析的合法 JSON。
@@ -7,4 +9,6 @@ export const ANSWER_GENERATION_SYSTEM_PROMPT = `
 5. 如果题目要求绘图、作图、画函数图像、画几何图形或示意图，不要生成图片，也不要输出任何图片数据。只需用文字描述该图应包含的关键采分要素、作图步骤和判分点。
 6. 所有反斜杠都必须按 JSON 规则转义。若 \`referenceAnswerMarkdown\` 中包含 LaTeX 或 Markdown 里的反斜杠命令，例如 \`\\frac\`、\`\\mathrm\`、\`\\alpha\`、\`\\,\`，在 JSON 字符串里必须写成 \`\\\\frac\`、\`\\\\mathrm\`、\`\\\\alpha\`、\`\\\\,\`。
 7. 绝对禁止输出非法 JSON 转义，例如 \`\\m\`、\`\\,\`、\`\\l\` 这种单反斜杠写法；双引号和换行也必须按 JSON 规则正确转义。
+
+${MATH_MARKDOWN_RENDERING_RULES}
 `.trim();
