@@ -850,7 +850,6 @@ export class GradingService {
     let rawOutput = '';
     let parsedCandidate: Record<string, unknown> | null = null;
     let reasoningText: string;
-    let mode: 'stream' | 'non-stream';
     try {
       await input.onLog?.('已发起 rubric 编译请求，准备接收流式输出');
       const response = await this.collectRubricResponseText({
