@@ -128,6 +128,29 @@ function extractFirstJsonObject(text: string): string | null {
   return null;
 }
 
+type JsonParseFailureDetail = {
+  message: string;
+  position: number | null;
+  snippet: string;
+};
+
+function buildJsonParseFailureDetail(error: unknown, text: string): JsonParseFailureDetail {
+  const message = error instanceof Error ? error.message : String(error ?? '未知 JSON 解析错误');
+  const match = /position\s+(\d+)/i.exec(message);
+  const position = match ? Number(match[1]) : null;
+  const safePosition = position !== null && Number.isFinite(position) ? Math.max(0, position) : null;
+  const snippet =
+    safePosition === null
+      ? shortenText(text, 600)
+      : text.slice(Math.max(0, safePosition - 300), Math.min(text.length, safePosition + 300));
+
+  return {
+    message,
+    position: safePosition,
+    snippet,
+  };
+}
+
 function parseJsonObject(rawOutput: string): Record<string, unknown> {
   let candidate = rawOutput.trim();
   const fenced = candidate.match(FENCED_JSON_PATTERN);
@@ -140,14 +163,40 @@ function parseJsonObject(rawOutput: string): Record<string, unknown> {
     if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
       return parsed as Record<string, unknown>;
     }
-  } catch {
+  } catch (error) {
     const extracted = extractFirstJsonObject(candidate);
     if (extracted) {
-      const parsed = JSON.parse(extracted);
-      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-        return parsed as Record<string, unknown>;
+      try {
+        const parsed = JSON.parse(extracted);
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          return parsed as Record<string, unknown>;
+        }
+      } catch (extractedError) {
+        const detail = buildJsonParseFailureDetail(extractedError, extracted);
+        const parseError = new Error(
+          `模型返回的内容不是合法 JSON 对象。原始解析错误：${detail.message}`,
+          { cause: extractedError instanceof Error ? extractedError : undefined },
+        );
+        (
+          parseError as Error & {
+            jsonParseDetail?: JsonParseFailureDetail;
+          }
+        ).jsonParseDetail = detail;
+        throw parseError;
       }
     }
+
+    const detail = buildJsonParseFailureDetail(error, candidate);
+    const parseError = new Error(
+      `模型返回的内容不是合法 JSON 对象。原始解析错误：${detail.message}`,
+      { cause: error instanceof Error ? error : undefined },
+    );
+    (
+      parseError as Error & {
+        jsonParseDetail?: JsonParseFailureDetail;
+      }
+    ).jsonParseDetail = detail;
+    throw parseError;
   }
 
   throw new Error('模型返回的内容不是合法 JSON 对象。');
@@ -176,6 +225,10 @@ type GradingAttemptDebugContext = {
   rawOutput?: string;
   reasoningText?: string;
   mode?: 'stream' | 'non-stream';
+  finishReason?: string;
+  fallbackReason?: string;
+  fallbackAt?: string;
+  jsonParseDetail?: JsonParseFailureDetail;
 };
 
 function getGradingAttemptDebugContext(error: unknown): GradingAttemptDebugContext {
@@ -187,6 +240,10 @@ function getGradingAttemptDebugContext(error: unknown): GradingAttemptDebugConte
     rawOutput?: unknown;
     reasoningText?: unknown;
     mode?: unknown;
+    finishReason?: unknown;
+    fallbackReason?: unknown;
+    fallbackAt?: unknown;
+    jsonParseDetail?: unknown;
   };
 
   return {
@@ -195,6 +252,14 @@ function getGradingAttemptDebugContext(error: unknown): GradingAttemptDebugConte
     mode:
       candidate.mode === 'stream' || candidate.mode === 'non-stream'
         ? candidate.mode
+        : undefined,
+    finishReason: typeof candidate.finishReason === 'string' ? candidate.finishReason : undefined,
+    fallbackReason:
+      typeof candidate.fallbackReason === 'string' ? candidate.fallbackReason : undefined,
+    fallbackAt: typeof candidate.fallbackAt === 'string' ? candidate.fallbackAt : undefined,
+    jsonParseDetail:
+      candidate.jsonParseDetail && typeof candidate.jsonParseDetail === 'object'
+        ? candidate.jsonParseDetail as JsonParseFailureDetail
         : undefined,
   };
 }
@@ -214,6 +279,18 @@ function attachGradingAttemptDebugContext(
   }
   if (context.mode !== undefined) {
     target.mode = context.mode;
+  }
+  if (context.finishReason !== undefined) {
+    target.finishReason = context.finishReason;
+  }
+  if (context.fallbackReason !== undefined) {
+    target.fallbackReason = context.fallbackReason;
+  }
+  if (context.fallbackAt !== undefined) {
+    target.fallbackAt = context.fallbackAt;
+  }
+  if (context.jsonParseDetail !== undefined) {
+    target.jsonParseDetail = context.jsonParseDetail;
   }
 
   return nextError;
@@ -258,7 +335,7 @@ function buildPaperDebugMetadata(input: {
 }
 
 function buildPaperAttemptDebugReport(input: {
-  event: 'retry' | 'failed';
+  event: 'fallback' | 'retry' | 'failed';
   projectName: string;
   paper: PaperRecord;
   referenceAnswerVersion: number;
@@ -273,6 +350,10 @@ function buildPaperAttemptDebugReport(input: {
   rawOutput: string;
   reasoningText: string;
   mode?: 'stream' | 'non-stream';
+  finishReason?: string;
+  fallbackReason?: string;
+  fallbackAt?: string;
+  jsonParseDetail?: JsonParseFailureDetail;
   parsedCandidate?: Record<string, unknown> | null;
 }): string {
   const isTimeout = input.error.message.includes('超时');
@@ -283,11 +364,14 @@ function buildPaperAttemptDebugReport(input: {
     `paperCode=${input.paper.paperCode}`,
     `attempt=${input.attempt}/${input.attempts}`,
     `mode=${input.mode ?? 'unknown'}`,
+    `finishReason=${input.finishReason ?? ''}`,
     `startedAt=${input.startedAt}`,
     `failedAt=${input.failedAt}`,
     `retryAt=${input.retryAt ?? ''}`,
     `timedOut=${isTimeout ? 'true' : 'false'}`,
     `error=${input.error.message}`,
+    `fallbackReason=${input.fallbackReason ?? ''}`,
+    `fallbackAt=${input.fallbackAt ?? ''}`,
     '',
     '[paper-metadata]',
     JSON.stringify(
@@ -304,6 +388,9 @@ function buildPaperAttemptDebugReport(input: {
     '',
     '[parsed-candidate]',
     input.parsedCandidate ? JSON.stringify(input.parsedCandidate, null, 2) : '(null)',
+    '',
+    '[json-parse-detail]',
+    input.jsonParseDetail ? JSON.stringify(input.jsonParseDetail, null, 2) : '(null)',
     '',
     '[reasoning-text]',
     input.reasoningText || '(empty)',
@@ -575,13 +662,7 @@ export function validateModelResult(
       throw new Error(`第 ${index + 1} 个题号必须是 ${rubricQuestion.questionId}。`);
     }
 
-    const questionTitle = asString(
-      rawQuestion.questionTitle,
-      `questionScores[${index}].questionTitle`,
-    );
-    if (questionTitle !== rubricQuestion.questionTitle) {
-      throw new Error(`${questionId} 的题目名称必须与 rubric 一致。`);
-    }
+    asString(rawQuestion.questionTitle, `questionScores[${index}].questionTitle`);
 
     const maxScore = asNumber(rawQuestion.maxScore, `questionScores[${index}].maxScore`);
     if (Math.abs(maxScore - rubricQuestion.maxScore) > 0.01) {
@@ -594,8 +675,8 @@ export function validateModelResult(
 
     return {
       questionId,
-      questionTitle,
-      maxScore,
+      questionTitle: rubricQuestion.questionTitle,
+      maxScore: rubricQuestion.maxScore,
       score,
       reasoning: asString(rawQuestion.reasoning, `questionScores[${index}].reasoning`),
       issues: asStringArray(rawQuestion.issues, `questionScores[${index}].issues`),
@@ -922,15 +1003,23 @@ export class GradingService {
     let lastParsedCandidate: Record<string, unknown> | null = null;
     let lastAttempt = 0;
     let lastMode: 'stream' | 'non-stream' | undefined;
+    let lastFinishReason = '';
+    let lastFallbackReason = '';
+    let lastFallbackAt = '';
 
     for (let attempt = 1; attempt <= attempts; attempt += 1) {
       ensureAbort(input.signal);
       const attemptStartedAt = new Date().toISOString();
       lastAttempt = attempt;
       try {
-        lastRawOutput = await this.collectPaperResponseText({
+        const response = await this.collectPaperResponseText({
           client,
           requestPayload,
+          projectName: input.projectName,
+          paper: input.paper,
+          referenceAnswerVersion: input.referenceAnswerVersion,
+          drawRegions: input.drawRegions,
+          settings: input.settings,
           signal: input.signal,
           paperCode: input.paper.paperCode,
           startedAtMs: startedAt,
@@ -939,7 +1028,10 @@ export class GradingService {
           onLog: input.onLog,
           onStreamProgress: input.onStreamProgress,
         });
-        lastReasoningText = '';
+        lastRawOutput = response.rawText;
+        lastReasoningText = response.reasoningText;
+        lastMode = response.mode;
+        lastFinishReason = response.finishReason ?? '';
         lastParsedCandidate = parseJsonObject(lastRawOutput);
         const modelResult = validateModelResult(lastParsedCandidate, input.rubric, input.drawRegions);
         logLlmResult(`grading-paper:${input.paper.paperCode}`, {
@@ -969,6 +1061,15 @@ export class GradingService {
         if (debugContext.mode !== undefined) {
           lastMode = debugContext.mode;
         }
+        if (debugContext.finishReason !== undefined) {
+          lastFinishReason = debugContext.finishReason;
+        }
+        if (debugContext.fallbackReason !== undefined) {
+          lastFallbackReason = debugContext.fallbackReason;
+        }
+        if (debugContext.fallbackAt !== undefined) {
+          lastFallbackAt = debugContext.fallbackAt;
+        }
         const failedAt = new Date().toISOString();
         await input.onLog?.(`第 ${attempt} 次尝试失败：${buildAttemptFailureMessage(lastError, lastRawOutput)}`);
         if (attempt >= attempts || /已取消/.test(lastError.message)) {
@@ -995,6 +1096,10 @@ export class GradingService {
             rawOutput: lastRawOutput,
             reasoningText: lastReasoningText,
             mode: debugContext.mode,
+            finishReason: debugContext.finishReason,
+            fallbackReason: debugContext.fallbackReason,
+            fallbackAt: debugContext.fallbackAt,
+            jsonParseDetail: debugContext.jsonParseDetail,
             parsedCandidate: lastParsedCandidate,
           }),
         });
@@ -1023,6 +1128,10 @@ export class GradingService {
         rawOutput: lastRawOutput,
         reasoningText: lastReasoningText,
         mode: lastMode,
+        finishReason: lastFinishReason,
+        fallbackReason: lastFallbackReason,
+        fallbackAt: lastFallbackAt,
+        jsonParseDetail: getGradingAttemptDebugContext(lastError).jsonParseDetail,
         parsedCandidate: lastParsedCandidate,
       }),
     });
@@ -1055,6 +1164,11 @@ export class GradingService {
   private async collectPaperResponseText(input: {
     client: OpenAI;
     requestPayload: ChatCompletionCreateParamsNonStreaming;
+    projectName: string;
+    paper: PaperRecord;
+    referenceAnswerVersion: number;
+    drawRegions: boolean;
+    settings: GradingServiceSettings;
     signal?: AbortSignal;
     paperCode: string;
     startedAtMs: number;
@@ -1062,7 +1176,12 @@ export class GradingService {
     timeoutMs: number;
     onLog?: (message: string) => void | Promise<void>;
     onStreamProgress?: (payload: { rawText: string; reasoningText: string }) => void | Promise<void>;
-  }): Promise<string> {
+  }): Promise<{
+    rawText: string;
+    reasoningText: string;
+    mode: 'stream' | 'non-stream';
+    finishReason: string | null;
+  }> {
     try {
       logLlmProgress(`grading-paper:${input.paperCode}`, {
         attempt: input.attempt,
@@ -1076,14 +1195,53 @@ export class GradingService {
         throw error;
       }
 
+      const fallbackReason = compactErrorMessage(error);
+      const fallbackAt = new Date().toISOString();
+      const streamDebugContext = getGradingAttemptDebugContext(error);
       logLlmProgress(`grading-paper:${input.paperCode}`, {
         attempt: input.attempt,
         mode: 'stream',
         status: 'fallback',
-        reason: compactErrorMessage(error),
+        reason: fallbackReason,
       });
-      await input.onLog?.(`流式模式不可用，已回退普通请求：${compactErrorMessage(error)}`);
-      return this.collectNonStreamingPaperResponseText(input);
+      await input.onLog?.(`流式模式不可用，已回退普通请求：${fallbackReason}`);
+      await writeLlmDebugTextArtifact({
+        scope: 'grading-paper-fallback',
+        identifier: input.paperCode,
+        suffix: `attempt-${input.attempt}`,
+        text: buildPaperAttemptDebugReport({
+          event: 'fallback',
+          projectName: input.projectName,
+          paper: input.paper,
+          referenceAnswerVersion: input.referenceAnswerVersion,
+          drawRegions: input.drawRegions,
+          settings: input.settings,
+          attempt: input.attempt,
+          attempts: input.attempt,
+          startedAt: new Date(input.startedAtMs).toISOString(),
+          failedAt: fallbackAt,
+          error: error instanceof Error ? error : new Error(fallbackReason),
+          rawOutput: streamDebugContext.rawOutput ?? '',
+          reasoningText: streamDebugContext.reasoningText ?? '',
+          mode: 'stream',
+          finishReason: streamDebugContext.finishReason,
+          fallbackReason,
+          fallbackAt,
+          jsonParseDetail: streamDebugContext.jsonParseDetail,
+          parsedCandidate: null,
+        }),
+      });
+      try {
+        return await this.collectNonStreamingPaperResponseText(input);
+      } catch (fallbackError) {
+        throw this.wrapPaperAttemptError(fallbackError, {
+          rawOutput: '',
+          reasoningText: '',
+          mode: 'non-stream',
+          fallbackReason,
+          fallbackAt,
+        });
+      }
     }
   }
 
@@ -1097,7 +1255,12 @@ export class GradingService {
     timeoutMs: number;
     onLog?: (message: string) => void | Promise<void>;
     onStreamProgress?: (payload: { rawText: string; reasoningText: string }) => void | Promise<void>;
-  }): Promise<string> {
+  }): Promise<{
+    rawText: string;
+    reasoningText: string;
+    mode: 'stream';
+    finishReason: string | null;
+  }> {
     const { controller, dispose } = createLinkedAbortController(input.signal);
     const stream = await input.client.chat.completions.create(
       {
@@ -1119,6 +1282,7 @@ export class GradingService {
     let lastReasoningFlushedLength = 0;
     let lastFlushAt = 0;
     let hasReceivedStreamChunk = false;
+    let finishReason: string | null = null;
     const iterator = stream[Symbol.asyncIterator]();
 
     try {
@@ -1140,6 +1304,7 @@ export class GradingService {
         ensureAbort(input.signal);
         const chunk = result.value;
         usage = normalizeLlmUsage(chunk.usage) ?? usage;
+        finishReason = chunk.choices[0]?.finish_reason ?? finishReason;
         const delta = chunk.choices[0]?.delta;
         const chunkText = extractStreamingDeltaText(delta?.content);
         const chunkReasoningText = extractReasoningText(delta);
@@ -1191,7 +1356,12 @@ export class GradingService {
         usage,
       });
 
-      return rawText;
+      return {
+        rawText,
+        reasoningText,
+        mode: 'stream',
+        finishReason,
+      };
     } catch (error) {
       await this.llmUsage.recordUsage({
         source: 'grading-paper',
@@ -1203,6 +1373,7 @@ export class GradingService {
         rawOutput: rawText,
         reasoningText,
         mode: 'stream',
+        finishReason: finishReason ?? undefined,
       });
     } finally {
       dispose();
@@ -1218,7 +1389,12 @@ export class GradingService {
     attempt: number;
     onLog?: (message: string) => void | Promise<void>;
     onStreamProgress?: (payload: { rawText: string; reasoningText: string }) => void | Promise<void>;
-  }): Promise<string> {
+  }): Promise<{
+    rawText: string;
+    reasoningText: string;
+    mode: 'non-stream';
+    finishReason: string | null;
+  }> {
     try {
       const response = await input.client.chat.completions.create(input.requestPayload, {
         signal: input.signal,
@@ -1245,7 +1421,12 @@ export class GradingService {
         usage,
       });
 
-      return rawText;
+      return {
+        rawText,
+        reasoningText,
+        mode: 'non-stream',
+        finishReason: response.choices[0]?.finish_reason ?? null,
+      };
     } catch (error) {
       throw this.wrapPaperAttemptError(error, {
         rawOutput: '',
@@ -1261,6 +1442,10 @@ export class GradingService {
       rawOutput: string;
       reasoningText: string;
       mode: 'stream' | 'non-stream';
+      finishReason?: string;
+      fallbackReason?: string;
+      fallbackAt?: string;
+      jsonParseDetail?: JsonParseFailureDetail;
     },
   ): Error {
     return attachGradingAttemptDebugContext(error, context);
