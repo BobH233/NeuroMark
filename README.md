@@ -11,9 +11,13 @@
   <a href="https://vuejs.org/"><img alt="Vue 3" src="https://img.shields.io/badge/Vue-3-0f766e?style=for-the-badge&logo=vuedotjs&logoColor=ffffff"></a>
   <a href="https://www.typescriptlang.org/"><img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-5.9-1d4ed8?style=for-the-badge&logo=typescript&logoColor=ffffff"></a>
   <a href="https://platform.openai.com/docs/overview"><img alt="OpenAI Compatible" src="https://img.shields.io/badge/OpenAI-Compatible-0f172a?style=for-the-badge&logo=openai&logoColor=ffffff"></a>
-  <a href="https://github.com/BobH233/NeuroMark/actions/workflows/electron-build.yml"><img alt="Build Electron" src="https://github.com/BobH233/NeuroMark/actions/workflows/electron-build.yml/badge.svg"></a>
   <img alt="Status" src="https://img.shields.io/badge/Status-Early%20Community%20Project-f59e0b?style=for-the-badge">
   <a href="./LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-111827?style=for-the-badge"></a>
+</p>
+
+<p>
+  <a href="https://github.com/BobH233/NeuroMark/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/BobH233/NeuroMark/ci.yml?branch=main&style=for-the-badge&label=CI"></a>
+  <a href="https://github.com/BobH233/NeuroMark/actions/workflows/electron-build.yml?query=branch%3Av0.2.0"><img alt="Release v0.2.0" src="https://img.shields.io/github/actions/workflow/status/BobH233/NeuroMark/electron-build.yml?branch=v0.2.0&style=for-the-badge&label=Release%20v0.2.0"></a>
 </p>
 
 <p>
@@ -27,7 +31,6 @@
   <a href="#界面预览">界面预览</a> ·
   <a href="#快速开始">快速开始</a> ·
   <a href="#架构概览">架构概览</a> ·
-  <a href="#路线图">路线图</a> ·
   <a href="#参与共建">参与共建</a>
 </p>
 
