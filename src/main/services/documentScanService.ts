@@ -15,6 +15,7 @@ interface NativeScanResult {
   scannedOutputPath: string;
   overlayOutputPath: string;
   corners: Array<{ x: number; y: number }>;
+  detectedCorners: Array<{ x: number; y: number }>;
   debugOutputPaths: string[];
 }
 
@@ -26,6 +27,7 @@ interface NativeScannerInstance {
     debugOutputPrefix?: string;
     writeDebugImages?: boolean;
     applyPostProcess?: boolean;
+    scanMarginRatio?: number;
   }) => Promise<NativeScanResult>;
 }
 
@@ -44,6 +46,7 @@ interface ProcessDocumentImageOptions {
   writeDebugArtifacts?: boolean;
   applyPostProcess?: boolean;
   skipScanProcessing?: boolean;
+  scanMarginRatio?: number;
 }
 
 let scannerPromise: Promise<NativeScannerInstance> | null = null;
@@ -71,10 +74,21 @@ function getProjectRoot(): string {
 function resolveNativeAddonPath(): string {
   const artifactDir = getPlatformArtifactDir();
   if (app.isPackaged) {
-    return path.join(process.resourcesPath, 'native', artifactDir, 'scancpp_node.node');
+    return path.join(
+      process.resourcesPath,
+      'native',
+      artifactDir,
+      'scancpp_node.node',
+    );
   }
 
-  return path.join(getProjectRoot(), 'build', 'native', artifactDir, 'scancpp_node.node');
+  return path.join(
+    getProjectRoot(),
+    'build',
+    'native',
+    artifactDir,
+    'scancpp_node.node',
+  );
 }
 
 function resolveModelPath(): string {
@@ -82,10 +96,18 @@ function resolveModelPath(): string {
     return path.join(process.resourcesPath, 'models', 'u2netp.onnx');
   }
 
-  return path.join(getProjectRoot(), 'src-native', 'scancpp', 'models', 'u2netp.onnx');
+  return path.join(
+    getProjectRoot(),
+    'src-native',
+    'scancpp',
+    'models',
+    'u2netp.onnx',
+  );
 }
 
-function toCornerPoints(corners: Array<{ x: number; y: number }>): CornerPoint[] {
+function toCornerPoints(
+  corners: Array<{ x: number; y: number }>,
+): CornerPoint[] {
   return corners.map((point) => ({
     x: Math.round(point.x),
     y: Math.round(point.y),
@@ -131,7 +153,9 @@ async function getScanner(): Promise<NativeScannerInstance> {
   return scannerPromise;
 }
 
-function shouldWriteDebugArtifacts(options?: ProcessDocumentImageOptions): boolean {
+function shouldWriteDebugArtifacts(
+  options?: ProcessDocumentImageOptions,
+): boolean {
   if (typeof options?.writeDebugArtifacts === 'boolean') {
     return options.writeDebugArtifacts;
   }
@@ -165,6 +189,7 @@ export async function processDocumentImage(
         scannedPath,
         skippedScanProcessing: true,
         applyPostProcess: false,
+        scanMarginRatio: options?.scanMarginRatio ?? 1,
         generatedAt: new Date().toISOString(),
       },
       { spaces: 2 },
@@ -194,9 +219,11 @@ export async function processDocumentImage(
     debugOutputPrefix,
     writeDebugImages: writeDebugArtifacts,
     applyPostProcess: options?.applyPostProcess ?? true,
+    scanMarginRatio: options?.scanMarginRatio ?? 1,
   });
 
   const corners = toCornerPoints(nativeResult.corners);
+  const detectedCorners = toCornerPoints(nativeResult.detectedCorners);
 
   await fs.writeJson(
     cornersPath,
@@ -205,11 +232,14 @@ export async function processDocumentImage(
       model: path.basename(resolveModelPath()),
       corners,
       bounds: createBoundsFromCorners(corners),
+      detectedCorners,
+      detectedBounds: createBoundsFromCorners(detectedCorners),
       sourceWidth: nativeResult.sourceWidth,
       sourceHeight: nativeResult.sourceHeight,
       scannedWidth: nativeResult.scannedWidth,
       scannedHeight: nativeResult.scannedHeight,
       applyPostProcess: options?.applyPostProcess ?? true,
+      scanMarginRatio: options?.scanMarginRatio ?? 1,
       debugOutputPaths: nativeResult.debugOutputPaths,
       generatedAt: new Date().toISOString(),
     },

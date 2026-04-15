@@ -36,6 +36,7 @@ export interface ProjectSettings {
   defaultImageDetail: ImageDetailLevel;
   enableScanPostProcess: boolean;
   skipScanProcessing: boolean;
+  scanMarginRatio: number;
 }
 
 export interface ProjectStats {
@@ -598,6 +599,7 @@ export interface CreateProjectInput {
   defaultImageDetail?: ImageDetailLevel;
   enableScanPostProcess?: boolean;
   skipScanProcessing?: boolean;
+  scanMarginRatio?: number;
 }
 
 export interface CreateProjectValidationResult {
@@ -778,9 +780,7 @@ export interface NeuromarkApi {
       projectId: string,
       input: GenerateScorePostProcessAiScriptInput,
     ) => Promise<ScorePostProcessAiScriptSnapshot>;
-    onAiScriptUpdated: (
-      handler: ScorePostProcessAiUpdateHandler,
-    ) => () => void;
+    onAiScriptUpdated: (handler: ScorePostProcessAiUpdateHandler) => () => void;
     exportLatest: (
       projectId: string,
       options?: ExportScorePostProcessOptions,

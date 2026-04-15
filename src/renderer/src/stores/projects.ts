@@ -25,7 +25,10 @@ export const useProjectsStore = defineStore('projects', {
   }),
   getters: {
     selectedProject(state) {
-      return state.projects.find((item) => item.id === state.selectedProjectId) ?? null;
+      return (
+        state.projects.find((item) => item.id === state.selectedProjectId) ??
+        null
+      );
     },
   },
   actions: {
@@ -34,7 +37,9 @@ export const useProjectsStore = defineStore('projects', {
       if (!this.unbind) {
         this.unbind = window.neuromark.projects.onUpdated((projects) => {
           this.projects = projects;
-          if (!this.projects.some((item) => item.id === this.selectedProjectId)) {
+          if (
+            !this.projects.some((item) => item.id === this.selectedProjectId)
+          ) {
             this.clearSelection();
             return;
           }
@@ -42,7 +47,10 @@ export const useProjectsStore = defineStore('projects', {
           const selectedProjectMeta = this.projects.find(
             (item) => item.id === this.selectedProjectId,
           );
-          if (selectedProjectMeta && this.detail?.project.id === selectedProjectMeta.id) {
+          if (
+            selectedProjectMeta &&
+            this.detail?.project.id === selectedProjectMeta.id
+          ) {
             this.detail = {
               ...this.detail,
               project: selectedProjectMeta,
@@ -64,7 +72,9 @@ export const useProjectsStore = defineStore('projects', {
       this.rubricDebug = null;
     },
     applyProjectMeta(project: ProjectMeta) {
-      const projectIndex = this.projects.findIndex((item) => item.id === project.id);
+      const projectIndex = this.projects.findIndex(
+        (item) => item.id === project.id,
+      );
       if (projectIndex >= 0) {
         this.projects.splice(projectIndex, 1, project);
       } else {
@@ -88,7 +98,10 @@ export const useProjectsStore = defineStore('projects', {
       this.loading = true;
       try {
         const nextDetail = await window.neuromark.projects.getDetail(projectId);
-        if (requestId !== latestProjectDetailRequestId || this.selectedProjectId !== projectId) {
+        if (
+          requestId !== latestProjectDetailRequestId ||
+          this.selectedProjectId !== projectId
+        ) {
           return this.detail;
         }
 
@@ -101,7 +114,8 @@ export const useProjectsStore = defineStore('projects', {
       }
     },
     async loadProjectRubricDebug(projectId: string) {
-      this.rubricDebug = await window.neuromark.projects.getRubricDebug(projectId);
+      this.rubricDebug =
+        await window.neuromark.projects.getRubricDebug(projectId);
       return this.rubricDebug;
     },
     async createProject(input: CreateProjectInput) {
@@ -123,43 +137,63 @@ export const useProjectsStore = defineStore('projects', {
       }
     },
     async updateProjectName(projectId: string, name: string) {
-      const updated = await window.neuromark.projects.updateName(projectId, name);
+      const updated = await window.neuromark.projects.updateName(
+        projectId,
+        name,
+      );
       this.applyProjectMeta(updated);
       return updated;
     },
     async removePaper(projectId: string, paperId: string) {
-      this.detail = await window.neuromark.projects.removePaper(projectId, paperId);
+      this.detail = await window.neuromark.projects.removePaper(
+        projectId,
+        paperId,
+      );
       await this.loadProjects();
       return this.detail;
     },
     async importOriginalImages(projectId: string, filePaths: string[]) {
-      const result = await window.neuromark.projects.importOriginalImages(projectId, filePaths);
-      await this.loadProjects();
-      await this.loadProjectDetail(projectId);
-      return result;
-    },
-    async importOriginalImageDirectory(projectId: string, directoryPath: string) {
-      const result = await window.neuromark.projects.importOriginalImageDirectory(
+      const result = await window.neuromark.projects.importOriginalImages(
         projectId,
-        directoryPath,
+        filePaths,
       );
       await this.loadProjects();
       await this.loadProjectDetail(projectId);
       return result;
     },
+    async importOriginalImageDirectory(
+      projectId: string,
+      directoryPath: string,
+    ) {
+      const result =
+        await window.neuromark.projects.importOriginalImageDirectory(
+          projectId,
+          directoryPath,
+        );
+      await this.loadProjects();
+      await this.loadProjectDetail(projectId);
+      return result;
+    },
     async updateProjectSettings(projectId: string, settings: ProjectSettings) {
-      const updated = await window.neuromark.projects.updateSettings(projectId, {
-        gradingConcurrency: settings.gradingConcurrency,
-        drawRegions: settings.drawRegions,
-        defaultImageDetail: settings.defaultImageDetail,
-        enableScanPostProcess: settings.enableScanPostProcess,
-        skipScanProcessing: settings.skipScanProcessing,
-      });
+      const updated = await window.neuromark.projects.updateSettings(
+        projectId,
+        {
+          gradingConcurrency: settings.gradingConcurrency,
+          drawRegions: settings.drawRegions,
+          defaultImageDetail: settings.defaultImageDetail,
+          enableScanPostProcess: settings.enableScanPostProcess,
+          skipScanProcessing: settings.skipScanProcessing,
+          scanMarginRatio: settings.scanMarginRatio,
+        },
+      );
       this.applyProjectMeta(updated);
       return updated;
     },
     async updateReferenceAnswer(projectId: string, markdown: string) {
-      await window.neuromark.projects.updateReferenceAnswer(projectId, markdown);
+      await window.neuromark.projects.updateReferenceAnswer(
+        projectId,
+        markdown,
+      );
       await this.loadProjects();
       await this.loadProjectDetail(projectId);
     },
@@ -188,7 +222,9 @@ export const useProjectsStore = defineStore('projects', {
       return window.neuromark.results.exportJson(projectId, options);
     },
     getResultByPaperId(paperId: string): ResultRecord | null {
-      return this.detail?.results.find((item) => item.paperId === paperId) ?? null;
+      return (
+        this.detail?.results.find((item) => item.paperId === paperId) ?? null
+      );
     },
   },
 });

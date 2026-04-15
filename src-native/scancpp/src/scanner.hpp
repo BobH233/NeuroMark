@@ -18,6 +18,7 @@ struct ScanArtifacts {
     cv::Mat binaryMask;
     cv::Mat warpedColor;
     cv::Mat scanned;
+    std::array<cv::Point2f, 4> detectedCorners{};
     std::array<cv::Point2f, 4> corners{};
 };
 
@@ -50,9 +51,11 @@ struct ScanRequest {
     bool writeOverlay = true;
     bool writeDebugImages = false;
     bool applyPostProcess = true;
+    float scanMarginRatio = 1.0f;
 };
 
 struct ScanResult {
+    std::array<cv::Point2f, 4> detectedCorners{};
     std::array<cv::Point2f, 4> corners{};
     int sourceWidth = 0;
     int sourceHeight = 0;
@@ -67,7 +70,10 @@ class DocumentScanner {
   public:
     explicit DocumentScanner(fs::path modelPath);
 
-    ScanArtifacts scan(const cv::Mat& image, bool applyPostProcess = true);
+    ScanArtifacts scan(
+        const cv::Mat& image,
+        bool applyPostProcess = true,
+        float scanMarginRatio = 1.0f);
     ScanResult scanFile(const ScanRequest& request);
 
   private:

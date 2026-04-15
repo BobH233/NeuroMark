@@ -243,6 +243,28 @@ float euclideanDistance(const cv::Point2f& a, const cv::Point2f& b) {
     return std::sqrt(delta.x * delta.x + delta.y * delta.y);
 }
 
+std::array<cv::Point2f, 4> scaleDocumentCorners(
+    const std::array<cv::Point2f, 4>& corners,
+    float scanMarginRatio) {
+    const float ratio = std::max(1.0f, scanMarginRatio);
+    if (std::abs(ratio - 1.0f) <= 1e-4f) {
+        return corners;
+    }
+
+    cv::Point2f center(0.0f, 0.0f);
+    for (const auto& corner : corners) {
+        center += corner;
+    }
+    center *= 0.25f;
+
+    std::array<cv::Point2f, 4> scaledCorners{};
+    for (std::size_t index = 0; index < corners.size(); ++index) {
+        scaledCorners[index] = center + (corners[index] - center) * ratio;
+    }
+
+    return scaledCorners;
+}
+
 cv::Mat warpDocument(const cv::Mat& image, const std::array<cv::Point2f, 4>& corners) {
     const float widthTop = euclideanDistance(corners[0], corners[1]);
     const float widthBottom = euclideanDistance(corners[3], corners[2]);
@@ -271,35 +293,39 @@ cv::Mat warpDocument(const cv::Mat& image, const std::array<cv::Point2f, 4>& cor
     return warped;
 }
 
-cv::Mat drawDocumentOverlay(const cv::Mat& image, const std::array<cv::Point2f, 4>& corners) {
-    cv::Mat overlay = image.clone();
-
-    const std::array<cv::Scalar, 4> colors{
-        cv::Scalar(0, 0, 255),
-        cv::Scalar(0, 255, 255),
-        cv::Scalar(0, 255, 0),
-        cv::Scalar(255, 0, 0),
-    };
-
-    for (std::size_t i = 0; i < corners.size(); ++i) {
+void drawQuadOverlay(
+    cv::Mat& overlay,
+    const std::array<cv::Point2f, 4>& corners,
+    const cv::Scalar& color,
+    int lineThickness,
+    int markerRadius) {
+    for (std::size_t index = 0; index < corners.size(); ++index) {
         const cv::Point current(
-            static_cast<int>(std::lround(corners[i].x)),
-            static_cast<int>(std::lround(corners[i].y)));
+            static_cast<int>(std::lround(corners[index].x)),
+            static_cast<int>(std::lround(corners[index].y)));
         const cv::Point next(
-            static_cast<int>(std::lround(corners[(i + 1) % corners.size()].x)),
-            static_cast<int>(std::lround(corners[(i + 1) % corners.size()].y)));
+            static_cast<int>(std::lround(corners[(index + 1) % corners.size()].x)),
+            static_cast<int>(std::lround(corners[(index + 1) % corners.size()].y)));
 
-        cv::line(overlay, current, next, cv::Scalar(30, 220, 30), 6, cv::LINE_AA);
-        cv::circle(overlay, current, 10, colors[i], cv::FILLED, cv::LINE_AA);
-        cv::putText(
-            overlay,
-            std::to_string(i + 1),
-            current + cv::Point(12, -12),
-            cv::FONT_HERSHEY_SIMPLEX,
-            0.9,
-            colors[i],
-            2,
-            cv::LINE_AA);
+        cv::line(overlay, current, next, color, lineThickness, cv::LINE_AA);
+        cv::circle(overlay, current, markerRadius, color, cv::FILLED, cv::LINE_AA);
+    }
+}
+
+cv::Mat drawDocumentOverlay(
+    const cv::Mat& image,
+    const std::array<cv::Point2f, 4>& detectedCorners,
+    const std::array<cv::Point2f, 4>& scaledCorners) {
+    cv::Mat overlay = image.clone();
+    const bool showScaledCorners =
+        euclideanDistance(detectedCorners[0], scaledCorners[0]) > 1e-3f ||
+        euclideanDistance(detectedCorners[1], scaledCorners[1]) > 1e-3f ||
+        euclideanDistance(detectedCorners[2], scaledCorners[2]) > 1e-3f ||
+        euclideanDistance(detectedCorners[3], scaledCorners[3]) > 1e-3f;
+
+    drawQuadOverlay(overlay, detectedCorners, cv::Scalar(30, 220, 30), 5, 8);
+    if (showScaledCorners) {
+        drawQuadOverlay(overlay, scaledCorners, cv::Scalar(0, 140, 255), 5, 8);
     }
 
     return overlay;
@@ -438,7 +464,8 @@ std::vector<fs::path> saveDebugOutputs(
 
     cv::Mat saliency8u;
     artifacts.saliencyMask.convertTo(saliency8u, CV_8U, 255.0);
-    const cv::Mat overlay = drawDocumentOverlay(inputImage, artifacts.corners);
+    const cv::Mat overlay =
+        drawDocumentOverlay(inputImage, artifacts.detectedCorners, artifacts.corners);
     const std::string prefixUtf8 = prefixPath.u8string();
 
     const std::vector<fs::path> paths{
@@ -470,7 +497,10 @@ DocumentScanner::DocumentScanner(fs::path modelPath)
     net_.setPreferableTarget(cv::dnn::DNN_TARGET_CPU);
 }
 
-ScanArtifacts DocumentScanner::scan(const cv::Mat& image, bool applyPostProcess) {
+ScanArtifacts DocumentScanner::scan(
+    const cv::Mat& image,
+    bool applyPostProcess,
+    float scanMarginRatio) {
     std::lock_guard<std::mutex> lock(mutex_);
 
     ScanArtifacts artifacts;
@@ -478,7 +508,9 @@ ScanArtifacts DocumentScanner::scan(const cv::Mat& image, bool applyPostProcess)
     artifacts.binaryMask = makeBinaryDocumentMask(artifacts.saliencyMask);
 
     const std::vector<cv::Point> contour = largestContour(artifacts.binaryMask);
-    artifacts.corners = orderCorners(approximateDocumentQuad(contour));
+    artifacts.detectedCorners = orderCorners(approximateDocumentQuad(contour));
+    artifacts.corners =
+        scaleDocumentCorners(artifacts.detectedCorners, scanMarginRatio);
     artifacts.warpedColor = warpDocument(image, artifacts.corners);
     artifacts.scanned = applyPostProcess ? enhanceForScan(artifacts.warpedColor) : artifacts.warpedColor.clone();
     return artifacts;
@@ -490,7 +522,8 @@ ScanResult DocumentScanner::scanFile(const ScanRequest& request) {
         throw std::runtime_error("Failed to read the input image.");
     }
 
-    const ScanArtifacts artifacts = scan(input, request.applyPostProcess);
+    const ScanArtifacts artifacts =
+        scan(input, request.applyPostProcess, request.scanMarginRatio);
 
     if (!request.scannedOutputPath.empty()) {
         if (!request.scannedOutputPath.parent_path().empty()) {
@@ -503,11 +536,13 @@ ScanResult DocumentScanner::scanFile(const ScanRequest& request) {
         if (!request.overlayOutputPath.parent_path().empty()) {
             fs::create_directories(request.overlayOutputPath.parent_path());
         }
-        const cv::Mat overlay = drawDocumentOverlay(input, artifacts.corners);
+        const cv::Mat overlay =
+            drawDocumentOverlay(input, artifacts.detectedCorners, artifacts.corners);
         writeImageToPath(request.overlayOutputPath, overlay);
     }
 
     ScanResult result;
+    result.detectedCorners = artifacts.detectedCorners;
     result.corners = artifacts.corners;
     result.sourceWidth = input.cols;
     result.sourceHeight = input.rows;
@@ -557,7 +592,8 @@ BenchmarkSummary benchmarkScanDocument(
         run.postprocessMs = measureMilliseconds([&]() {
             artifacts.binaryMask = makeBinaryDocumentMask(artifacts.saliencyMask);
             const std::vector<cv::Point> contour = largestContour(artifacts.binaryMask);
-            artifacts.corners = orderCorners(approximateDocumentQuad(contour));
+            artifacts.detectedCorners = orderCorners(approximateDocumentQuad(contour));
+            artifacts.corners = artifacts.detectedCorners;
             artifacts.warpedColor = warpDocument(input, artifacts.corners);
             artifacts.scanned = enhanceForScan(artifacts.warpedColor);
         });

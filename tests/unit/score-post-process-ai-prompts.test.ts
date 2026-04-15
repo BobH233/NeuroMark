@@ -7,9 +7,7 @@ describe('score post-process AI script prompts', () => {
     expect(SCORE_POST_PROCESS_AI_SCRIPT_SYSTEM_PROMPT).toContain(
       '只输出一个合法 JSON 对象',
     );
-    expect(SCORE_POST_PROCESS_AI_SCRIPT_SYSTEM_PROMPT).toContain(
-      'scriptCode',
-    );
+    expect(SCORE_POST_PROCESS_AI_SCRIPT_SYSTEM_PROMPT).toContain('scriptCode');
     expect(SCORE_POST_PROCESS_AI_SCRIPT_SYSTEM_PROMPT).toContain(
       '同步 JavaScript 脚本正文',
     );
@@ -37,6 +35,7 @@ describe('score post-process AI script prompts', () => {
           defaultImageDetail: 'auto',
           enableScanPostProcess: false,
           skipScanProcessing: false,
+          scanMarginRatio: 1,
         },
       },
       scoreStats: {

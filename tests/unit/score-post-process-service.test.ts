@@ -57,6 +57,7 @@ function createProjectContext(): ScorePostProcessProjectContext {
       defaultImageDetail: 'auto',
       enableScanPostProcess: false,
       skipScanProcessing: false,
+      scanMarginRatio: 1,
     },
   };
 }

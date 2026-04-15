@@ -93,6 +93,7 @@ const projectSettingsDraft = ref<ProjectSettings>({
   defaultImageDetail: 'high',
   enableScanPostProcess: true,
   skipScanProcessing: false,
+  scanMarginRatio: 1,
 });
 const projectSettingsDraftProjectId = ref('');
 const rubricLoading = ref(false);
@@ -529,8 +530,8 @@ const rubricDebug = computed(() =>
     : null,
 );
 const showRubricDebugTab = computed(() => debugPanelStore.enabled);
-const referenceAnswerDirty = computed(() =>
-  referenceAnswerDraft.value !== savedReferenceAnswerMarkdown.value,
+const referenceAnswerDirty = computed(
+  () => referenceAnswerDraft.value !== savedReferenceAnswerMarkdown.value,
 );
 const projectSettingsDirty = computed(() => {
   if (!selectedProject.value) {
@@ -548,7 +549,9 @@ const projectSettingsDirty = computed(() => {
     projectSettingsDraft.value.enableScanPostProcess !==
       current.settings.enableScanPostProcess ||
     projectSettingsDraft.value.skipScanProcessing !==
-      current.settings.skipScanProcessing
+      current.settings.skipScanProcessing ||
+    projectSettingsDraft.value.scanMarginRatio !==
+      current.settings.scanMarginRatio
   );
 });
 const selectedResultUsesLatestReference = computed(() => {
@@ -766,6 +769,7 @@ watch(
         defaultImageDetail: 'high',
         enableScanPostProcess: true,
         skipScanProcessing: false,
+        scanMarginRatio: 1,
       };
       return;
     }
@@ -784,6 +788,7 @@ watch(
         defaultImageDetail: nextProject.settings.defaultImageDetail,
         enableScanPostProcess: nextProject.settings.enableScanPostProcess,
         skipScanProcessing: nextProject.settings.skipScanProcessing,
+        scanMarginRatio: nextProject.settings.scanMarginRatio,
       };
     }
   },
@@ -811,7 +816,10 @@ watch(
       return;
     }
 
-    if (!referenceAnswerDirty.value || nextMarkdown === referenceAnswerDraft.value) {
+    if (
+      !referenceAnswerDirty.value ||
+      nextMarkdown === referenceAnswerDraft.value
+    ) {
       referenceAnswerDraft.value = nextMarkdown;
       savedReferenceAnswerMarkdown.value = nextMarkdown;
     }
@@ -1827,6 +1835,7 @@ async function saveProjectSettings() {
     defaultImageDetail: projectSettingsDraft.value.defaultImageDetail,
     enableScanPostProcess: projectSettingsDraft.value.enableScanPostProcess,
     skipScanProcessing: projectSettingsDraft.value.skipScanProcessing,
+    scanMarginRatio: projectSettingsDraft.value.scanMarginRatio,
   };
   const projectIdToSave = selectedProject.value.id;
   const nameChanged = nextName !== selectedProject.value.name;
@@ -2791,12 +2800,15 @@ function goBack() {
                                 >{{ region.questionId }}</span
                               >
                               <strong
-                              v-if="previewDisplayOptions.showQuestionScores"
-                              class="paper-stage-region-score"
-                            >
-                              {{
-                                formatRegionScore(region.score, region.maxScore)
-                              }}
+                                v-if="previewDisplayOptions.showQuestionScores"
+                                class="paper-stage-region-score"
+                              >
+                                {{
+                                  formatRegionScore(
+                                    region.score,
+                                    region.maxScore,
+                                  )
+                                }}
                               </strong>
                             </div>
                           </template>
@@ -4015,9 +4027,7 @@ function goBack() {
                       />
                       <div v-else class="detail-subtitle">
                         已折叠
-                        {{
-                          smartNameMatchCertainKeepSuggestions.length
-                        }}
+                        {{ smartNameMatchCertainKeepSuggestions.length }}
                         条确定无误结果。
                       </div>
                     </div>
@@ -4086,6 +4096,15 @@ function goBack() {
                         { label: '自动', value: 'auto' },
                         { label: '低', value: 'low' },
                       ]"
+                    />
+                  </n-form-item>
+                  <n-form-item label="扫描裕度比例">
+                    <n-input-number
+                      v-model:value="projectSettingsDraft.scanMarginRatio"
+                      :min="1"
+                      :step="0.01"
+                      :precision="2"
+                      class="create-project-half-input"
                     />
                   </n-form-item>
                 </div>

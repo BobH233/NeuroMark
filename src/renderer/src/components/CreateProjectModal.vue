@@ -30,6 +30,7 @@ const model = reactive<CreateProjectInput>({
   defaultImageDetail: 'high',
   enableScanPostProcess: true,
   skipScanProcessing: false,
+  scanMarginRatio: 1,
 });
 
 async function fillDefaultBasePath(force = false) {
@@ -50,6 +51,7 @@ watch(
       model.defaultImageDetail = 'high';
       model.enableScanPostProcess = true;
       model.skipScanProcessing = false;
+      model.scanMarginRatio = 1;
       return;
     }
 
@@ -74,10 +76,19 @@ function submit() {
 </script>
 
 <template>
-  <n-modal :show="show" preset="card" title="新建阅卷项目" class="project-modal" @close="emit('close')">
+  <n-modal
+    :show="show"
+    preset="card"
+    title="新建阅卷项目"
+    class="project-modal"
+    @close="emit('close')"
+  >
     <n-form label-placement="top" class="stack-form create-project-form">
       <n-form-item label="项目名称">
-        <n-input v-model:value="model.name" placeholder="例如：第二章随堂练习" />
+        <n-input
+          v-model:value="model.name"
+          placeholder="例如：第二章随堂练习"
+        />
       </n-form-item>
       <n-form-item label="项目目录">
         <div class="create-project-path-row">
@@ -86,12 +97,18 @@ function submit() {
             class="create-project-path-input"
             placeholder="请选择项目保存目录"
           />
-          <n-button secondary type="primary" @click="chooseDirectory">选择目录</n-button>
+          <n-button secondary type="primary" @click="chooseDirectory"
+            >选择目录</n-button
+          >
         </div>
       </n-form-item>
       <div class="two-col create-project-settings-grid">
         <n-form-item label="默认并行数">
-          <n-input-number v-model:value="model.gradingConcurrency" :min="1" class="create-project-half-input" />
+          <n-input-number
+            v-model:value="model.gradingConcurrency"
+            :min="1"
+            class="create-project-half-input"
+          />
         </n-form-item>
         <n-form-item label="默认图像细节">
           <n-select
@@ -104,35 +121,60 @@ function submit() {
             ]"
           />
         </n-form-item>
+        <n-form-item label="扫描裕度比例">
+          <n-input-number
+            v-model:value="model.scanMarginRatio"
+            :min="1"
+            :step="0.01"
+            :precision="2"
+            class="create-project-half-input"
+          />
+        </n-form-item>
+      </div>
+      <div class="field-hint">
+        1.00 表示按原始边界裁剪，1.10 表示以同一中心放大 10%。
       </div>
       <div class="create-project-toggle-row">
         <div class="create-project-toggle-copy">
           <div class="field-label">跳过扫描处理</div>
-          <div class="field-hint">开启后不做边界识别、拉平或裁剪，直接将原始答卷图片作为扫描结果。</div>
+          <div class="field-hint">
+            开启后不做边界识别、拉平或裁剪，直接将原始答卷图片作为扫描结果。
+          </div>
         </div>
         <n-switch v-model:value="model.skipScanProcessing" />
       </div>
       <div class="create-project-toggle-row">
         <div class="create-project-toggle-copy">
           <div class="field-label">启用扫描后处理</div>
-          <div class="field-hint">关闭后仅按识别到的纸张边界进行裁剪与拉平，不做增强和二值化。</div>
+          <div class="field-hint">
+            关闭后仅按识别到的纸张边界进行裁剪与拉平，不做增强和二值化。
+          </div>
         </div>
-        <n-switch v-model:value="model.enableScanPostProcess" :disabled="model.skipScanProcessing" />
+        <n-switch
+          v-model:value="model.enableScanPostProcess"
+          :disabled="model.skipScanProcessing"
+        />
       </div>
       <div class="create-project-toggle-row">
         <div class="create-project-toggle-copy">
           <div class="field-label">默认启用绘制批阅区域</div>
-          <div class="field-hint">开启后会在批阅视图中显示题目边界框，便于复核。</div>
+          <div class="field-hint">
+            开启后会在批阅视图中显示题目边界框，便于复核。
+          </div>
         </div>
         <n-switch v-model:value="model.drawRegions" />
       </div>
     </n-form>
     <template #footer>
       <div class="modal-footer">
-        <n-button :disabled="props.submitting" @click="emit('close')">取消</n-button>
+        <n-button :disabled="props.submitting" @click="emit('close')"
+          >取消</n-button
+        >
         <n-button
           type="primary"
-          :disabled="!model.name.trim() || !model.basePath.trim() || props.submitting"
+          :disabled="
+            !model.name.trim() || !model.basePath.trim() || props.submitting
+          "
           :loading="props.submitting"
           @click="submit"
         >
