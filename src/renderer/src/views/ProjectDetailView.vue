@@ -795,6 +795,82 @@ const smartNameMatchUncertainSuggestions = computed(() =>
     (item) => item.decision === 'uncertain' || item.decision === 'no_match',
   ),
 );
+const simpleSmartNameDuplicateCheck = computed(() => {
+  const nameGroups = new Map<
+    string,
+    Array<{
+      paperId: string;
+      paperCode: string;
+      studentName: string;
+      studentId: string;
+      className: string;
+    }>
+  >();
+  const studentIdGroups = new Map<
+    string,
+    Array<{
+      paperId: string;
+      paperCode: string;
+      studentName: string;
+      studentId: string;
+      className: string;
+    }>
+  >();
+
+  gradedResultEntries.value.forEach((entry) => {
+    const studentName = entry.studentName.trim();
+    const studentId = entry.studentId.trim();
+    const className = entry.className.trim();
+    const item = {
+      paperId: entry.result.paperId,
+      paperCode: entry.paperLabel,
+      studentName,
+      studentId,
+      className,
+    };
+
+    if (studentName) {
+      const bucket = nameGroups.get(studentName) ?? [];
+      bucket.push(item);
+      nameGroups.set(studentName, bucket);
+    }
+
+    if (studentId) {
+      const bucket = studentIdGroups.get(studentId) ?? [];
+      bucket.push(item);
+      studentIdGroups.set(studentId, bucket);
+    }
+  });
+
+  const duplicateNames = Array.from(nameGroups.entries())
+    .filter(([, items]) => items.length > 1)
+    .map(([value, items]) => ({
+      value,
+      items,
+    }))
+    .sort((left, right) => right.items.length - left.items.length);
+  const duplicateStudentIds = Array.from(studentIdGroups.entries())
+    .filter(([, items]) => items.length > 1)
+    .map(([value, items]) => ({
+      value,
+      items,
+    }))
+    .sort((left, right) => right.items.length - left.items.length);
+
+  return {
+    duplicateNames,
+    duplicateStudentIds,
+    duplicateNamePaperCount: duplicateNames.reduce(
+      (sum, group) => sum + group.items.length,
+      0,
+    ),
+    duplicateStudentIdPaperCount: duplicateStudentIds.reduce(
+      (sum, group) => sum + group.items.length,
+      0,
+    ),
+    hasIssue: duplicateNames.length > 0 || duplicateStudentIds.length > 0,
+  };
+});
 const smartNameMatchHasPreview = computed(() =>
   Boolean(smartNameMatchState.value.previewText.trim()),
 );
@@ -1932,6 +2008,11 @@ function buildPaperPreviewImages(paperId: string): PreviewImageItem[] {
     title: `${paper.paperCode} · 第 ${index + 1} 页`,
     caption: page.scannedPath ? '扫描答卷' : '原始答卷',
   }));
+}
+
+function focusResultByPaperId(paperId: string) {
+  selectedResultId.value =
+    results.value.find((result) => result.paperId === paperId)?.id ?? '';
 }
 
 async function openPaperPreviewByPaperId(paperId: string) {
@@ -3438,7 +3519,7 @@ function goBack() {
         <n-tab-pane name="smart-name-match" tab="智能核名">
           <div
             v-if="results.length"
-            class="result-review-layout"
+            class="smart-name-layout"
             @mouseenter="isReviewScrollActive = true"
             @mouseleave="isReviewScrollActive = false"
             @click="hideSmartNameContextMenu"
@@ -3512,7 +3593,163 @@ function goBack() {
               </div>
             </aside>
 
-            <section class="result-workspace surface-card">
+            <div class="smart-name-main">
+              <section class="surface-card result-duplicate-check-panel">
+                <div class="result-panel-head">
+                  <div>
+                    <div class="result-section-title">基础重复检查</div>
+                    <div class="detail-subtitle">
+                      检查当前批阅结果中存在的重复卷情况。
+                    </div>
+                  </div>
+                </div>
+
+                <div class="smart-name-summary-grid">
+                  <div class="result-score-summary-card">
+                    <span>重复姓名组</span>
+                    <strong>{{
+                      simpleSmartNameDuplicateCheck.duplicateNames.length
+                    }}</strong>
+                  </div>
+                  <div class="result-score-summary-card">
+                    <span>重复姓名试卷</span>
+                    <strong>{{
+                      simpleSmartNameDuplicateCheck.duplicateNamePaperCount
+                    }}</strong>
+                  </div>
+                  <div class="result-score-summary-card">
+                    <span>重复学号组</span>
+                    <strong>{{
+                      simpleSmartNameDuplicateCheck.duplicateStudentIds.length
+                    }}</strong>
+                  </div>
+                  <div class="result-score-summary-card">
+                    <span>重复学号试卷</span>
+                    <strong>{{
+                      simpleSmartNameDuplicateCheck.duplicateStudentIdPaperCount
+                    }}</strong>
+                  </div>
+                </div>
+
+                <template v-if="simpleSmartNameDuplicateCheck.hasIssue">
+                  <div
+                    v-if="simpleSmartNameDuplicateCheck.duplicateNames.length"
+                    class="question-list"
+                  >
+                    <div
+                      v-for="group in simpleSmartNameDuplicateCheck.duplicateNames"
+                      :key="`simple-duplicate-name-${group.value}`"
+                      class="question-card question-card--smart-name"
+                    >
+                      <div class="smart-name-card-head">
+                        <div>
+                          <div class="question-card-title">
+                            重复姓名：{{ group.value }}
+                          </div>
+                          <div class="question-card-meta">
+                            共 {{ group.items.length }} 份试卷
+                          </div>
+                        </div>
+                        <n-tag
+                          size="small"
+                          round
+                          type="error"
+                          :bordered="false"
+                        >
+                          姓名重复
+                        </n-tag>
+                      </div>
+                      <div class="smart-name-duplicate-list">
+                        <div
+                          v-for="item in group.items"
+                          :key="`simple-duplicate-name-item-${group.value}-${item.paperId}`"
+                          class="smart-name-duplicate-item smart-name-duplicate-item--danger"
+                        >
+                          <div class="smart-name-duplicate-item__meta">
+                            <strong>{{ item.paperCode }}</strong>
+                            <span>{{
+                              formatStudentInfo({
+                                name: item.studentName,
+                                studentId: item.studentId,
+                                className: item.className,
+                              })
+                            }}</span>
+                          </div>
+                          <n-button
+                            secondary
+                            size="small"
+                            @click="focusResultByPaperId(item.paperId)"
+                          >
+                            定位试卷
+                          </n-button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div
+                    v-if="simpleSmartNameDuplicateCheck.duplicateStudentIds.length"
+                    class="question-list"
+                  >
+                    <div
+                      v-for="group in simpleSmartNameDuplicateCheck.duplicateStudentIds"
+                      :key="`simple-duplicate-student-id-${group.value}`"
+                      class="question-card question-card--smart-name"
+                    >
+                      <div class="smart-name-card-head">
+                        <div>
+                          <div class="question-card-title">
+                            重复学号：{{ group.value }}
+                          </div>
+                          <div class="question-card-meta">
+                            共 {{ group.items.length }} 份试卷
+                          </div>
+                        </div>
+                        <n-tag
+                          size="small"
+                          round
+                          type="error"
+                          :bordered="false"
+                        >
+                          学号重复
+                        </n-tag>
+                      </div>
+                      <div class="smart-name-duplicate-list">
+                        <div
+                          v-for="item in group.items"
+                          :key="`simple-duplicate-student-id-item-${group.value}-${item.paperId}`"
+                          class="smart-name-duplicate-item smart-name-duplicate-item--danger"
+                        >
+                          <div class="smart-name-duplicate-item__meta">
+                            <strong>{{ item.paperCode }}</strong>
+                            <span>{{
+                              formatStudentInfo({
+                                name: item.studentName,
+                                studentId: item.studentId,
+                                className: item.className,
+                              })
+                            }}</span>
+                          </div>
+                          <n-button
+                            secondary
+                            size="small"
+                            @click="focusResultByPaperId(item.paperId)"
+                          >
+                            定位试卷
+                          </n-button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </template>
+
+                <n-empty
+                  v-else
+                  description="当前没有发现姓名重复或学号重复的试卷。"
+                />
+              </section>
+
+              <section class="result-workspace surface-card">
               <div class="result-workspace-head">
                 <div>
                   <div class="result-section-title">
@@ -3738,8 +3975,8 @@ function goBack() {
                       >
                         {{ smartNameMatchState.stage }}
                       </n-tag>
+                      </div>
                     </div>
-                  </div>
 
                   <n-alert
                     v-if="
@@ -4308,23 +4545,24 @@ function goBack() {
                   </template>
                 </div>
               </div>
-            </section>
+              </section>
 
-            <div
-              v-if="smartNameContextMenu.visible"
-              class="preview-context-menu smart-name-context-menu"
-              :style="{
-                left: `${smartNameContextMenu.x}px`,
-                top: `${smartNameContextMenu.y}px`,
-              }"
-              @click.stop
-            >
-              <button
-                class="preview-context-menu__item"
-                @click="startManualSmartName(smartNameContextMenu.paperId)"
+              <div
+                v-if="smartNameContextMenu.visible"
+                class="preview-context-menu smart-name-context-menu"
+                :style="{
+                  left: `${smartNameContextMenu.x}px`,
+                  top: `${smartNameContextMenu.y}px`,
+                }"
+                @click.stop
               >
-                手动核名
-              </button>
+                <button
+                  class="preview-context-menu__item"
+                  @click="startManualSmartName(smartNameContextMenu.paperId)"
+                >
+                  手动核名
+                </button>
+              </div>
             </div>
           </div>
           <n-empty v-else description="先完成批阅后再进行智能核名。" />
