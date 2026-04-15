@@ -80,7 +80,13 @@ const PREVIEW_DISPLAY_OPTIONS_STORAGE_KEY_PREFIX =
 const activeTab = ref('overview');
 const selectedResultId = ref('');
 const resultSearchKeyword = ref('');
-type ResultSortMode = 'input-order' | 'score-desc' | 'score-asc' | 'student-id';
+type ResultSortMode =
+  | 'input-order'
+  | 'score-desc'
+  | 'score-asc'
+  | 'student-id'
+  | 'unverified-first'
+  | 'verified-first';
 const resultSortMode = ref<ResultSortMode>('input-order');
 const editableResult = ref<FinalResult | null>(null);
 const referenceAnswerDraft = ref('');
@@ -108,6 +114,7 @@ const exportScope = ref<ResultExportScope>('graded');
 const projectSettingsSaving = ref(false);
 const removingPaperId = ref('');
 const deletingResultPaperId = ref('');
+const markResultAsVerifiedOnSave = ref(true);
 const importActionLoading = ref(false);
 const smartNameMatchSnapshot = ref<SmartNameMatchSnapshot | null>(null);
 const smartNameRosterText = ref('');
@@ -379,6 +386,8 @@ const resultSortOptions = [
   { label: '按分数由高到低', value: 'score-desc' },
   { label: '按分数由低到高', value: 'score-asc' },
   { label: '按学号排序', value: 'student-id' },
+  { label: '按未核对名优先', value: 'unverified-first' },
+  { label: '按已核名优先', value: 'verified-first' },
 ];
 const gradedResultEntries = computed(() =>
   results.value
@@ -433,6 +442,22 @@ const gradedResultEntries = computed(() =>
         if (rightStudentId) {
           return 1;
         }
+      }
+
+      if (resultSortMode.value === 'unverified-first') {
+        const leftPriority =
+          left.result.nameMatchStatus === 'verified' ? 1 : 0;
+        const rightPriority =
+          right.result.nameMatchStatus === 'verified' ? 1 : 0;
+        return leftPriority - rightPriority || fallback;
+      }
+
+      if (resultSortMode.value === 'verified-first') {
+        const leftPriority =
+          left.result.nameMatchStatus === 'verified' ? 0 : 1;
+        const rightPriority =
+          right.result.nameMatchStatus === 'verified' ? 0 : 1;
+        return leftPriority - rightPriority || fallback;
       }
 
       return fallback;
@@ -869,6 +894,7 @@ watch(
       ? cloneFinalResult(value.finalResult)
       : null;
     expandedQuestionIds.value = [];
+    markResultAsVerifiedOnSave.value = true;
   },
   { immediate: true },
 );
@@ -1545,7 +1571,7 @@ async function printSelectedResult() {
   }
 }
 
-async function saveResult() {
+async function saveResult(markAsVerified = editableStudentInfoChanged.value) {
   if (
     !selectedProject.value ||
     !selectedResult.value ||
@@ -1555,7 +1581,7 @@ async function saveResult() {
   }
   const nextResult = cloneFinalResult(editableResult.value);
   nextResult.manualTotalScore = editableAutoTotal.value;
-  const saveOptions = editableStudentInfoChanged.value
+  const saveOptions = editableStudentInfoChanged.value && markAsVerified
     ? {
         nameMatchStatus: 'verified' as NameMatchStatus,
         nameMatchUpdatedAt: new Date().toISOString(),
@@ -1568,6 +1594,10 @@ async function saveResult() {
     nextResult,
     saveOptions,
   );
+}
+
+async function saveResultByToggle() {
+  await saveResult(markResultAsVerifiedOnSave.value);
 }
 
 async function startSmartNameMatch(scope: SmartNameMatchScope = 'unverified') {
@@ -2645,9 +2675,9 @@ function goBack() {
                     </template>
                     删除后会移除这张试卷当前的批阅结果，并恢复为“未批改”状态，可重新发起批阅。确认继续吗？
                   </n-popconfirm>
-                  <n-button type="primary" @click="saveResult"
-                    >保存修改</n-button
-                  >
+                  <n-button type="primary" @click="saveResultByToggle">
+                    保存修改
+                  </n-button>
                 </n-space>
               </div>
 
@@ -2899,8 +2929,17 @@ function goBack() {
                       <div
                         v-if="editableStudentInfoChanged"
                         class="smart-name-save-hint"
+                        style="
+                          display: inline-flex;
+                          align-items: center;
+                          gap: 12px;
+                        "
                       >
-                        保存后，这份答卷会被标记为已核名。
+                        <span>标记为已核名</span>
+                        <n-switch
+                          v-model:value="markResultAsVerifiedOnSave"
+                          style="flex-shrink: 0"
+                        />
                       </div>
                     </n-form>
 
