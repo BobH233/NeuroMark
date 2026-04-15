@@ -1874,6 +1874,7 @@ async function saveReferenceAnswer() {
       selectedProject.value.id,
       nextMarkdown,
     );
+    savedReferenceAnswerMarkdown.value = nextMarkdown;
     await loadRubricDebug();
   } finally {
     referenceAnswerSaving.value = false;

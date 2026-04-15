@@ -520,7 +520,7 @@ export class ProjectService {
     if (!(await fs.pathExists(structure.referenceAnswerPath))) {
       return '';
     }
-    return fs.readFile(structure.referenceAnswerPath, 'utf-8');
+    return (await fs.readFile(structure.referenceAnswerPath, 'utf-8')).trim();
   }
 
   async getProjectRubricDebug(projectId: string): Promise<ProjectRubricDebug> {
