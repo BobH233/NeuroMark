@@ -12,6 +12,10 @@ import type {
   PaperRecord,
   ProjectDetail,
   ProjectMeta,
+  StudentInfo,
+  StudentRosterData,
+  StudentRosterColumnField,
+  StudentRosterEntry,
   ProjectSettings,
   ProjectStats,
   ResultRecord,
@@ -48,7 +52,85 @@ const DEFAULT_PROJECT_SETTINGS: ProjectSettings = {
   enableScanPostProcess: true,
   skipScanProcessing: false,
   scanMarginRatio: 1,
+  studentRoster: null,
 };
+
+function normalizeStudentInfoText(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function normalizeStudentRosterEntry(
+  entry: unknown,
+  index: number,
+): StudentRosterEntry | null {
+  if (!entry || typeof entry !== 'object') {
+    return null;
+  }
+
+  const candidate = entry as Record<string, unknown>;
+  const studentInfo: StudentInfo = {
+    className: normalizeStudentInfoText(candidate.className),
+    studentId: normalizeStudentInfoText(candidate.studentId),
+    name: normalizeStudentInfoText(candidate.name),
+  };
+
+  if (!studentInfo.className && !studentInfo.studentId && !studentInfo.name) {
+    return null;
+  }
+
+  const rawId = normalizeStudentInfoText(candidate.id);
+  return {
+    id:
+      rawId ||
+      `${studentInfo.studentId}::${studentInfo.name}::${studentInfo.className}::${index}`,
+    ...studentInfo,
+  };
+}
+
+function normalizeStudentRosterColumnField(
+  value: unknown,
+): StudentRosterColumnField {
+  if (
+    value === 'studentId' ||
+    value === 'name' ||
+    value === 'className' ||
+    value === 'ignore'
+  ) {
+    return value;
+  }
+
+  return 'ignore';
+}
+
+function normalizeStudentRoster(
+  roster?: Partial<StudentRosterData> | null,
+): StudentRosterData | null {
+  if (!roster || typeof roster !== 'object') {
+    return null;
+  }
+
+  const rawText = typeof roster.rawText === 'string' ? roster.rawText : '';
+  const columnFields = Array.isArray(roster.columnFields)
+    ? roster.columnFields.map((field) =>
+        normalizeStudentRosterColumnField(field),
+      )
+    : [];
+  const entries = Array.isArray(roster.entries)
+    ? roster.entries
+        .map((entry, index) => normalizeStudentRosterEntry(entry, index))
+        .filter((entry): entry is StudentRosterEntry => Boolean(entry))
+    : [];
+
+  if (!rawText.trim() && entries.length === 0) {
+    return null;
+  }
+
+  return {
+    rawText,
+    columnFields,
+    entries,
+  };
+}
 
 function normalizeScanMarginRatio(value: number | null | undefined): number {
   if (typeof value !== 'number' || !Number.isFinite(value)) {
@@ -109,6 +191,7 @@ function normalizeProjectSettings(
       settings?.skipScanProcessing ??
       DEFAULT_PROJECT_SETTINGS.skipScanProcessing,
     scanMarginRatio: normalizeScanMarginRatio(settings?.scanMarginRatio),
+    studentRoster: normalizeStudentRoster(settings?.studentRoster),
   };
 }
 

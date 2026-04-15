@@ -40,6 +40,9 @@ import type {
   PaperRecord,
   PreviewDisplayOptions,
   PreviewImageItem,
+  StudentInfo,
+  StudentRosterColumnField,
+  StudentRosterEntry,
   ResultExportScope,
   ResultRecord,
   ScoreBreakdownItem,
@@ -54,12 +57,19 @@ import MarkdownRenderer from '@/components/MarkdownRenderer.vue';
 import MetricCard from '@/components/MetricCard.vue';
 import ScorePostProcessPanel from '@/components/ScorePostProcessPanel.vue';
 import StatusPill from '@/components/StatusPill.vue';
+import StudentInfoAutocompleteInput from '@/components/StudentInfoAutocompleteInput.vue';
 import { useDebugPanelStore } from '@/stores/debug-panel';
 import { useProjectsStore } from '@/stores/projects';
 import { useTasksStore } from '@/stores/tasks';
 import { useTokenVisualizerStore } from '@/stores/token-visualizer';
 import { toImageSrc } from '@/utils/file';
 import { cloneFinalResult, computeDisplayedTotal } from '@/utils/result';
+import {
+  buildStudentRosterData,
+  detectStudentRosterColumnFields,
+  normalizeStudentRosterColumnFields,
+  parseStudentRosterText,
+} from '@/utils/student-roster';
 
 const route = useRoute();
 const router = useRouter();
@@ -76,6 +86,36 @@ const DEFAULT_PREVIEW_DISPLAY_OPTIONS: PreviewDisplayOptions = {
 };
 const PREVIEW_DISPLAY_OPTIONS_STORAGE_KEY_PREFIX =
   'neuromark:preview-display-options:';
+const STUDENT_ROSTER_COLUMN_FIELD_OPTIONS = [
+  { label: '忽略此列', value: 'ignore' },
+  { label: '学号', value: 'studentId' },
+  { label: '姓名', value: 'name' },
+  { label: '班级', value: 'className' },
+] satisfies Array<{ label: string; value: StudentRosterColumnField }>;
+
+function cloneStudentRosterEntries(
+  entries: StudentRosterEntry[],
+): StudentRosterEntry[] {
+  return entries.map((entry) => ({ ...entry }));
+}
+
+function cloneProjectSettings(settings: ProjectSettings): ProjectSettings {
+  return {
+    gradingConcurrency: settings.gradingConcurrency,
+    drawRegions: settings.drawRegions,
+    defaultImageDetail: settings.defaultImageDetail,
+    enableScanPostProcess: settings.enableScanPostProcess,
+    skipScanProcessing: settings.skipScanProcessing,
+    scanMarginRatio: settings.scanMarginRatio,
+    studentRoster: settings.studentRoster
+      ? {
+          rawText: settings.studentRoster.rawText,
+          columnFields: [...settings.studentRoster.columnFields],
+          entries: cloneStudentRosterEntries(settings.studentRoster.entries),
+        }
+      : null,
+  };
+}
 
 const activeTab = ref('overview');
 const selectedResultId = ref('');
@@ -100,6 +140,7 @@ const projectSettingsDraft = ref<ProjectSettings>({
   enableScanPostProcess: true,
   skipScanProcessing: false,
   scanMarginRatio: 1,
+  studentRoster: null,
 });
 const projectSettingsDraftProjectId = ref('');
 const rubricLoading = ref(false);
@@ -445,16 +486,14 @@ const gradedResultEntries = computed(() =>
       }
 
       if (resultSortMode.value === 'unverified-first') {
-        const leftPriority =
-          left.result.nameMatchStatus === 'verified' ? 1 : 0;
+        const leftPriority = left.result.nameMatchStatus === 'verified' ? 1 : 0;
         const rightPriority =
           right.result.nameMatchStatus === 'verified' ? 1 : 0;
         return leftPriority - rightPriority || fallback;
       }
 
       if (resultSortMode.value === 'verified-first') {
-        const leftPriority =
-          left.result.nameMatchStatus === 'verified' ? 0 : 1;
+        const leftPriority = left.result.nameMatchStatus === 'verified' ? 0 : 1;
         const rightPriority =
           right.result.nameMatchStatus === 'verified' ? 0 : 1;
         return leftPriority - rightPriority || fallback;
@@ -558,6 +597,21 @@ const showRubricDebugTab = computed(() => debugPanelStore.enabled);
 const referenceAnswerDirty = computed(
   () => referenceAnswerDraft.value !== savedReferenceAnswerMarkdown.value,
 );
+const normalizedProjectRosterDraft = computed(() => {
+  const currentRoster = projectSettingsDraft.value.studentRoster;
+  if (!currentRoster?.rawText.trim()) {
+    return null;
+  }
+
+  return {
+    rawText: currentRoster.rawText,
+    columnFields: currentRoster.columnFields,
+    entries: currentRoster.entries,
+  };
+});
+const serializedProjectRosterDraft = computed(() =>
+  JSON.stringify(normalizedProjectRosterDraft.value),
+);
 const projectSettingsDirty = computed(() => {
   if (!selectedProject.value) {
     return false;
@@ -576,8 +630,82 @@ const projectSettingsDirty = computed(() => {
     projectSettingsDraft.value.skipScanProcessing !==
       current.settings.skipScanProcessing ||
     projectSettingsDraft.value.scanMarginRatio !==
-      current.settings.scanMarginRatio
+      current.settings.scanMarginRatio ||
+    serializedProjectRosterDraft.value !==
+      JSON.stringify(current.settings.studentRoster ?? null)
   );
+});
+const projectRosterDraftText = computed({
+  get: () => projectSettingsDraft.value.studentRoster?.rawText ?? '',
+  set: (value: string) => {
+    const currentRoster = projectSettingsDraft.value.studentRoster;
+    if (!value.trim() && !(currentRoster?.entries.length ?? 0)) {
+      projectSettingsDraft.value.studentRoster = null;
+      return;
+    }
+    projectSettingsDraft.value.studentRoster = {
+      rawText: value,
+      columnFields: currentRoster?.columnFields ?? [],
+      entries: currentRoster?.entries ?? [],
+    };
+  },
+});
+const parsedProjectRoster = computed(() =>
+  parseStudentRosterText(projectRosterDraftText.value),
+);
+const projectRosterColumnFields = computed({
+  get: () => {
+    const currentFields =
+      projectSettingsDraft.value.studentRoster?.columnFields;
+    if (!parsedProjectRoster.value.columnCount) {
+      return [];
+    }
+    if (currentFields?.length === parsedProjectRoster.value.columnCount) {
+      return normalizeStudentRosterColumnFields(
+        parsedProjectRoster.value.columnCount,
+        currentFields,
+      );
+    }
+    return detectStudentRosterColumnFields(parsedProjectRoster.value);
+  },
+  set: (value: StudentRosterColumnField[]) => {
+    const nextColumnFields = normalizeStudentRosterColumnFields(
+      parsedProjectRoster.value.columnCount,
+      value,
+    );
+    const currentRoster = projectSettingsDraft.value.studentRoster;
+    if (!currentRoster?.rawText.trim()) {
+      projectSettingsDraft.value.studentRoster = null;
+      return;
+    }
+    projectSettingsDraft.value.studentRoster = {
+      rawText: currentRoster?.rawText ?? '',
+      columnFields: nextColumnFields,
+      entries: currentRoster?.entries ?? [],
+    };
+  },
+});
+const projectRosterPreviewEntries = computed(
+  () =>
+    buildStudentRosterData(
+      projectRosterDraftText.value,
+      projectRosterColumnFields.value,
+    )?.entries ?? [],
+);
+const savedProjectRosterEntries = computed<StudentRosterEntry[]>(
+  () => selectedProject.value?.settings.studentRoster?.entries ?? [],
+);
+const defaultSmartNameRosterText = computed(() => {
+  if (!savedProjectRosterEntries.value.length) {
+    return '';
+  }
+
+  return [
+    '班级 学号 姓名',
+    ...savedProjectRosterEntries.value.map(
+      (entry) => `${entry.className} ${entry.studentId} ${entry.name}`,
+    ),
+  ].join('\n');
 });
 const selectedResultUsesLatestReference = computed(() => {
   if (!selectedResult.value) {
@@ -788,14 +916,15 @@ watch(
     if (!nextProject) {
       projectNameDraft.value = '';
       projectSettingsDraftProjectId.value = '';
-      projectSettingsDraft.value = {
+      projectSettingsDraft.value = cloneProjectSettings({
         gradingConcurrency: 1,
         drawRegions: false,
         defaultImageDetail: 'high',
         enableScanPostProcess: true,
         skipScanProcessing: false,
         scanMarginRatio: 1,
-      };
+        studentRoster: null,
+      });
       return;
     }
 
@@ -807,14 +936,7 @@ watch(
     ) {
       projectSettingsDraftProjectId.value = nextProject.id;
       projectNameDraft.value = nextProject.name;
-      projectSettingsDraft.value = {
-        gradingConcurrency: nextProject.settings.gradingConcurrency,
-        drawRegions: nextProject.settings.drawRegions,
-        defaultImageDetail: nextProject.settings.defaultImageDetail,
-        enableScanPostProcess: nextProject.settings.enableScanPostProcess,
-        skipScanProcessing: nextProject.settings.skipScanProcessing,
-        scanMarginRatio: nextProject.settings.scanMarginRatio,
-      };
+      projectSettingsDraft.value = cloneProjectSettings(nextProject.settings);
     }
   },
   { immediate: true, deep: true },
@@ -1056,8 +1178,10 @@ onMounted(async () => {
     (snapshot) => {
       if (snapshot.projectId === projectId.value) {
         smartNameMatchSnapshot.value = snapshot;
-        if (!smartNameRosterText.value.trim() && snapshot.rosterText.trim()) {
-          smartNameRosterText.value = snapshot.rosterText;
+        if (!smartNameRosterText.value.trim()) {
+          smartNameRosterText.value = resolveSmartNameRosterText(
+            snapshot.rosterText,
+          );
         }
       }
     },
@@ -1135,9 +1259,7 @@ watch(
     }
 
     smartNameMatchSnapshot.value = snapshot;
-    if (snapshot.rosterText.trim()) {
-      smartNameRosterText.value = snapshot.rosterText;
-    }
+    smartNameRosterText.value = resolveSmartNameRosterText(snapshot.rosterText);
 
     if (showRubricDebugTab.value) {
       await loadRubricDebug();
@@ -1158,11 +1280,22 @@ watch(
     const snapshot =
       await window.neuromark.results.getSmartNameMatchSnapshot(nextProjectId);
     smartNameMatchSnapshot.value = snapshot;
-    if (snapshot.rosterText.trim()) {
-      smartNameRosterText.value = snapshot.rosterText;
-    }
+    smartNameRosterText.value = resolveSmartNameRosterText(snapshot.rosterText);
   },
   { immediate: false },
+);
+
+watch(
+  defaultSmartNameRosterText,
+  (nextDefaultText) => {
+    if (
+      !smartNameRosterText.value.trim() &&
+      !(smartNameMatchSnapshot.value?.rosterText.trim() ?? '')
+    ) {
+      smartNameRosterText.value = nextDefaultText;
+    }
+  },
+  { immediate: true },
 );
 
 async function loadRubricDebug() {
@@ -1581,13 +1714,14 @@ async function saveResult(markAsVerified = editableStudentInfoChanged.value) {
   }
   const nextResult = cloneFinalResult(editableResult.value);
   nextResult.manualTotalScore = editableAutoTotal.value;
-  const saveOptions = editableStudentInfoChanged.value && markAsVerified
-    ? {
-        nameMatchStatus: 'verified' as NameMatchStatus,
-        nameMatchUpdatedAt: new Date().toISOString(),
-        nameMatchSource: 'manual-review',
-      }
-    : undefined;
+  const saveOptions =
+    editableStudentInfoChanged.value && markAsVerified
+      ? {
+          nameMatchStatus: 'verified' as NameMatchStatus,
+          nameMatchUpdatedAt: new Date().toISOString(),
+          nameMatchSource: 'manual-review',
+        }
+      : undefined;
   await projectsStore.saveFinalResult(
     selectedProject.value.id,
     selectedResult.value.paperId,
@@ -1703,6 +1837,52 @@ function formatStudentInfo(
     `学号 ${studentInfo.studentId || '未识别'}`,
     `班级 ${studentInfo.className || '未识别'}`,
   ].join(' · ');
+}
+
+function updateProjectRosterColumnField(
+  index: number,
+  value: StudentRosterColumnField,
+) {
+  const nextFields = [...projectRosterColumnFields.value];
+  nextFields[index] = value;
+  projectRosterColumnFields.value = nextFields;
+}
+
+function updateStudentInfoFromRosterEntry(
+  target: StudentInfo,
+  entry: StudentRosterEntry,
+) {
+  target.className = entry.className;
+  target.studentId = entry.studentId;
+  target.name = entry.name;
+}
+
+function applyRosterSuggestionToEditableResult(entry: StudentRosterEntry) {
+  if (!editableResult.value) {
+    return;
+  }
+
+  updateStudentInfoFromRosterEntry(editableResult.value.studentInfo, entry);
+}
+
+function applyRosterSuggestionToManualSmartName(entry: StudentRosterEntry) {
+  if (!manualSmartNameDraft.value) {
+    return;
+  }
+
+  updateStudentInfoFromRosterEntry(
+    manualSmartNameDraft.value.studentInfo,
+    entry,
+  );
+}
+
+function resolveSmartNameRosterText(snapshotRosterText?: string | null): string {
+  const trimmedSnapshotText = snapshotRosterText?.trim() ?? '';
+  if (trimmedSnapshotText) {
+    return trimmedSnapshotText;
+  }
+
+  return defaultSmartNameRosterText.value;
 }
 
 function getSmartNameFieldLabel(
@@ -1859,6 +2039,26 @@ async function saveProjectSettings() {
     return;
   }
 
+  const nextStudentRoster = buildStudentRosterData(
+    projectRosterDraftText.value,
+    projectRosterColumnFields.value,
+  );
+  const assignedRosterFields = projectRosterColumnFields.value.filter(
+    (field) => field !== 'ignore',
+  );
+  if (new Set(assignedRosterFields).size !== assignedRosterFields.length) {
+    message.error('班级花名册的列属性不能重复，请调整列映射。');
+    return;
+  }
+  if (
+    projectRosterDraftText.value.trim() &&
+    (!parsedProjectRoster.value.rows.length ||
+      parsedProjectRoster.value.columnCount === 0)
+  ) {
+    message.error('班级花名册未识别出有效列，请检查粘贴内容。');
+    return;
+  }
+
   const nextSettings = {
     gradingConcurrency: projectSettingsDraft.value.gradingConcurrency,
     drawRegions: projectSettingsDraft.value.drawRegions,
@@ -1866,6 +2066,7 @@ async function saveProjectSettings() {
     enableScanPostProcess: projectSettingsDraft.value.enableScanPostProcess,
     skipScanProcessing: projectSettingsDraft.value.skipScanProcessing,
     scanMarginRatio: projectSettingsDraft.value.scanMarginRatio,
+    studentRoster: nextStudentRoster,
   };
   const projectIdToSave = selectedProject.value.id;
   const nameChanged = nextName !== selectedProject.value.name;
@@ -2683,7 +2884,9 @@ function goBack() {
 
               <div class="result-workspace-scroll">
                 <div class="result-workspace-stack">
-                  <div class="result-subsection-card">
+                  <div
+                    class="result-subsection-card result-subsection-card--allow-overflow"
+                  >
                     <div
                       class="result-panel-head result-panel-head--with-tools"
                     >
@@ -2898,7 +3101,9 @@ function goBack() {
                     >
                   </div>
 
-                  <div class="result-subsection-card">
+                  <div
+                    class="result-subsection-card result-subsection-card--allow-overflow"
+                  >
                     <div class="result-panel-head">
                       <div>
                         <div class="result-section-title">基础信息与总分</div>
@@ -2911,18 +3116,33 @@ function goBack() {
                     <n-form label-placement="top">
                       <div class="three-col">
                         <n-form-item label="班级">
-                          <n-input
+                          <StudentInfoAutocompleteInput
                             v-model:value="editableResult.studentInfo.className"
+                            field="className"
+                            :roster-entries="savedProjectRosterEntries"
+                            @select-entry="
+                              applyRosterSuggestionToEditableResult
+                            "
                           />
                         </n-form-item>
                         <n-form-item label="学号">
-                          <n-input
+                          <StudentInfoAutocompleteInput
                             v-model:value="editableResult.studentInfo.studentId"
+                            field="studentId"
+                            :roster-entries="savedProjectRosterEntries"
+                            @select-entry="
+                              applyRosterSuggestionToEditableResult
+                            "
                           />
                         </n-form-item>
                         <n-form-item label="姓名">
-                          <n-input
+                          <StudentInfoAutocompleteInput
                             v-model:value="editableResult.studentInfo.name"
+                            field="name"
+                            :roster-entries="savedProjectRosterEntries"
+                            @select-entry="
+                              applyRosterSuggestionToEditableResult
+                            "
                           />
                         </n-form-item>
                       </div>
@@ -3423,23 +3643,38 @@ function goBack() {
                     <n-form label-placement="top">
                       <div class="three-col">
                         <n-form-item label="班级">
-                          <n-input
+                          <StudentInfoAutocompleteInput
                             v-model:value="
                               manualSmartNameDraft.studentInfo.className
+                            "
+                            field="className"
+                            :roster-entries="savedProjectRosterEntries"
+                            @select-entry="
+                              applyRosterSuggestionToManualSmartName
                             "
                           />
                         </n-form-item>
                         <n-form-item label="学号">
-                          <n-input
+                          <StudentInfoAutocompleteInput
                             v-model:value="
                               manualSmartNameDraft.studentInfo.studentId
+                            "
+                            field="studentId"
+                            :roster-entries="savedProjectRosterEntries"
+                            @select-entry="
+                              applyRosterSuggestionToManualSmartName
                             "
                           />
                         </n-form-item>
                         <n-form-item label="姓名">
-                          <n-input
+                          <StudentInfoAutocompleteInput
                             v-model:value="
                               manualSmartNameDraft.studentInfo.name
+                            "
+                            field="name"
+                            :roster-entries="savedProjectRosterEntries"
+                            @select-entry="
+                              applyRosterSuggestionToManualSmartName
                             "
                           />
                         </n-form-item>
@@ -4179,6 +4414,84 @@ function goBack() {
                   </div>
                   <n-switch v-model:value="projectSettingsDraft.drawRegions" />
                 </div>
+                <div class="result-subsection-card">
+                  <div class="result-panel-head">
+                    <div>
+                      <div class="result-section-title">班级花名册</div>
+                      <div class="detail-subtitle">
+                        粘贴花名册文本后，系统会自动拆分列，并允许你指定每一列对应学号、姓名或班级。
+                      </div>
+                    </div>
+                    <n-tag round :bordered="false">
+                      已保存 {{ savedProjectRosterEntries.length }} 条
+                    </n-tag>
+                  </div>
+
+                  <n-input
+                    v-model:value="projectRosterDraftText"
+                    type="textarea"
+                    :autosize="{ minRows: 6, maxRows: 12 }"
+                    placeholder="逐行粘贴花名册，如：1120240584    郭爽    06212404"
+                  />
+
+                  <div
+                    v-if="parsedProjectRoster.columnCount"
+                    class="project-roster-column-grid"
+                  >
+                    <div
+                      v-for="columnIndex in parsedProjectRoster.columnCount"
+                      :key="columnIndex"
+                      class="project-roster-column-card"
+                    >
+                      <div class="field-label">第 {{ columnIndex }} 列</div>
+                      <n-select
+                        :value="projectRosterColumnFields[columnIndex - 1]"
+                        :options="STUDENT_ROSTER_COLUMN_FIELD_OPTIONS"
+                        @update:value="
+                          (value) =>
+                            updateProjectRosterColumnField(
+                              columnIndex - 1,
+                              value,
+                            )
+                        "
+                      />
+                      <div class="project-roster-column-sample">
+                        示例：
+                        {{
+                          parsedProjectRoster.rows
+                            .slice(0, 3)
+                            .map((row) => row[columnIndex - 1] || '空')
+                            .join(' / ')
+                        }}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div
+                    v-if="projectRosterPreviewEntries.length"
+                    class="project-roster-preview"
+                  >
+                    <div class="project-roster-preview-head">
+                      <span class="field-label">
+                        预览 {{ projectRosterPreviewEntries.length }} 条
+                      </span>
+                      <span class="detail-subtitle">
+                        点击保存项目设置后生效
+                      </span>
+                    </div>
+                    <div class="project-roster-preview-list">
+                      <div
+                        v-for="entry in projectRosterPreviewEntries.slice(0, 5)"
+                        :key="entry.id"
+                        class="project-roster-preview-row"
+                      >
+                        <strong>{{ entry.name || '未填写姓名' }}</strong>
+                        <span>学号 {{ entry.studentId || '未填写' }}</span>
+                        <span>班级 {{ entry.className || '未填写' }}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
                 <n-button
                   type="primary"
                   :loading="projectSettingsSaving"
@@ -4371,3 +4684,68 @@ function goBack() {
     </div>
   </div>
 </template>
+
+<style scoped>
+.result-subsection-card--allow-overflow {
+  position: relative;
+  z-index: 12;
+  overflow: visible;
+  contain: layout;
+  content-visibility: visible;
+}
+
+.project-roster-column-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.project-roster-column-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 14px;
+  background: rgba(248, 250, 252, 0.9);
+}
+
+.project-roster-column-sample {
+  font-size: 12px;
+  line-height: 1.6;
+  color: #64748b;
+}
+
+.project-roster-preview {
+  margin-top: 14px;
+  padding: 14px;
+  border: 1px solid rgba(15, 118, 110, 0.12);
+  border-radius: 14px;
+  background: rgba(240, 253, 250, 0.65);
+}
+
+.project-roster-preview-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.project-roster-preview-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.project-roster-preview-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.86);
+  color: #1e293b;
+}
+</style>

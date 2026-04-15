@@ -23,6 +23,22 @@ const projectSettingsSchema = z.object({
   enableScanPostProcess: z.boolean(),
   skipScanProcessing: z.boolean(),
   scanMarginRatio: z.number().finite().min(1),
+  studentRoster: z
+    .object({
+      rawText: z.string(),
+      columnFields: z.array(
+        z.enum(['studentId', 'name', 'className', 'ignore']),
+      ),
+      entries: z.array(
+        z.object({
+          id: z.string().min(1),
+          className: z.string(),
+          studentId: z.string(),
+          name: z.string(),
+        }),
+      ),
+    })
+    .nullable(),
 });
 
 const referenceAnswerSchema = z.string().trim().min(1);

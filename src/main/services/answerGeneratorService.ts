@@ -447,16 +447,18 @@ export class AnswerGeneratorService {
   }
 
   async savePromptPreset(input: PromptPresetInput): Promise<PromptPreset> {
+    const trimmedInputId = input.id?.trim();
+
     if (
-      input.id &&
-      BUILTIN_PROMPT_PRESETS.some((preset) => preset.id === input.id.trim())
+      trimmedInputId &&
+      BUILTIN_PROMPT_PRESETS.some((preset) => preset.id === trimmedInputId)
     ) {
       throw new Error('系统内置模板不能直接修改，请先复制为自定义模板。');
     }
 
     const db = getDatabase();
     const now = new Date().toISOString();
-    const id = input.id?.trim() || nanoid();
+    const id = trimmedInputId || nanoid();
 
     db.insert(promptPresetsTable)
       .values({

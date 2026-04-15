@@ -36,6 +36,7 @@ describe('score post-process AI script prompts', () => {
           enableScanPostProcess: false,
           skipScanProcessing: false,
           scanMarginRatio: 1,
+          studentRoster: null,
         },
       },
       scoreStats: {

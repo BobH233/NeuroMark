@@ -37,6 +37,7 @@ export interface ProjectSettings {
   enableScanPostProcess: boolean;
   skipScanProcessing: boolean;
   scanMarginRatio: number;
+  studentRoster: StudentRosterData | null;
 }
 
 export interface ProjectStats {
@@ -92,6 +93,19 @@ export interface StudentInfo {
   className: string;
   studentId: string;
   name: string;
+}
+
+export type StudentRosterField = keyof StudentInfo;
+export type StudentRosterColumnField = StudentRosterField | 'ignore';
+
+export interface StudentRosterEntry extends StudentInfo {
+  id: string;
+}
+
+export interface StudentRosterData {
+  rawText: string;
+  columnFields: StudentRosterColumnField[];
+  entries: StudentRosterEntry[];
 }
 
 export interface ScoreBreakdownItem {

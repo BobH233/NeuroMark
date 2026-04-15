@@ -184,6 +184,7 @@ export const useProjectsStore = defineStore('projects', {
           enableScanPostProcess: settings.enableScanPostProcess,
           skipScanProcessing: settings.skipScanProcessing,
           scanMarginRatio: settings.scanMarginRatio,
+          studentRoster: settings.studentRoster,
         },
       );
       this.applyProjectMeta(updated);
