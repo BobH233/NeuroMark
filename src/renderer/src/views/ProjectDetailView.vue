@@ -67,6 +67,8 @@ import { cloneFinalResult, computeDisplayedTotal } from '@/utils/result';
 import {
   buildStudentRosterData,
   detectStudentRosterColumnFields,
+  getNameSearchKeys,
+  normalizeSearchText,
   normalizeStudentRosterColumnFields,
   parseStudentRosterText,
 } from '@/utils/student-roster';
@@ -1066,7 +1068,7 @@ watch(
 );
 
 function normalizeResultSearchText(value: string): string {
-  return value.trim().toLocaleLowerCase('zh-CN');
+  return normalizeSearchText(value.trim());
 }
 
 function matchesResultSearch(
@@ -1077,11 +1079,15 @@ function matchesResultSearch(
     return true;
   }
 
+  const nameSearchKeys = getNameSearchKeys(entry.studentName);
+
   return [
     entry.paperLabel,
-    entry.studentName,
     entry.studentId,
     entry.className,
+    nameSearchKeys.text,
+    nameSearchKeys.fullPinyin,
+    nameSearchKeys.initials,
   ].some((field) => normalizeResultSearchText(field ?? '').includes(keyword));
 }
 

@@ -29,7 +29,7 @@ function normalizeText(value: string): string {
   return value.trim();
 }
 
-function normalizeSearchText(value: string): string {
+export function normalizeSearchText(value: string): string {
   return value.toLocaleLowerCase('zh-CN').replace(/\s+/g, '');
 }
 
@@ -269,7 +269,7 @@ export function buildStudentRosterData(
   };
 }
 
-function getNameSearchKeys(name: string) {
+export function getNameSearchKeys(name: string) {
   const normalizedName = normalizeText(name);
   if (!normalizedName) {
     return {
