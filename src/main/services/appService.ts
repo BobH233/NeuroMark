@@ -38,6 +38,16 @@ export class AppService {
     return join(app.getPath('documents'), 'NeuroMark Projects');
   }
 
+  setMainWindowTitle(title: string): void {
+    const parentWindow = this.getParentWindow();
+    if (!parentWindow || parentWindow.isDestroyed()) {
+      return;
+    }
+
+    const normalizedTitle = title.trim() || app.getName();
+    parentWindow.setTitle(normalizedTitle);
+  }
+
   async selectDirectory(): Promise<string | null> {
     const options: OpenDialogOptions = {
       title: '选择项目保存目录',

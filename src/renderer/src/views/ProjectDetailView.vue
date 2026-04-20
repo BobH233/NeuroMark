@@ -1634,7 +1634,7 @@ function buildSelectedResultPdfBaseName(): string {
   return verifiedParts.join('_') || paperFallback;
 }
 
-function applySelectedResultPrintTitle(): void {
+async function applySelectedResultPrintTitle(): Promise<void> {
   if (typeof document === 'undefined') {
     return;
   }
@@ -1643,10 +1643,12 @@ function applySelectedResultPrintTitle(): void {
     resultPrintDocumentTitleBeforePrint = document.title;
   }
 
-  document.title = buildSelectedResultPdfBaseName();
+  const nextTitle = buildSelectedResultPdfBaseName();
+  document.title = nextTitle;
+  await window.neuromark.app.setMainWindowTitle(nextTitle);
 }
 
-function restoreSelectedResultPrintTitle(): void {
+async function restoreSelectedResultPrintTitle(): Promise<void> {
   if (
     typeof document === 'undefined' ||
     resultPrintDocumentTitleBeforePrint == null
@@ -1655,6 +1657,9 @@ function restoreSelectedResultPrintTitle(): void {
   }
 
   document.title = resultPrintDocumentTitleBeforePrint;
+  await window.neuromark.app.setMainWindowTitle(
+    resultPrintDocumentTitleBeforePrint,
+  );
   resultPrintDocumentTitleBeforePrint = null;
 }
 
@@ -1716,7 +1721,7 @@ async function confirmExportResults() {
 
 function restoreResultPrintMode() {
   if (!isResultPrintMode.value) {
-    restoreSelectedResultPrintTitle();
+    void restoreSelectedResultPrintTitle();
     printResultLoading.value = false;
     return;
   }
@@ -1726,7 +1731,7 @@ function restoreResultPrintMode() {
     expandedQuestionIds.value = [...expandedQuestionIdsBeforePrint.value];
   }
   expandedQuestionIdsBeforePrint.value = null;
-  restoreSelectedResultPrintTitle();
+  void restoreSelectedResultPrintTitle();
   printResultLoading.value = false;
 }
 
@@ -1751,7 +1756,7 @@ async function waitForSelectedResultPrintReady() {
 }
 
 async function prepareSelectedResultForPrint() {
-  applySelectedResultPrintTitle();
+  await applySelectedResultPrintTitle();
   expandedQuestionIdsBeforePrint.value = [...expandedQuestionIds.value];
   expandedQuestionIds.value = editableResult.value!.questionScores.map(
     (question) => question.questionId,

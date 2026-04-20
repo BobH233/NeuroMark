@@ -9,6 +9,9 @@ export function registerAppIpc(services: ServiceBundle): void {
   ipcMain.handle('app:get-default-project-base-path', () =>
     services.app.getDefaultProjectBasePath(),
   );
+  ipcMain.handle('app:set-main-window-title', (_event, title: string) =>
+    services.app.setMainWindowTitle(title),
+  );
   ipcMain.handle('app:select-directory', () => services.app.selectDirectory());
   ipcMain.handle('app:select-export-directory', () =>
     services.app.selectExportDirectory(),

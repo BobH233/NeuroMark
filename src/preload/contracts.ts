@@ -683,6 +683,7 @@ export interface NeuromarkApi {
   app: {
     getVersion: () => Promise<string>;
     getDefaultProjectBasePath: () => Promise<string>;
+    setMainWindowTitle: (title: string) => Promise<void>;
     selectDirectory: () => Promise<string | null>;
     selectExportDirectory: () => Promise<string | null>;
     selectImages: () => Promise<string[]>;

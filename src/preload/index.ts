@@ -12,6 +12,8 @@ const api: NeuromarkApi = {
     getVersion: () => ipcRenderer.invoke('app:get-version'),
     getDefaultProjectBasePath: () =>
       ipcRenderer.invoke('app:get-default-project-base-path'),
+    setMainWindowTitle: (title) =>
+      ipcRenderer.invoke('app:set-main-window-title', title),
     selectDirectory: () => ipcRenderer.invoke('app:select-directory'),
     selectExportDirectory: () =>
       ipcRenderer.invoke('app:select-export-directory'),
