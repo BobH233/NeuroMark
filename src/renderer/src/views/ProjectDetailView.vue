@@ -4963,12 +4963,10 @@ function goBack() {
               <div class="statistics-export-hero-copy">
                 <div class="eyebrow">统计与导出</div>
                 <div class="project-section-title">
-                  汇总本次阅卷表现，并导出归档数据
+                  阅卷统计信息及导出选项
                 </div>
                 <div class="project-section-copy">
-                  统计数据会随当前分数口径切换而更新。原始分数会优先使用手动修改后的总分；
-                  若存在最新分数后处理结果，也可以切换到后处理分数视角。
-                  每小题正确率按“满分即正确，未满分即错误”统计。
+                  你可以在此处查看试卷分数的分布情况，以及题目的错误率，也可以导出结果为各种格式。
                 </div>
               </div>
               <div class="statistics-export-actions">
@@ -5015,6 +5013,7 @@ function goBack() {
                   <MetricCard
                     label="已批改"
                     :value="scoreStats.count"
+                    value-mode="text"
                     hint="参与统计的答卷数"
                   />
                   <MetricCard
@@ -5064,8 +5063,8 @@ function goBack() {
                 <n-card class="surface-card statistics-chart-card">
                   <div class="project-section-head">
                     <div class="project-section-title">总分分布</div>
-                    <div class="project-section-copy">
-                      按四舍五入后的整数分数聚合人数，横轴范围会根据当前数据自动调整。
+                    <div class="project-section-copy" style="margin-bottom:10px;">
+                      图表统计自动四舍五入到整数。
                     </div>
                   </div>
                   <div
@@ -5081,7 +5080,7 @@ function goBack() {
                     <div>
                       <div class="project-section-title">小题正确率</div>
                       <div class="project-section-copy">
-                        满分记为正确，非满分记为错误。列表超过最大高度后可在卡片内滚动查看。
+                        满分记为正确，非满分记为错误。
                       </div>
                     </div>
                     <n-button
