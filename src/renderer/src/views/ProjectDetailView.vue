@@ -1783,8 +1783,19 @@ async function printSelectedResult() {
 
   printResultLoading.value = true;
   try {
+    const targetPath = await window.neuromark.app.selectPdfSavePath(
+      buildSelectedResultPdfBaseName(),
+    );
+    if (!targetPath) {
+      printResultLoading.value = false;
+      return;
+    }
+
     await prepareSelectedResultForPrint();
-    window.print();
+    const outputPath =
+      await window.neuromark.app.exportCurrentWindowToPdf(targetPath);
+    message.success(`PDF 已导出到 ${outputPath}`);
+    restoreResultPrintMode();
   } catch (error) {
     restoreResultPrintMode();
     message.error(error instanceof Error ? error.message : '打印导出失败。');

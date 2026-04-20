@@ -25,6 +25,14 @@ export function registerAppIpc(services: ServiceBundle): void {
     (_event, defaultFileName: string) =>
       services.app.selectJsonSavePath(defaultFileName),
   );
+  ipcMain.handle(
+    'app:select-pdf-save-path',
+    (_event, defaultFileName: string) =>
+      services.app.selectPdfSavePath(defaultFileName),
+  );
+  ipcMain.handle('app:export-current-window-to-pdf', (_event, targetPath) =>
+    services.app.exportCurrentWindowToPdf(targetPath),
+  );
   ipcMain.handle('app:open-path', (_event, targetPath: string) =>
     services.app.openPath(targetPath),
   );

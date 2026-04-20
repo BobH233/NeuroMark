@@ -22,6 +22,10 @@ const api: NeuromarkApi = {
       ipcRenderer.invoke('app:select-paper-image-directory'),
     selectJsonSavePath: (defaultFileName) =>
       ipcRenderer.invoke('app:select-json-save-path', defaultFileName),
+    selectPdfSavePath: (defaultFileName) =>
+      ipcRenderer.invoke('app:select-pdf-save-path', defaultFileName),
+    exportCurrentWindowToPdf: (targetPath) =>
+      ipcRenderer.invoke('app:export-current-window-to-pdf', targetPath),
     openPath: (targetPath) => ipcRenderer.invoke('app:open-path', targetPath),
     openDevTools: () => ipcRenderer.invoke('app:open-devtools'),
     enableDebugPanel: () => ipcRenderer.invoke('app:enable-debug-panel'),

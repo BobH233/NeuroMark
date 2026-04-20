@@ -1,11 +1,12 @@
-import { copyFile, writeFile } from 'node:fs/promises';
-import { basename, extname, join } from 'node:path';
+import { copyFile, mkdir, writeFile } from 'node:fs/promises';
+import { basename, dirname, extname, join } from 'node:path';
 import {
   app,
   clipboard,
   dialog,
   nativeImage,
   shell,
+  type PrintToPDFOptions,
   type BrowserWindow,
   type OpenDialogOptions,
 } from 'electron';
@@ -134,6 +135,58 @@ export class AppService {
         });
 
     return result.canceled ? null : (result.filePath ?? null);
+  }
+
+  async selectPdfSavePath(defaultFileName: string): Promise<string | null> {
+    const safeFileName = normalizePdfFileName(defaultFileName);
+    const parent = this.getParentWindow();
+    const result = parent
+      ? await dialog.showSaveDialog(parent, {
+          title: '导出 PDF 文件',
+          defaultPath: safeFileName,
+          filters: [
+            { name: 'PDF 文件', extensions: ['pdf'] },
+            { name: '所有文件', extensions: ['*'] },
+          ],
+        })
+      : await dialog.showSaveDialog({
+          title: '导出 PDF 文件',
+          defaultPath: safeFileName,
+          filters: [
+            { name: 'PDF 文件', extensions: ['pdf'] },
+            { name: '所有文件', extensions: ['*'] },
+          ],
+        });
+
+    return result.canceled ? null : (result.filePath ?? null);
+  }
+
+  async exportCurrentWindowToPdf(targetPath: string): Promise<string> {
+    const parentWindow = this.getParentWindow();
+    if (!parentWindow || parentWindow.isDestroyed()) {
+      throw new Error('当前窗口不可用，无法导出 PDF。');
+    }
+
+    const normalizedTargetPath = normalizePdfFileName(targetPath);
+    const pdfOptions: PrintToPDFOptions = {
+      landscape: false,
+      printBackground: true,
+      preferCSSPageSize: true,
+      margins: {
+        marginType: 'default',
+      },
+      pageSize: 'A4',
+    };
+
+    const pdfBuffer = await parentWindow.webContents.printToPDF(pdfOptions);
+    const directoryPath = dirname(normalizedTargetPath);
+
+    if (directoryPath) {
+      await mkdir(directoryPath, { recursive: true });
+    }
+
+    await writeFile(normalizedTargetPath, pdfBuffer);
+    return normalizedTargetPath;
   }
 
   async openPath(targetPath: string): Promise<void> {
@@ -287,6 +340,15 @@ export class AppService {
 
     return result.filePath;
   }
+}
+
+function normalizePdfFileName(targetPath: string): string {
+  const trimmed = targetPath.trim();
+  if (!trimmed) {
+    throw new Error('PDF 保存路径不能为空。');
+  }
+
+  return trimmed.toLowerCase().endsWith('.pdf') ? trimmed : `${trimmed}.pdf`;
 }
 
 function normalizePreviewDisplayOptions(

@@ -689,6 +689,8 @@ export interface NeuromarkApi {
     selectImages: () => Promise<string[]>;
     selectPaperImageDirectory: () => Promise<string | null>;
     selectJsonSavePath: (defaultFileName: string) => Promise<string | null>;
+    selectPdfSavePath: (defaultFileName: string) => Promise<string | null>;
+    exportCurrentWindowToPdf: (targetPath: string) => Promise<string>;
     openPath: (targetPath: string) => Promise<void>;
     openDevTools: () => Promise<void>;
     enableDebugPanel: () => Promise<void>;
