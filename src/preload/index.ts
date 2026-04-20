@@ -22,6 +22,8 @@ const api: NeuromarkApi = {
       ipcRenderer.invoke('app:select-paper-image-directory'),
     selectJsonSavePath: (defaultFileName) =>
       ipcRenderer.invoke('app:select-json-save-path', defaultFileName),
+    selectExcelSavePath: (defaultFileName) =>
+      ipcRenderer.invoke('app:select-excel-save-path', defaultFileName),
     selectPdfSavePath: (defaultFileName) =>
       ipcRenderer.invoke('app:select-pdf-save-path', defaultFileName),
     exportCurrentWindowToPdf: (targetPath) =>
@@ -117,6 +119,14 @@ const api: NeuromarkApi = {
       ipcRenderer.invoke('results:delete', projectId, paperId),
     exportJson: (projectId, options) =>
       ipcRenderer.invoke('results:export-json', projectId, options),
+    exportExcel: (projectId, options) =>
+      ipcRenderer.invoke('results:export-excel', projectId, options),
+    exportQuestionAccuracyExcel: (projectId, options) =>
+      ipcRenderer.invoke(
+        'results:export-question-accuracy-excel',
+        projectId,
+        options,
+      ),
     getSmartNameMatchSnapshot: (projectId) =>
       ipcRenderer.invoke('results:get-smart-name-match-snapshot', projectId),
     startSmartNameMatch: (projectId, rosterText, options) =>

@@ -2,6 +2,8 @@ import { defineStore } from 'pinia';
 import type {
   CreateProjectValidationResult,
   CreateProjectInput,
+  ExportQuestionAccuracyExcelOptions,
+  ExportResultsExcelOptions,
   ExportResultsOptions,
   FinalResult,
   ProjectDetail,
@@ -221,6 +223,21 @@ export const useProjectsStore = defineStore('projects', {
     },
     async exportResults(projectId: string, options?: ExportResultsOptions) {
       return window.neuromark.results.exportJson(projectId, options);
+    },
+    async exportResultsExcel(
+      projectId: string,
+      options?: ExportResultsExcelOptions,
+    ) {
+      return window.neuromark.results.exportExcel(projectId, options);
+    },
+    async exportQuestionAccuracyExcel(
+      projectId: string,
+      options?: ExportQuestionAccuracyExcelOptions,
+    ) {
+      return window.neuromark.results.exportQuestionAccuracyExcel(
+        projectId,
+        options,
+      );
     },
     getResultByPaperId(paperId: string): ResultRecord | null {
       return (

@@ -161,6 +161,30 @@ export class AppService {
     return result.canceled ? null : (result.filePath ?? null);
   }
 
+  async selectExcelSavePath(defaultFileName: string): Promise<string | null> {
+    const safeFileName = normalizeExcelFileName(defaultFileName);
+    const parent = this.getParentWindow();
+    const result = parent
+      ? await dialog.showSaveDialog(parent, {
+          title: '导出 Excel 文件',
+          defaultPath: safeFileName,
+          filters: [
+            { name: 'Excel 文件', extensions: ['xlsx'] },
+            { name: '所有文件', extensions: ['*'] },
+          ],
+        })
+      : await dialog.showSaveDialog({
+          title: '导出 Excel 文件',
+          defaultPath: safeFileName,
+          filters: [
+            { name: 'Excel 文件', extensions: ['xlsx'] },
+            { name: '所有文件', extensions: ['*'] },
+          ],
+        });
+
+    return result.canceled ? null : (result.filePath ?? null);
+  }
+
   async exportCurrentWindowToPdf(targetPath: string): Promise<string> {
     const parentWindow = this.getParentWindow();
     if (!parentWindow || parentWindow.isDestroyed()) {
@@ -349,6 +373,15 @@ function normalizePdfFileName(targetPath: string): string {
   }
 
   return trimmed.toLowerCase().endsWith('.pdf') ? trimmed : `${trimmed}.pdf`;
+}
+
+function normalizeExcelFileName(targetPath: string): string {
+  const trimmed = targetPath.trim();
+  if (!trimmed) {
+    throw new Error('Excel 保存路径不能为空。');
+  }
+
+  return trimmed.toLowerCase().endsWith('.xlsx') ? trimmed : `${trimmed}.xlsx`;
 }
 
 function normalizePreviewDisplayOptions(

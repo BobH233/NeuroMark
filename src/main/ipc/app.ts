@@ -26,6 +26,11 @@ export function registerAppIpc(services: ServiceBundle): void {
       services.app.selectJsonSavePath(defaultFileName),
   );
   ipcMain.handle(
+    'app:select-excel-save-path',
+    (_event, defaultFileName: string) =>
+      services.app.selectExcelSavePath(defaultFileName),
+  );
+  ipcMain.handle(
     'app:select-pdf-save-path',
     (_event, defaultFileName: string) =>
       services.app.selectPdfSavePath(defaultFileName),

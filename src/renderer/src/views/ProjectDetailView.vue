@@ -10,6 +10,17 @@ import {
 } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { MdEditor } from 'md-editor-v3';
+import * as echarts from 'echarts/core';
+import { LineChart } from 'echarts/charts';
+import {
+  GridComponent,
+  TooltipComponent,
+  type GridComponentOption,
+  type TooltipComponentOption,
+} from 'echarts/components';
+import { CanvasRenderer } from 'echarts/renderers';
+import type { ComposeOption, ECharts } from 'echarts/core';
+import type { LineSeriesOption } from 'echarts/charts';
 import {
   NAlert,
   NButton,
@@ -50,6 +61,7 @@ import type {
   SmartNameMatchSnapshot,
   SmartNameMatchSuggestion,
   ProjectSettings,
+  ScorePostProcessProjectSnapshot,
 } from '@preload/contracts';
 import ImagePreviewTile from '@/components/ImagePreviewTile.vue';
 import JsonTreeView from '@/components/JsonTreeView.vue';
@@ -72,6 +84,12 @@ import {
   normalizeStudentRosterColumnFields,
   parseStudentRosterText,
 } from '@/utils/student-roster';
+
+echarts.use([CanvasRenderer, GridComponent, LineChart, TooltipComponent]);
+
+type ScoreDistributionChartOption = ComposeOption<
+  GridComponentOption | TooltipComponentOption | LineSeriesOption
+>;
 
 const route = useRoute();
 const router = useRouter();
@@ -152,8 +170,11 @@ const scanActionLoading = ref(false);
 const gradingActionLoading = ref(false);
 const exportDialogVisible = ref(false);
 const exportJsonLoading = ref(false);
+const exportExcelLoading = ref(false);
+const exportQuestionAccuracyExcelLoading = ref(false);
 const printResultLoading = ref(false);
 const exportScope = ref<ResultExportScope>('graded');
+const statisticsScoreMode = ref<'original' | 'post-processed'>('original');
 const projectSettingsSaving = ref(false);
 const removingPaperId = ref('');
 const deletingResultPaperId = ref('');
@@ -174,6 +195,7 @@ const smartNameContextMenu = ref({
 });
 const smartNameReasoningRef = ref<HTMLElement | null>(null);
 const smartNamePreviewRef = ref<HTMLElement | null>(null);
+const scoreDistributionChartRef = ref<HTMLElement | null>(null);
 const activeQuestionId = ref('');
 const previewDisplayOptions = ref<PreviewDisplayOptions>({
   ...DEFAULT_PREVIEW_DISPLAY_OPTIONS,
@@ -191,6 +213,10 @@ let lockedShellContent: HTMLElement | null = null;
 let smartNameMatchUnsubscribe: (() => void) | null = null;
 let shellScrollObserver: ResizeObserver | null = null;
 let resultPrintDocumentTitleBeforePrint: string | null = null;
+let scoreDistributionChart: ECharts | null = null;
+const scorePostProcessSnapshot = ref<ScorePostProcessProjectSnapshot | null>(
+  null,
+);
 
 function setShellScrollLocked(locked: boolean) {
   if (typeof document === 'undefined') {
@@ -524,6 +550,252 @@ const selectableResultEntries = computed(() =>
     ? reviewResultEntries.value
     : gradedResultEntries.value,
 );
+const latestPostProcessRun = computed(
+  () =>
+    scorePostProcessSnapshot.value?.projectId === projectId.value
+      ? scorePostProcessSnapshot.value.latestRun
+      : null,
+);
+const latestPostProcessScoreMap = computed(
+  () =>
+    new Map(
+      (latestPostProcessRun.value?.results ?? []).map((item) => [
+        item.paperId,
+        item.processedScore,
+      ]),
+    ),
+);
+const hasPostProcessedScores = computed(() =>
+  latestPostProcessRun.value?.results.some((item) =>
+    Number.isFinite(item.processedScore),
+  ),
+);
+const statisticsScoreOptions = computed(() => {
+  const options: Array<{
+    label: string;
+    value: 'original' | 'post-processed';
+  }> = [
+    { label: '原始分数', value: 'original' as const },
+  ];
+
+  if (hasPostProcessedScores.value) {
+    options.push({ label: '后处理分数', value: 'post-processed' as const });
+  }
+
+  return options;
+});
+const statisticsScoreEntries = computed(() =>
+  gradedResultEntries.value.map((entry) => {
+    const originalScore = entry.displayScore;
+    const postProcessedScore =
+      latestPostProcessScoreMap.value.get(entry.result.paperId) ?? null;
+
+    return {
+      ...entry,
+      originalScore,
+      postProcessedScore,
+      statisticsScore:
+        statisticsScoreMode.value === 'post-processed' && postProcessedScore != null
+          ? postProcessedScore
+          : originalScore,
+    };
+  }),
+);
+const scoreValues = computed(() =>
+  statisticsScoreEntries.value.map((entry) => entry.statisticsScore),
+);
+const scoreStats = computed(() => {
+  const scores = scoreValues.value;
+  if (!scores.length) {
+    return {
+      count: 0,
+      average: 0,
+      max: 0,
+      min: 0,
+      variance: 0,
+      standardDeviation: 0,
+    };
+  }
+
+  const sum = scores.reduce((total, score) => total + score, 0);
+  const average = sum / scores.length;
+  const variance =
+    scores.reduce((total, score) => total + (score - average) ** 2, 0) /
+    scores.length;
+
+  return {
+    count: scores.length,
+    average,
+    max: Math.max(...scores),
+    min: Math.min(...scores),
+    variance,
+    standardDeviation: Math.sqrt(variance),
+  };
+});
+const questionStats = computed(() => {
+  const questionMap = new Map<
+    string,
+    {
+      questionId: string;
+      questionTitle: string;
+      maxScore: number;
+      correctCount: number;
+      totalCount: number;
+    }
+  >();
+
+  for (const entry of gradedResultEntries.value) {
+    for (const question of entry.result.finalResult.questionScores) {
+      const current =
+        questionMap.get(question.questionId) ??
+        {
+          questionId: question.questionId,
+          questionTitle: question.questionTitle,
+          maxScore: question.maxScore,
+          correctCount: 0,
+          totalCount: 0,
+        };
+
+      current.totalCount += 1;
+      if (question.score >= question.maxScore) {
+        current.correctCount += 1;
+      }
+      questionMap.set(question.questionId, current);
+    }
+  }
+
+  return [...questionMap.values()]
+    .map((item) => ({
+      ...item,
+      correctRate: item.totalCount
+        ? (item.correctCount / item.totalCount) * 100
+        : 0,
+    }))
+    .sort((left, right) =>
+      left.questionId.localeCompare(right.questionId, 'zh-CN', {
+        numeric: true,
+      }),
+    );
+});
+const scoreDistribution = computed(() => {
+  const scores = scoreValues.value;
+  if (!scores.length) {
+    return [] as Array<{ score: number; count: number }>;
+  }
+
+  const bucketMap = new Map<number, number>();
+  for (const score of scores) {
+    const bucket = Math.round(score);
+    bucketMap.set(bucket, (bucketMap.get(bucket) ?? 0) + 1);
+  }
+
+  return [...bucketMap.entries()]
+    .map(([score, count]) => ({ score, count }))
+    .sort((left, right) => left.score - right.score);
+});
+
+function formatStatNumber(value: number): string {
+  return Number.isInteger(value) ? String(value) : value.toFixed(2);
+}
+
+function renderScoreDistributionChart() {
+  const chartHost = scoreDistributionChartRef.value;
+  if (!chartHost) {
+    return;
+  }
+
+  if (
+    scoreDistributionChart &&
+    scoreDistributionChart.getDom() !== chartHost
+  ) {
+    scoreDistributionChart.dispose();
+    scoreDistributionChart = null;
+  }
+
+  scoreDistributionChart ??= echarts.init(chartHost);
+  const distribution = scoreDistribution.value;
+  const minScore = distribution.length
+    ? Math.min(...distribution.map((item) => item.score))
+    : 0;
+  const maxScore = distribution.length
+    ? Math.max(...distribution.map((item) => item.score))
+    : 100;
+  const option: ScoreDistributionChartOption = {
+    color: ['#0f8b8d'],
+    tooltip: {
+      trigger: 'axis',
+      formatter: (params) => {
+        const item = Array.isArray(params) ? params[0] : params;
+        const value = Array.isArray(item.value) ? item.value : [item.name, item.value];
+        return `总分：${value[0]}<br />人数：${value[1]}`;
+      },
+    },
+    grid: {
+      left: 40,
+      right: 22,
+      top: 28,
+      bottom: 34,
+      containLabel: true,
+    },
+    xAxis: {
+      type: 'value',
+      name: '分数',
+      min: minScore - 1,
+      max: maxScore + 1,
+      interval:
+        maxScore - minScore <= 10
+          ? 1
+          : Math.max(Math.ceil((maxScore - minScore) / 10), 1),
+      axisLine: { lineStyle: { color: '#b8c4d1' } },
+      axisLabel: { color: '#5f7388' },
+    },
+    yAxis: {
+      type: 'value',
+      minInterval: 1,
+      axisLabel: { color: '#5f7388' },
+      splitLine: { lineStyle: { color: 'rgba(148, 163, 184, 0.2)' } },
+    },
+    series: [
+      {
+        name: '人数',
+        type: 'line',
+        smooth: true,
+        symbolSize: 8,
+        data: distribution.map((item) => [item.score, item.count]),
+        areaStyle: {
+          color: {
+            type: 'linear',
+            x: 0,
+            y: 0,
+            x2: 0,
+            y2: 1,
+            colorStops: [
+              { offset: 0, color: 'rgba(15, 139, 141, 0.28)' },
+              { offset: 1, color: 'rgba(15, 139, 141, 0.02)' },
+            ],
+          },
+        },
+        lineStyle: { width: 3 },
+      },
+    ],
+  };
+
+  scoreDistributionChart.setOption(option, true);
+}
+
+function resizeScoreDistributionChart() {
+  scoreDistributionChart?.resize();
+}
+
+async function loadScorePostProcessSnapshot() {
+  if (!projectId.value) {
+    scorePostProcessSnapshot.value = null;
+    return;
+  }
+
+  scorePostProcessSnapshot.value =
+    await window.neuromark.scorePostProcess.getProjectSnapshot(projectId.value);
+}
 
 function buildOriginalPreviewImage(
   paper: PaperRecord,
@@ -1252,9 +1524,33 @@ watch(
   { immediate: true },
 );
 
+watch(
+  hasPostProcessedScores,
+  (value) => {
+    if (!value && statisticsScoreMode.value === 'post-processed') {
+      statisticsScoreMode.value = 'original';
+    }
+  },
+  { immediate: true },
+);
+
+watch(
+  [scoreDistribution, activeTab],
+  async () => {
+    if (activeTab.value !== 'statistics-export') {
+      return;
+    }
+    await nextTick();
+    renderScoreDistributionChart();
+    scoreDistributionChart?.resize();
+  },
+  { deep: true },
+);
+
 onMounted(async () => {
   window.addEventListener('afterprint', restoreResultPrintMode);
   window.addEventListener('resize', updateOuterScrollState);
+  window.addEventListener('resize', resizeScoreDistributionChart);
   await debugPanelStore.initialize();
   smartNameMatchUnsubscribe = window.neuromark.results.onSmartNameMatchUpdated(
     (snapshot) => {
@@ -1273,13 +1569,17 @@ onMounted(async () => {
     await projectsStore.bootstrap();
   }
 
+  await loadScorePostProcessSnapshot();
   await refreshOuterScrollState();
 });
 
 onBeforeUnmount(() => {
   window.removeEventListener('afterprint', restoreResultPrintMode);
   window.removeEventListener('resize', updateOuterScrollState);
+  window.removeEventListener('resize', resizeScoreDistributionChart);
   restoreResultPrintMode();
+  scoreDistributionChart?.dispose();
+  scoreDistributionChart = null;
   smartNameMatchUnsubscribe?.();
   smartNameMatchUnsubscribe = null;
   smartNameContextMenu.value.visible = false;
@@ -1291,6 +1591,7 @@ onBeforeUnmount(() => {
 });
 
 watch(projectId, () => {
+  void loadScorePostProcessSnapshot();
   void refreshOuterScrollState();
 });
 
@@ -1722,6 +2023,64 @@ async function confirmExportResults() {
     message.error(error instanceof Error ? error.message : '导出 JSON 失败。');
   } finally {
     exportJsonLoading.value = false;
+  }
+}
+
+async function exportResultsExcel() {
+  if (!selectedProject.value || exportExcelLoading.value) {
+    return;
+  }
+
+  const defaultFileName = `${normalizeExportFileName(
+    selectedProject.value.name,
+  )}-scores.xlsx`;
+  const targetPath =
+    await window.neuromark.app.selectExcelSavePath(defaultFileName);
+  if (!targetPath) {
+    return;
+  }
+
+  exportExcelLoading.value = true;
+  try {
+    const outputPath = await projectsStore.exportResultsExcel(
+      selectedProject.value.id,
+      { targetPath },
+    );
+    message.success(`Excel 已导出到 ${outputPath}`);
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : '导出 Excel 失败。');
+  } finally {
+    exportExcelLoading.value = false;
+  }
+}
+
+async function exportQuestionAccuracyExcel() {
+  if (!selectedProject.value || exportQuestionAccuracyExcelLoading.value) {
+    return;
+  }
+
+  const defaultFileName = `${normalizeExportFileName(
+    selectedProject.value.name,
+  )}-question-accuracy.xlsx`;
+  const targetPath =
+    await window.neuromark.app.selectExcelSavePath(defaultFileName);
+  if (!targetPath) {
+    return;
+  }
+
+  exportQuestionAccuracyExcelLoading.value = true;
+  try {
+    const outputPath = await projectsStore.exportQuestionAccuracyExcel(
+      selectedProject.value.id,
+      { targetPath },
+    );
+    message.success(`小题正确率 Excel 已导出到 ${outputPath}`);
+  } catch (error) {
+    message.error(
+      error instanceof Error ? error.message : '导出小题正确率 Excel 失败。',
+    );
+  } finally {
+    exportQuestionAccuracyExcelLoading.value = false;
   }
 }
 
@@ -2509,7 +2868,6 @@ function goBack() {
           >
             开始批阅
           </n-button>
-          <n-button tertiary @click="exportResults">导出 JSON</n-button>
         </div>
       </div>
       <div class="hero-actions">
@@ -4597,6 +4955,200 @@ function goBack() {
             :results="detail.results"
             :papers="detail.originals"
           />
+        </n-tab-pane>
+
+        <n-tab-pane name="statistics-export" tab="统计与导出">
+          <div class="statistics-export-stack">
+            <n-card class="surface-card statistics-export-hero">
+              <div class="statistics-export-hero-copy">
+                <div class="eyebrow">统计与导出</div>
+                <div class="project-section-title">
+                  汇总本次阅卷表现，并导出归档数据
+                </div>
+                <div class="project-section-copy">
+                  统计数据会随当前分数口径切换而更新。原始分数会优先使用手动修改后的总分；
+                  若存在最新分数后处理结果，也可以切换到后处理分数视角。
+                  每小题正确率按“满分即正确，未满分即错误”统计。
+                </div>
+              </div>
+              <div class="statistics-export-actions">
+                <n-button
+                  type="primary"
+                  secondary
+                  :loading="exportJsonLoading"
+                  @click="exportResults"
+                >
+                  导出 JSON
+                </n-button>
+                <n-button
+                  type="primary"
+                  :loading="exportExcelLoading"
+                  @click="exportResultsExcel"
+                >
+                  导出成绩 Excel
+                </n-button>
+              </div>
+            </n-card>
+
+            <div v-if="gradedResultEntries.length" class="statistics-main-column">
+              <section class="statistics-main-column">
+                <n-card
+                  v-if="hasPostProcessedScores"
+                  class="surface-card statistics-filter-card"
+                >
+                  <div class="statistics-filter-row">
+                    <div>
+                      <div class="project-section-title">统计口径</div>
+                      <div class="project-section-copy">
+                        选择按原始分数还是后处理分数查看统计图表与汇总指标。
+                      </div>
+                    </div>
+                    <n-select
+                      v-model:value="statisticsScoreMode"
+                      class="statistics-filter-select"
+                      :options="statisticsScoreOptions"
+                    />
+                  </div>
+                </n-card>
+
+                <div class="metrics-grid statistics-metrics-grid">
+                  <MetricCard
+                    label="已批改"
+                    :value="scoreStats.count"
+                    hint="参与统计的答卷数"
+                  />
+                  <MetricCard
+                    label="平均分"
+                    :value="formatStatNumber(scoreStats.average)"
+                    value-mode="text"
+                    :hint="
+                      statisticsScoreMode === 'post-processed'
+                        ? '后处理总分平均值'
+                        : '原始最终总分平均值'
+                    "
+                  />
+                  <MetricCard
+                    label="最高分"
+                    :value="formatStatNumber(scoreStats.max)"
+                    value-mode="text"
+                    :hint="
+                      statisticsScoreMode === 'post-processed'
+                        ? '后处理总分最高值'
+                        : '原始最终总分最高值'
+                    "
+                  />
+                  <MetricCard
+                    label="最低分"
+                    :value="formatStatNumber(scoreStats.min)"
+                    value-mode="text"
+                    :hint="
+                      statisticsScoreMode === 'post-processed'
+                        ? '后处理总分最低值'
+                        : '原始最终总分最低值'
+                    "
+                  />
+                  <MetricCard
+                    label="方差"
+                    :value="formatStatNumber(scoreStats.variance)"
+                    value-mode="text"
+                    hint="按总体方差计算"
+                  />
+                  <MetricCard
+                    label="标准差"
+                    :value="formatStatNumber(scoreStats.standardDeviation)"
+                    value-mode="text"
+                    hint="分数离散程度"
+                  />
+                </div>
+
+                <n-card class="surface-card statistics-chart-card">
+                  <div class="project-section-head">
+                    <div class="project-section-title">总分分布</div>
+                    <div class="project-section-copy">
+                      按四舍五入后的整数分数聚合人数，横轴范围会根据当前数据自动调整。
+                    </div>
+                  </div>
+                  <div
+                    ref="scoreDistributionChartRef"
+                    class="statistics-score-chart"
+                  />
+                </n-card>
+
+                <n-card class="surface-card statistics-question-card">
+                  <div
+                    class="project-section-head statistics-question-card-head"
+                  >
+                    <div>
+                      <div class="project-section-title">小题正确率</div>
+                      <div class="project-section-copy">
+                        满分记为正确，非满分记为错误。列表超过最大高度后可在卡片内滚动查看。
+                      </div>
+                    </div>
+                    <n-button
+                      secondary
+                      :loading="exportQuestionAccuracyExcelLoading"
+                      @click="exportQuestionAccuracyExcel"
+                    >
+                      导出正确率 Excel
+                    </n-button>
+                  </div>
+                  <div class="statistics-question-list">
+                    <div
+                      v-for="question in questionStats"
+                      :key="question.questionId"
+                      class="statistics-question-row"
+                    >
+                      <div class="statistics-question-row-head">
+                        <div class="statistics-question-main">
+                          <n-tag
+                            size="small"
+                            round
+                            :bordered="false"
+                            type="info"
+                          >
+                            {{ question.questionId }}
+                          </n-tag>
+                          <div>
+                            <div
+                              class="statistics-question-title question-card-title--markdown"
+                            >
+                              <MarkdownRenderer
+                                class="question-card-title-content"
+                                :source="
+                                  question.questionTitle || question.questionId
+                                "
+                              />
+                            </div>
+                            <div class="statistics-question-meta">
+                              满分 {{ question.maxScore }} 分 ·
+                              {{ question.correctCount }}/{{
+                                question.totalCount
+                              }}
+                              人满分
+                            </div>
+                          </div>
+                        </div>
+                        <strong>
+                          {{ formatStatNumber(question.correctRate) }}%
+                        </strong>
+                      </div>
+                      <div class="statistics-rate-track">
+                        <div
+                          class="statistics-rate-bar"
+                          :style="{ width: `${question.correctRate}%` }"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </n-card>
+              </section>
+            </div>
+
+            <n-empty
+              v-else
+              description="完成批阅后，这里会显示分数统计与导出入口。"
+            />
+          </div>
         </n-tab-pane>
 
         <n-tab-pane name="project-settings" tab="项目设置">

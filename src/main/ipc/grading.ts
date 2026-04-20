@@ -1,5 +1,7 @@
 import { ipcMain } from 'electron';
 import type {
+  ExportQuestionAccuracyExcelOptions,
+  ExportResultsExcelOptions,
   ExportResultsOptions,
   FinalResult,
   SaveFinalResultOptions,
@@ -36,5 +38,18 @@ export function registerGradingIpc(services: ServiceBundle): void {
   );
   ipcMain.handle('results:export-json', (_event, projectId: string, options?: ExportResultsOptions) =>
     services.projects.exportResults(projectId, options),
+  );
+  ipcMain.handle(
+    'results:export-excel',
+    (_event, projectId: string, options?: ExportResultsExcelOptions) =>
+      services.projects.exportResultsExcel(projectId, options),
+  );
+  ipcMain.handle(
+    'results:export-question-accuracy-excel',
+    (
+      _event,
+      projectId: string,
+      options?: ExportQuestionAccuracyExcelOptions,
+    ) => services.projects.exportQuestionAccuracyExcel(projectId, options),
   );
 }

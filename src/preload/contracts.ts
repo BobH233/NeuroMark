@@ -605,6 +605,14 @@ export interface ExportResultsOptions {
   targetPath?: string;
 }
 
+export interface ExportResultsExcelOptions {
+  targetPath?: string;
+}
+
+export interface ExportQuestionAccuracyExcelOptions {
+  targetPath?: string;
+}
+
 export interface CreateProjectInput {
   name: string;
   basePath: string;
@@ -689,6 +697,7 @@ export interface NeuromarkApi {
     selectImages: () => Promise<string[]>;
     selectPaperImageDirectory: () => Promise<string | null>;
     selectJsonSavePath: (defaultFileName: string) => Promise<string | null>;
+    selectExcelSavePath: (defaultFileName: string) => Promise<string | null>;
     selectPdfSavePath: (defaultFileName: string) => Promise<string | null>;
     exportCurrentWindowToPdf: (targetPath: string) => Promise<string>;
     openPath: (targetPath: string) => Promise<void>;
@@ -756,6 +765,14 @@ export interface NeuromarkApi {
     exportJson: (
       projectId: string,
       options?: ExportResultsOptions,
+    ) => Promise<string>;
+    exportExcel: (
+      projectId: string,
+      options?: ExportResultsExcelOptions,
+    ) => Promise<string>;
+    exportQuestionAccuracyExcel: (
+      projectId: string,
+      options?: ExportQuestionAccuracyExcelOptions,
     ) => Promise<string>;
     getSmartNameMatchSnapshot: (
       projectId: string,

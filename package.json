@@ -36,6 +36,8 @@
     "dayjs": "^1.11.20",
     "dompurify": "^3.3.3",
     "drizzle-orm": "^0.45.2",
+    "echarts": "^6.0.0",
+    "exceljs": "^4.4.0",
     "fs-extra": "^11.3.4",
     "highlight.js": "^11.11.1",
     "katex": "^0.16.44",

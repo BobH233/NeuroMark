@@ -1,9 +1,12 @@
 import path from 'node:path';
 import fs from 'fs-extra';
+import ExcelJS from 'exceljs';
 import { and, desc, eq, isNull } from 'drizzle-orm';
 import type {
   CreateProjectValidationResult,
   CreateProjectInput,
+  ExportQuestionAccuracyExcelOptions,
+  ExportResultsExcelOptions,
   ExportResultsOptions,
   FinalResult,
   ModelResult,
@@ -21,6 +24,7 @@ import type {
   ResultRecord,
   ResultExportScope,
   SaveFinalResultOptions,
+  ScorePostProcessRunRecord,
   ProjectRubricDebug,
 } from '@preload/contracts';
 import { getDatabase } from '@main/database/client';
@@ -57,6 +61,10 @@ const DEFAULT_PROJECT_SETTINGS: ProjectSettings = {
 
 function normalizeStudentInfoText(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
+}
+
+function computeDisplayedTotal(result: FinalResult): number {
+  return result.manualTotalScore ?? result.totalScore;
 }
 
 function normalizeStudentRosterEntry(
@@ -455,6 +463,10 @@ function getResultFilePath(rootPath: string, paperId: string): string {
   return path.join(getProjectStructure(rootPath).resultsDir, `${paperId}.json`);
 }
 
+function getLatestScorePostProcessRunPath(rootPath: string): string {
+  return path.join(rootPath, 'score-post-process', 'latest.json');
+}
+
 function toRelativeAssetName(filePath?: string): string | null {
   if (!filePath) {
     return null;
@@ -471,6 +483,16 @@ function buildExportFileName(
   return scope === 'graded-and-verified'
     ? `${safeName}-verified-results.json`
     : `${safeName}-results.json`;
+}
+
+function buildExcelExportFileName(projectName: string): string {
+  const safeName = toSafeFolderName(projectName);
+  return `${safeName}-scores.xlsx`;
+}
+
+function buildQuestionAccuracyExcelExportFileName(projectName: string): string {
+  const safeName = toSafeFolderName(projectName);
+  return `${safeName}-question-accuracy.xlsx`;
 }
 
 interface PaperGradingSnapshot {
@@ -1676,6 +1698,279 @@ export class ProjectService {
       { spaces: 2 },
     );
     return outputPath;
+  }
+
+  async exportResultsExcel(
+    projectId: string,
+    options?: ExportResultsExcelOptions,
+  ): Promise<string> {
+    const project = await this.getProjectById(projectId);
+    const [results, papers] = await Promise.all([
+      this.listResults(projectId),
+      this.listProjectPapers(projectId),
+    ]);
+    const structure = getProjectStructure(project.rootPath);
+    const outputPath =
+      options?.targetPath ??
+      path.join(structure.exportsDir, buildExcelExportFileName(project.name));
+    const latestPostProcessScoreMap =
+      await this.getLatestPostProcessScoreMap(project.rootPath);
+    const exportableResults = results.filter(
+      (
+        item,
+      ): item is ResultRecord & {
+        finalResult: FinalResult;
+      } => Boolean(item.finalResult),
+    );
+    const paperOrderMap = new Map(
+      papers.map((paper, index) => [paper.id, index]),
+    );
+    const questionMap = new Map<
+      string,
+      {
+        questionId: string;
+        questionTitle: string;
+        maxScore: number;
+      }
+    >();
+
+    for (const result of exportableResults) {
+      for (const question of result.finalResult.questionScores) {
+        if (questionMap.has(question.questionId)) {
+          continue;
+        }
+
+        questionMap.set(question.questionId, {
+          questionId: question.questionId,
+          questionTitle: question.questionTitle,
+          maxScore: question.maxScore,
+        });
+      }
+    }
+
+    const questions = [...questionMap.values()].sort((left, right) =>
+      left.questionId.localeCompare(right.questionId, 'zh-CN', {
+        numeric: true,
+      }),
+    );
+    const paperMap = new Map(papers.map((paper) => [paper.id, paper]));
+    const rows = exportableResults
+      .sort((left, right) => {
+        const leftOrder =
+          paperOrderMap.get(left.paperId) ?? Number.MAX_SAFE_INTEGER;
+        const rightOrder =
+          paperOrderMap.get(right.paperId) ?? Number.MAX_SAFE_INTEGER;
+        return (
+          leftOrder - rightOrder ||
+          left.paperId.localeCompare(right.paperId, 'zh-CN')
+        );
+      })
+      .map((result) => {
+        const finalResult = result.finalResult;
+        const questionScoreMap = new Map(
+          finalResult.questionScores.map((question) => [
+            question.questionId,
+            question.score,
+          ]),
+        );
+        const paper = paperMap.get(result.paperId);
+        const postProcessedScore = latestPostProcessScoreMap.get(
+          result.paperId,
+        );
+
+        return [
+          paper?.paperCode ?? result.paperId,
+          finalResult.studentInfo.className,
+          finalResult.studentInfo.studentId,
+          finalResult.studentInfo.name,
+          postProcessedScore ?? computeDisplayedTotal(finalResult),
+          postProcessedScore ?? '',
+          finalResult.totalScore,
+          finalResult.manualTotalScore ?? '',
+          result.nameMatchStatus === 'verified' ? '已核名' : '未核名',
+          ...questions.map(
+            (question) => questionScoreMap.get(question.questionId) ?? '',
+          ),
+        ];
+      });
+    const headers = [
+      '答卷编号',
+      '班级',
+      '学号',
+      '姓名',
+      '最终总分',
+      '后处理总分',
+      '模型总分',
+      '手动总分',
+      '核名状态',
+      ...questions.map(
+        (question) =>
+          `${question.questionId}-${question.questionTitle || question.questionId} (${question.maxScore}分)`,
+      ),
+    ];
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = 'NeuroMark';
+    workbook.created = new Date();
+    const worksheet = workbook.addWorksheet('批阅成绩');
+    worksheet.addRow(headers);
+    for (const row of rows) {
+      worksheet.addRow(row);
+    }
+    worksheet.views = [{ state: 'frozen', ySplit: 1 }];
+    worksheet.autoFilter = {
+      from: { row: 1, column: 1 },
+      to: { row: 1, column: headers.length },
+    };
+    const headerRow = worksheet.getRow(1);
+    headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+    headerRow.fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FF0F4C75' },
+    };
+    headerRow.alignment = { vertical: 'middle', horizontal: 'center' };
+    worksheet.columns.forEach((column) => {
+      let maxLength = 10;
+      column.eachCell?.({ includeEmpty: true }, (cell) => {
+        maxLength = Math.max(maxLength, String(cell.value ?? '').length);
+      });
+      column.width = Math.min(Math.max(maxLength + 2, 10), 28);
+    });
+    worksheet.getColumn(5).numFmt = '0.00';
+    worksheet.getColumn(6).numFmt = '0.00';
+    worksheet.getColumn(7).numFmt = '0.00';
+    worksheet.getColumn(8).numFmt = '0.00';
+    for (
+      let columnIndex = 10;
+      columnIndex <= headers.length;
+      columnIndex += 1
+    ) {
+      worksheet.getColumn(columnIndex).numFmt = '0.00';
+    }
+
+    await fs.ensureDir(path.dirname(outputPath));
+    await workbook.xlsx.writeFile(outputPath);
+    return outputPath;
+  }
+
+  async exportQuestionAccuracyExcel(
+    projectId: string,
+    options?: ExportQuestionAccuracyExcelOptions,
+  ): Promise<string> {
+    const project = await this.getProjectById(projectId);
+    const results = await this.listResults(projectId);
+    const structure = getProjectStructure(project.rootPath);
+    const outputPath =
+      options?.targetPath ??
+      path.join(
+        structure.exportsDir,
+        buildQuestionAccuracyExcelExportFileName(project.name),
+      );
+    const exportableResults = results.filter(
+      (
+        item,
+      ): item is ResultRecord & {
+        finalResult: FinalResult;
+      } => Boolean(item.finalResult),
+    );
+    const questionMap = new Map<
+      string,
+      {
+        questionId: string;
+        questionTitle: string;
+        maxScore: number;
+        correctCount: number;
+        totalCount: number;
+      }
+    >();
+
+    for (const result of exportableResults) {
+      for (const question of result.finalResult.questionScores) {
+        const current =
+          questionMap.get(question.questionId) ??
+          {
+            questionId: question.questionId,
+            questionTitle: question.questionTitle,
+            maxScore: question.maxScore,
+            correctCount: 0,
+            totalCount: 0,
+          };
+
+        current.totalCount += 1;
+        if (question.score >= question.maxScore) {
+          current.correctCount += 1;
+        }
+        questionMap.set(question.questionId, current);
+      }
+    }
+
+    const rows = [...questionMap.values()]
+      .sort((left, right) =>
+        left.questionId.localeCompare(right.questionId, 'zh-CN', {
+          numeric: true,
+        }),
+      )
+      .map((question) => [
+        `${question.questionId}-${question.questionTitle || question.questionId} (${question.maxScore}分)`,
+        question.correctCount,
+        question.totalCount,
+        question.totalCount > 0 ? question.correctCount / question.totalCount : 0,
+      ]);
+
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = 'NeuroMark';
+    workbook.created = new Date();
+    const worksheet = workbook.addWorksheet('小题正确率');
+    worksheet.addRow(['题目', '满分人数', '总人数', '正确率']);
+    for (const row of rows) {
+      worksheet.addRow(row);
+    }
+    worksheet.views = [{ state: 'frozen', ySplit: 1 }];
+    worksheet.autoFilter = {
+      from: { row: 1, column: 1 },
+      to: { row: 1, column: 4 },
+    };
+    const headerRow = worksheet.getRow(1);
+    headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+    headerRow.fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FF0F4C75' },
+    };
+    headerRow.alignment = { vertical: 'middle', horizontal: 'center' };
+    worksheet.columns = [
+      { width: 42 },
+      { width: 12 },
+      { width: 12 },
+      { width: 12 },
+    ];
+    worksheet.getColumn(4).numFmt = '0.00%';
+
+    await fs.ensureDir(path.dirname(outputPath));
+    await workbook.xlsx.writeFile(outputPath);
+    return outputPath;
+  }
+
+  private async getLatestPostProcessScoreMap(
+    projectRootPath: string,
+  ): Promise<Map<string, number>> {
+    const latestRunPath = getLatestScorePostProcessRunPath(projectRootPath);
+    if (!(await fs.pathExists(latestRunPath))) {
+      return new Map();
+    }
+
+    try {
+      const payload = (await fs.readJson(
+        latestRunPath,
+      )) as ScorePostProcessRunRecord;
+      return new Map(
+        (payload.results ?? [])
+          .filter((item) => Number.isFinite(item.processedScore))
+          .map((item) => [item.paperId, item.processedScore]),
+      );
+    } catch {
+      return new Map();
+    }
   }
 
   async recomputeStats(projectId: string): Promise<ProjectMeta> {
