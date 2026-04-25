@@ -1,5 +1,17 @@
 <div align="center">
 
+## 推荐后端 API 接口
+
+<p>
+  <a href="https://xiaokeapi.com/register?aff=77hr"><strong>小刻 API</strong></a>：极简 AI 代理中转站。极简快速启用，小白也能一键无缝对接 GPT、Claude、Gemini（🔥 现已满血支持最新 GPT-5.5 与 Claude 4-7）。
+</p>
+
+</div>
+
+---
+
+<div align="center">
+
 <img src="./build/icons/256x256.png" alt="NeuroMark logo" width="120" height="120" />
 
 # NeuroMark
