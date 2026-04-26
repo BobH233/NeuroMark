@@ -716,6 +716,16 @@ textarea {
   gap: 12px;
 }
 
+.project-card-head {
+  align-items: flex-start;
+}
+
+.project-card-head > h3 {
+  flex: 1 1 auto;
+  min-width: 0;
+  line-height: 1.35;
+}
+
 .question-card-head {
   align-items: flex-start;
   min-width: 0;
@@ -2158,12 +2168,15 @@ textarea {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  height: 28px;
   min-height: 28px;
   padding: 0 10px;
   border-radius: 999px;
   font-size: 12px;
   font-weight: 700;
+  line-height: 1;
   white-space: nowrap;
+  align-self: flex-start;
   flex-shrink: 0;
 }
 
