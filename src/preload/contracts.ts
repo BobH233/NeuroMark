@@ -1,6 +1,10 @@
 export type ImageDetailLevel = 'low' | 'high' | 'auto';
 export type LlmReasoningEffort = 'low' | 'medium' | 'high';
-export type JobKind = 'scan' | 'grading' | 'answer-generation';
+export type JobKind =
+  | 'scan'
+  | 'grading'
+  | 'answer-generation'
+  | 'result-pdf-export';
 export type NameMatchStatus = 'unverified' | 'verified';
 export type JobStatus =
   | 'queued'
@@ -613,6 +617,38 @@ export interface ExportQuestionAccuracyExcelOptions {
   targetPath?: string;
 }
 
+export interface ExportAllResultPdfsOptions {
+  targetDirectory: string;
+}
+
+export interface ResultPdfExportFile {
+  paperId: string;
+  paperCode: string;
+  path: string;
+}
+
+export interface ResultPdfExportFailure {
+  paperId: string;
+  paperCode: string;
+  errorMessage: string;
+}
+
+export interface ExportAllResultPdfsResult {
+  exportedCount: number;
+  failedCount: number;
+  outputDirectory: string;
+  files: ResultPdfExportFile[];
+  failures: ResultPdfExportFailure[];
+}
+
+export interface ExportAllResultPdfsProgress {
+  projectId: string;
+  total: number;
+  completed: number;
+  failed: number;
+  currentPaperCode: string | null;
+}
+
 export interface CreateProjectInput {
   name: string;
   basePath: string;
@@ -700,6 +736,11 @@ export interface NeuromarkApi {
     selectExcelSavePath: (defaultFileName: string) => Promise<string | null>;
     selectPdfSavePath: (defaultFileName: string) => Promise<string | null>;
     exportCurrentWindowToPdf: (targetPath: string) => Promise<string>;
+    notifyResultPdfPrintReady: (token: string) => Promise<void>;
+    notifyResultPdfPrintFailed: (
+      token: string,
+      errorMessage: string,
+    ) => Promise<void>;
     openPath: (targetPath: string) => Promise<void>;
     openDevTools: () => Promise<void>;
     enableDebugPanel: () => Promise<void>;
@@ -774,6 +815,10 @@ export interface NeuromarkApi {
       projectId: string,
       options?: ExportQuestionAccuracyExcelOptions,
     ) => Promise<string>;
+    exportAllPdfs: (
+      projectId: string,
+      options: ExportAllResultPdfsOptions,
+    ) => Promise<BackgroundJob>;
     getSmartNameMatchSnapshot: (
       projectId: string,
     ) => Promise<SmartNameMatchSnapshot>;

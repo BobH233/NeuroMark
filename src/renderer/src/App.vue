@@ -25,7 +25,9 @@ const themeOverrides = {
   },
 };
 
-const isPreviewRoute = computed(() => route.name === 'preview');
+const isStandaloneRoute = computed(() =>
+  ['preview', 'result-pdf-print'].includes(String(route.name ?? '')),
+);
 
 onMounted(async () => {
   await projectsStore.bootstrap();
@@ -78,7 +80,7 @@ watch(
   >
     <n-dialog-provider>
       <n-message-provider>
-        <RouterView v-if="isPreviewRoute" />
+        <RouterView v-if="isStandaloneRoute" />
         <AppShell v-else>
           <RouterView />
         </AppShell>

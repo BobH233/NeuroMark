@@ -172,6 +172,8 @@ const exportDialogVisible = ref(false);
 const exportJsonLoading = ref(false);
 const exportExcelLoading = ref(false);
 const exportQuestionAccuracyExcelLoading = ref(false);
+const exportAllPdfsLoading = ref(false);
+const stoppingResultPdfExport = ref(false);
 const printResultLoading = ref(false);
 const exportScope = ref<ResultExportScope>('graded');
 const statisticsScoreMode = ref<'original' | 'post-processed'>('original');
@@ -419,6 +421,15 @@ const currentGradingTask = computed(
     ) ?? null,
 );
 const hasActiveGradingTask = computed(() => Boolean(currentGradingTask.value));
+const currentResultPdfExportTask = computed(
+  () =>
+    tasksStore.tasks.find(
+      (task) =>
+        task.projectId === projectId.value &&
+        task.kind === 'result-pdf-export' &&
+        ['queued', 'running', 'paused'].includes(task.status),
+    ) ?? null,
+);
 const visualizerSourceTask = computed(
   () =>
     currentGradingTask.value ??
@@ -692,6 +703,18 @@ const scoreDistribution = computed(() => {
   return [...bucketMap.entries()]
     .map(([score, count]) => ({ score, count }))
     .sort((left, right) => left.score - right.score);
+});
+const exportAllPdfsButtonText = computed(() => {
+  const task = currentResultPdfExportTask.value;
+  if (!exportAllPdfsLoading.value && !task) {
+    return '批量导出 PDF';
+  }
+
+  if (!task) {
+    return '正在导出 PDF';
+  }
+
+  return `正在导出 ${Math.round(task.progress * 100)}%`;
 });
 
 function formatStatNumber(value: number): string {
@@ -2084,6 +2107,53 @@ async function exportQuestionAccuracyExcel() {
   }
 }
 
+async function exportAllResultPdfs() {
+  if (
+    !selectedProject.value ||
+    exportAllPdfsLoading.value ||
+    currentResultPdfExportTask.value
+  ) {
+    return;
+  }
+
+  const targetDirectory = await window.neuromark.app.selectExportDirectory();
+  if (!targetDirectory) {
+    return;
+  }
+
+  exportAllPdfsLoading.value = true;
+
+  try {
+    await projectsStore.exportAllPdfs(selectedProject.value.id, {
+      targetDirectory,
+    });
+    await tasksStore.refresh();
+    message.success('批量 PDF 导出任务已在后台开始。');
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : '批量导出 PDF 失败。');
+  } finally {
+    exportAllPdfsLoading.value = false;
+  }
+}
+
+async function stopResultPdfExport() {
+  const task = currentResultPdfExportTask.value;
+  if (!task || stoppingResultPdfExport.value) {
+    return;
+  }
+
+  stoppingResultPdfExport.value = true;
+  try {
+    await window.neuromark.grading.cancel(task.id);
+    await tasksStore.refresh();
+    message.success('PDF 导出任务已停止。');
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : '停止 PDF 导出失败。');
+  } finally {
+    stoppingResultPdfExport.value = false;
+  }
+}
+
 function restoreResultPrintMode() {
   if (!isResultPrintMode.value) {
     void restoreSelectedResultPrintTitle();
@@ -2960,7 +3030,9 @@ function goBack() {
                               ? '扫描任务'
                               : task.kind === 'grading'
                                 ? '批阅任务'
-                                : '参考答案生成任务'
+                                : task.kind === 'result-pdf-export'
+                                  ? 'PDF 导出任务'
+                                  : '参考答案生成任务'
                           }}
                         </div>
                         <div class="task-preview-inline-tags">
@@ -4980,10 +5052,29 @@ function goBack() {
                 </n-button>
                 <n-button
                   type="primary"
+                  secondary
                   :loading="exportExcelLoading"
                   @click="exportResultsExcel"
                 >
                   导出成绩 Excel
+                </n-button>
+                <n-button
+                  type="primary"
+                  secondary
+                  :loading="exportAllPdfsLoading || Boolean(currentResultPdfExportTask)"
+                  :disabled="!gradedResultEntries.length || Boolean(currentResultPdfExportTask)"
+                  @click="exportAllResultPdfs"
+                >
+                  {{ exportAllPdfsButtonText }}
+                </n-button>
+                <n-button
+                  v-if="currentResultPdfExportTask"
+                  tertiary
+                  type="error"
+                  :loading="stoppingResultPdfExport"
+                  @click="stopResultPdfExport"
+                >
+                  停止导出
                 </n-button>
               </div>
             </n-card>

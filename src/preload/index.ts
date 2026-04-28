@@ -28,6 +28,14 @@ const api: NeuromarkApi = {
       ipcRenderer.invoke('app:select-pdf-save-path', defaultFileName),
     exportCurrentWindowToPdf: (targetPath) =>
       ipcRenderer.invoke('app:export-current-window-to-pdf', targetPath),
+    notifyResultPdfPrintReady: (token) =>
+      ipcRenderer.invoke('app:notify-result-pdf-print-ready', token),
+    notifyResultPdfPrintFailed: (token, errorMessage) =>
+      ipcRenderer.invoke(
+        'app:notify-result-pdf-print-failed',
+        token,
+        errorMessage,
+      ),
     openPath: (targetPath) => ipcRenderer.invoke('app:open-path', targetPath),
     openDevTools: () => ipcRenderer.invoke('app:open-devtools'),
     enableDebugPanel: () => ipcRenderer.invoke('app:enable-debug-panel'),
@@ -127,6 +135,8 @@ const api: NeuromarkApi = {
         projectId,
         options,
       ),
+    exportAllPdfs: (projectId, options) =>
+      ipcRenderer.invoke('results:export-all-pdfs', projectId, options),
     getSmartNameMatchSnapshot: (projectId) =>
       ipcRenderer.invoke('results:get-smart-name-match-snapshot', projectId),
     startSmartNameMatch: (projectId, rosterText, options) =>

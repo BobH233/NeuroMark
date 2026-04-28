@@ -76,6 +76,11 @@ const router = createRouter({
       name: 'preview',
       component: () => import('@/views/PreviewView.vue'),
     },
+    {
+      path: '/print/projects/:projectId/results/:paperId',
+      name: 'result-pdf-print',
+      component: () => import('@/views/ResultPdfPrintView.vue'),
+    },
   ],
 });
 

@@ -38,6 +38,14 @@ export function registerAppIpc(services: ServiceBundle): void {
   ipcMain.handle('app:export-current-window-to-pdf', (_event, targetPath) =>
     services.app.exportCurrentWindowToPdf(targetPath),
   );
+  ipcMain.handle('app:notify-result-pdf-print-ready', (_event, token: string) =>
+    services.app.notifyResultPdfPrintReady(token),
+  );
+  ipcMain.handle(
+    'app:notify-result-pdf-print-failed',
+    (_event, token: string, errorMessage: string) =>
+      services.app.notifyResultPdfPrintFailed(token, errorMessage),
+  );
   ipcMain.handle('app:open-path', (_event, targetPath: string) =>
     services.app.openPath(targetPath),
   );

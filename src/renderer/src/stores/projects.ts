@@ -2,9 +2,11 @@ import { defineStore } from 'pinia';
 import type {
   CreateProjectValidationResult,
   CreateProjectInput,
+  ExportAllResultPdfsOptions,
   ExportQuestionAccuracyExcelOptions,
   ExportResultsExcelOptions,
   ExportResultsOptions,
+  BackgroundJob,
   FinalResult,
   ProjectDetail,
   ProjectMeta,
@@ -238,6 +240,12 @@ export const useProjectsStore = defineStore('projects', {
         projectId,
         options,
       );
+    },
+    async exportAllPdfs(
+      projectId: string,
+      options: ExportAllResultPdfsOptions,
+    ): Promise<BackgroundJob> {
+      return window.neuromark.results.exportAllPdfs(projectId, options);
     },
     getResultByPaperId(paperId: string): ResultRecord | null {
       return (

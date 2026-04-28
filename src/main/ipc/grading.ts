@@ -1,5 +1,6 @@
 import { ipcMain } from 'electron';
 import type {
+  ExportAllResultPdfsOptions,
   ExportQuestionAccuracyExcelOptions,
   ExportResultsExcelOptions,
   ExportResultsOptions,
@@ -12,7 +13,10 @@ export function registerGradingIpc(services: ServiceBundle): void {
   ipcMain.handle('grading:start', (_event, projectId: string, options?: { skipCompleted?: boolean }) =>
     services.tasks.startGrading(projectId, options),
   );
-  ipcMain.handle('grading:cancel', (_event, jobId: string) => services.tasks.cancel(jobId));
+  ipcMain.handle('grading:cancel', async (_event, jobId: string) => {
+    services.app.cancelResultPdfExport(jobId);
+    await services.tasks.cancel(jobId);
+  });
   ipcMain.handle('grading:resume', (_event, projectId: string) =>
     services.tasks.resumeGrading(projectId),
   );
@@ -51,5 +55,19 @@ export function registerGradingIpc(services: ServiceBundle): void {
       projectId: string,
       options?: ExportQuestionAccuracyExcelOptions,
     ) => services.projects.exportQuestionAccuracyExcel(projectId, options),
+  );
+  ipcMain.handle(
+    'results:export-all-pdfs',
+    (
+      _event,
+      projectId: string,
+      options: ExportAllResultPdfsOptions,
+    ) =>
+      services.app.startResultPdfExportJob(
+        services.tasks,
+        services.projects,
+        projectId,
+        options,
+      ),
   );
 }
