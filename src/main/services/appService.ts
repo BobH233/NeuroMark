@@ -75,11 +75,11 @@ export class AppService {
 
   async selectImages(): Promise<string[]> {
     const options: OpenDialogOptions = {
-      title: '选择试卷图片',
+      title: '选择试卷图片或 PDF',
       properties: ['openFile', 'multiSelections'],
       filters: [
         {
-          name: '图片',
+          name: '图片与 PDF',
           extensions: [
             'png',
             'jpg',
@@ -89,6 +89,7 @@ export class AppService {
             'tif',
             'tiff',
             'svg',
+            'pdf',
           ],
         },
       ],
@@ -103,7 +104,7 @@ export class AppService {
 
   async selectPaperImageDirectory(): Promise<string | null> {
     const options: OpenDialogOptions = {
-      title: '选择试卷图片目录',
+      title: '选择试卷图片或 PDF 目录',
       properties: ['openDirectory'],
     };
     const parent = this.getParentWindow();

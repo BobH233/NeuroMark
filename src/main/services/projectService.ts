@@ -1,7 +1,10 @@
+import { availableParallelism } from 'node:os';
 import path from 'node:path';
 import fs from 'fs-extra';
 import ExcelJS from 'exceljs';
 import { and, desc, eq, isNull } from 'drizzle-orm';
+import PQueue from 'p-queue';
+import { pdf } from 'pdf-to-img';
 import type {
   CreateProjectValidationResult,
   CreateProjectInput,
@@ -48,6 +51,17 @@ const SUPPORTED_IMAGE_EXTENSIONS = new Set([
   '.webp',
   '.svg',
 ]);
+
+const SUPPORTED_IMPORT_EXTENSIONS = new Set([
+  ...SUPPORTED_IMAGE_EXTENSIONS,
+  '.pdf',
+]);
+
+const PDF_RENDER_SCALE = 2.5;
+const IMPORT_GROUP_CONCURRENCY = Math.min(
+  4,
+  Math.max(1, availableParallelism() - 1),
+);
 
 const DEFAULT_PROJECT_SETTINGS: ProjectSettings = {
   gradingConcurrency: 1,
@@ -277,6 +291,14 @@ function isSupportedImage(filePath: string): boolean {
   return SUPPORTED_IMAGE_EXTENSIONS.has(path.extname(filePath).toLowerCase());
 }
 
+function isSupportedImportFile(filePath: string): boolean {
+  return SUPPORTED_IMPORT_EXTENSIONS.has(path.extname(filePath).toLowerCase());
+}
+
+function isPdf(filePath: string): boolean {
+  return path.extname(filePath).toLowerCase() === '.pdf';
+}
+
 async function listSortedFiles(targetDir: string): Promise<string[]> {
   if (!(await fs.pathExists(targetDir))) {
     return [];
@@ -287,6 +309,19 @@ async function listSortedFiles(targetDir: string): Promise<string[]> {
     .filter((entry) => entry.isFile())
     .map((entry) => path.join(targetDir, entry.name))
     .filter(isSupportedImage)
+    .sort((left, right) => left.localeCompare(right, 'zh-Hans-CN'));
+}
+
+async function listSortedImportFiles(targetDir: string): Promise<string[]> {
+  if (!(await fs.pathExists(targetDir))) {
+    return [];
+  }
+
+  const entries = await fs.readdir(targetDir, { withFileTypes: true });
+  return entries
+    .filter((entry) => entry.isFile())
+    .map((entry) => path.join(targetDir, entry.name))
+    .filter(isSupportedImportFile)
     .sort((left, right) => left.localeCompare(right, 'zh-Hans-CN'));
 }
 
@@ -548,14 +583,30 @@ function extractPaperCode(stem: string): string {
   return stem.trim();
 }
 
+function getImportPaperCode(filePath: string): string {
+  const stem = getFileNameWithoutExtension(filePath);
+  if (isPdf(filePath)) {
+    return stem.trim();
+  }
+
+  return extractPaperCode(stem);
+}
+
+function appendGroupedImportFile(
+  groups: Map<string, string[]>,
+  paperCode: string,
+  filePath: string,
+): void {
+  const normalizedPaperCode = paperCode.trim() || 'untitled';
+  const list = groups.get(normalizedPaperCode) ?? [];
+  list.push(filePath);
+  groups.set(normalizedPaperCode, list);
+}
+
 function buildGroupedImportMap(filePaths: string[]): Map<string, string[]> {
   const groups = new Map<string, string[]>();
-  for (const filePath of filePaths) {
-    const stem = getFileNameWithoutExtension(filePath);
-    const paperCode = extractPaperCode(stem);
-    const list = groups.get(paperCode) ?? [];
-    list.push(filePath);
-    groups.set(paperCode, list);
+  for (const filePath of filePaths.filter(isSupportedImportFile)) {
+    appendGroupedImportFile(groups, getImportPaperCode(filePath), filePath);
   }
 
   for (const [paperCode, files] of groups.entries()) {
@@ -579,28 +630,86 @@ async function buildGroupedImportMapFromDirectory(
     .map((entry) => entry.name)
     .sort((left, right) => left.localeCompare(right, 'zh-Hans-CN'));
 
-  if (subDirectories.length === 0) {
-    throw new Error('所选文件夹下没有子文件夹，无法按学生试卷导入。');
+  const groups = new Map<string, string[]>();
+  const topLevelFiles = await listSortedImportFiles(directoryPath);
+  for (const filePath of topLevelFiles) {
+    appendGroupedImportFile(groups, getImportPaperCode(filePath), filePath);
   }
 
-  const groups = new Map<string, string[]>();
+  if (subDirectories.length === 0) {
+    if (groups.size === 0) {
+      throw new Error('所选文件夹下没有可导入的图片或 PDF。');
+    }
+    return groups;
+  }
+
   for (const subDirectoryName of subDirectories) {
     const sourceDir = path.join(directoryPath, subDirectoryName);
-    const files = await listSortedFiles(sourceDir);
+    const files = await listSortedImportFiles(sourceDir);
     if (files.length === 0) {
       continue;
     }
 
     const paperCode =
       toSafeFolderName(subDirectoryName) || subDirectoryName.trim();
-    groups.set(paperCode, files);
+    for (const filePath of files) {
+      appendGroupedImportFile(groups, paperCode, filePath);
+    }
   }
 
   if (groups.size === 0) {
-    throw new Error('所选文件夹的子文件夹中没有可导入的图片。');
+    throw new Error('所选文件夹中没有可导入的图片或 PDF。');
   }
 
   return groups;
+}
+
+async function renderPdfToOriginalPages(
+  sourcePath: string,
+  paperDir: string,
+  paperCode: string,
+  nextPageIndex: number,
+): Promise<number> {
+  let document: Awaited<ReturnType<typeof pdf>>;
+  try {
+    document = await pdf(sourcePath, { scale: PDF_RENDER_SCALE });
+  } catch (error) {
+    throw new Error(
+      `PDF「${path.basename(sourcePath)}」读取失败：${
+        error instanceof Error ? error.message : String(error)
+      }`,
+      { cause: error },
+    );
+  }
+
+  if (document.length === 0) {
+    throw new Error(`PDF「${path.basename(sourcePath)}」没有可导入页面。`);
+  }
+
+  let renderedPageCount = 0;
+  const writtenPaths: string[] = [];
+  try {
+    for await (const imageBuffer of document) {
+      nextPageIndex += 1;
+      renderedPageCount += 1;
+      const targetPath = path.join(
+        paperDir,
+        `${paperCode}_${String(nextPageIndex).padStart(2, '0')}.png`,
+      );
+      await fs.writeFile(targetPath, imageBuffer);
+      writtenPaths.push(targetPath);
+    }
+  } catch (error) {
+    await Promise.all(writtenPaths.map((targetPath) => fs.remove(targetPath)));
+    throw new Error(
+      `PDF「${path.basename(sourcePath)}」转换失败：${
+        error instanceof Error ? error.message : String(error)
+      }`,
+      { cause: error },
+    );
+  }
+
+  return renderedPageCount;
 }
 
 async function importGroupedOriginalImages(
@@ -610,37 +719,70 @@ async function importGroupedOriginalImages(
   addedPaperCount: number;
   addedPageCount: number;
 }> {
-  let addedPaperCount = 0;
+  const queue = new PQueue({ concurrency: IMPORT_GROUP_CONCURRENCY });
+  const results = await Promise.all(
+    Array.from(grouped.entries()).map(([paperCode, sourceFiles]) =>
+      queue.add(() =>
+        importOriginalImageGroup(originalsDir, paperCode, sourceFiles),
+      ),
+    ),
+  );
+
+  return {
+    addedPaperCount: results.reduce(
+      (total, result) => total + result.addedPaperCount,
+      0,
+    ),
+    addedPageCount: results.reduce(
+      (total, result) => total + result.addedPageCount,
+      0,
+    ),
+  };
+}
+
+async function importOriginalImageGroup(
+  originalsDir: string,
+  paperCode: string,
+  sourceFiles: string[],
+): Promise<{
+  addedPaperCount: number;
+  addedPageCount: number;
+}> {
+  const paperDir = path.join(originalsDir, paperCode);
+  await fs.ensureDir(paperDir);
+  const existingPaths = await listSortedFiles(paperDir);
+  const wasEmpty = existingPaths.length === 0;
+  let nextPageIndex = existingPaths.length;
   let addedPageCount = 0;
 
-  for (const [paperCode, sourceFiles] of grouped.entries()) {
-    const paperDir = path.join(originalsDir, paperCode);
-    await fs.ensureDir(paperDir);
-    const existingPaths = await listSortedFiles(paperDir);
-    const wasEmpty = existingPaths.length === 0;
-    let nextPageIndex = existingPaths.length;
-
-    for (const sourcePath of sourceFiles) {
-      nextPageIndex += 1;
-      const extension = path.extname(sourcePath).toLowerCase() || '.jpg';
-      const targetPath = path.join(
+  for (const sourcePath of sourceFiles) {
+    if (isPdf(sourcePath)) {
+      const renderedPageCount = await renderPdfToOriginalPages(
+        sourcePath,
         paperDir,
-        `${paperCode}_${String(nextPageIndex).padStart(2, '0')}${extension}`,
+        paperCode,
+        nextPageIndex,
       );
-      await fs.copy(sourcePath, targetPath, {
-        overwrite: false,
-        errorOnExist: false,
-      });
-      addedPageCount += 1;
+      nextPageIndex += renderedPageCount;
+      addedPageCount += renderedPageCount;
+      continue;
     }
 
-    if (wasEmpty) {
-      addedPaperCount += 1;
-    }
+    nextPageIndex += 1;
+    const extension = path.extname(sourcePath).toLowerCase() || '.jpg';
+    const targetPath = path.join(
+      paperDir,
+      `${paperCode}_${String(nextPageIndex).padStart(2, '0')}${extension}`,
+    );
+    await fs.copy(sourcePath, targetPath, {
+      overwrite: false,
+      errorOnExist: false,
+    });
+    addedPageCount += 1;
   }
 
   return {
-    addedPaperCount,
+    addedPaperCount: wasEmpty ? 1 : 0,
     addedPageCount,
   };
 }

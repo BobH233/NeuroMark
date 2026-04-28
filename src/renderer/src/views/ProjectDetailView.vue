@@ -1708,7 +1708,7 @@ async function importImages() {
       files,
     );
     message.success(
-      `已导入 ${result.addedPaperCount} 份试卷，共 ${result.addedPageCount} 张图片。`,
+      `已导入 ${result.addedPaperCount} 份试卷，共 ${result.addedPageCount} 页。`,
     );
   } catch (error) {
     message.error(error instanceof Error ? error.message : '导入图片失败。');
@@ -1733,7 +1733,7 @@ async function importImageDirectory() {
       directoryPath,
     );
     message.success(
-      `已从文件夹导入 ${result.addedPaperCount} 份试卷，共 ${result.addedPageCount} 张图片。`,
+      `已从文件夹导入 ${result.addedPaperCount} 份试卷，共 ${result.addedPageCount} 页。`,
     );
   } catch (error) {
     message.error(error instanceof Error ? error.message : '导入文件夹失败。');
@@ -2814,7 +2814,7 @@ function goBack() {
             :loading="importActionLoading"
             @click="importImages"
           >
-            导入图片
+            导入图片/PDF
           </n-button>
           <n-button
             secondary
