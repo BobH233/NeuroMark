@@ -291,7 +291,13 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="code-editor-shell" :style="{ height }">
-    <div ref="editorRootRef" class="code-editor-root" />
+  <div
+    class="code-editor-shell"
+    :style="{ height }"
+  >
+    <div
+      ref="editorRootRef"
+      class="code-editor-root"
+    />
   </div>
 </template>

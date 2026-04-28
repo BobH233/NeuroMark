@@ -349,11 +349,10 @@ export class AppService {
                   error instanceof Error ? error.message : '未知导出错误',
               });
             } finally {
-              if (signal?.aborted) {
-                return;
+              if (!signal?.aborted) {
+                completed += 1;
+                await emitProgress(task.paperCode);
               }
-              completed += 1;
-              await emitProgress(task.paperCode);
             }
           }
         } finally {
