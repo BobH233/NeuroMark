@@ -1,5 +1,6 @@
 import type { CompiledRubric } from '@main/services/gradingTypes';
 import { buildGradingJsonSchema } from './schema';
+import { MATH_MARKDOWN_RENDERING_RULES } from '../shared/mathMarkdownRules';
 
 export function buildGradingUserPrompt(input: {
   projectName: string;
@@ -58,14 +59,13 @@ ${questionLines}
 16. overallAdvice 的字段名必须严格使用：summary、strengths、priorityKnowledgePoints、attentionPoints、encouragement。
 17. 不要返回任何未在 schema 中出现的别名字段，不要自行改写字段名。
 18. 如果在 reasoning、overallComment、scoreBreakdown.evidence、scoreBreakdown.criterion 等 Markdown 文本里写到公式，必须严格使用 LaTeX 原样表达，不得私自改掉上下标、分式、根号、括号层级、希腊字母或省略关键公式片段。
-19. 只要出现任何数学表达，都必须带数学定界符 $：行内公式使用 $...$，独立成段的公式使用 $$...$$。
-20. 绝对禁止用反引号包裹任何数学表达。不要输出像“\`$R_E$\`”“\`$A_u = -\\frac{\\beta (R_C \\parallel R_L)}{r_{be}}$\`”“\`\\frac{2}{3}\`”这类内容；数学表达不能出现在行内代码、代码块或三反引号 Markdown fenced block 中。
-21. 这里的“数学表达”包括但不限于：\\frac{2}{3}、\\approx、\\parallel、R_L、x^2、A_u、r_{be}、希腊字母公式、带上下标或分式的表达。以上内容即使只是在一句中文里出现一个符号，也必须写成带 $ 的形式，例如 $\\frac{2}{3}$、$\\approx -60.61$、$R_L$、$A_u$。
-22. 裸写 \\frac{2}{3}、-\\frac{1000}{11}、\\approx -60.61、R_L、A_u 都是格式错误；把数学表达写成行内代码同样是格式错误，例如“\`$R_i$\`”“\`$R_o = R_C$\`”“\`$r_{be}$\`”都不允许。
-23. 输出前你必须自检：reasoning、overallComment、scoreBreakdown.evidence、scoreBreakdown.criterion 中不得出现未被 $...$ 或 $$...$$ 包裹的数学表达，也不得出现被反引号包裹的数学表达。
-24. 输出必须是可被 JSON.parse 直接解析的合法 JSON。JSON 字符串里的反斜杠必须双写；如果要输出 LaTeX，如 \\frac、\\mathrm、\\alpha、\\,，在 JSON 里必须分别写成 \\\\frac、\\\\mathrm、\\\\alpha、\\\\,。
-25. 绝对禁止出现非法 JSON 转义，例如 \\,、\\m、\\l 这种单反斜杠写法；双引号和换行也必须按 JSON 规则正确转义。
-26. 在满足数学格式要求的同时，整个输出必须严格符合下面这份 JSON Schema：
+19. 数学与 Markdown 渲染必须严格遵守下面这组统一规则：
+${MATH_MARKDOWN_RENDERING_RULES}
+20. 例如：不要输出“$U_{CQ1}\\approx **6.06\\mathrm{V}**$”这种写法；如果需要在公式里强调，必须改成“$U_{CQ1}\\approx \\mathbf{6.06}\\,\\mathrm{V}$”、“$\\boldsymbol{A_d\\approx -226}$”等合法 LaTeX 写法。
+21. 输出前你必须自检：reasoning、overallComment、scoreBreakdown.evidence、scoreBreakdown.criterion 中不得出现未被 $...$ 或 $$...$$ 包裹的数学表达，也不得出现被反引号包裹的数学表达。
+22. 输出必须是可被 JSON.parse 直接解析的合法 JSON。JSON 字符串里的反斜杠必须双写；如果要输出 LaTeX，如 \\frac、\\mathrm、\\alpha、\\,，在 JSON 里必须分别写成 \\\\frac、\\\\mathrm、\\\\alpha、\\\\,。
+23. 绝对禁止出现非法 JSON 转义，例如 \\,、\\m、\\l 这种单反斜杠写法；双引号和换行也必须按 JSON 规则正确转义。
+24. 在满足数学格式要求的同时，整个输出必须严格符合下面这份 JSON Schema：
 
 ${JSON.stringify(gradingSchema, null, 2)}
 

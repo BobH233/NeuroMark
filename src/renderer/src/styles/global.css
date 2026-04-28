@@ -716,6 +716,26 @@ textarea {
   gap: 12px;
 }
 
+.project-card-head {
+  align-items: flex-start;
+}
+
+.project-card-head > h3 {
+  flex: 1 1 auto;
+  min-width: 0;
+  line-height: 1.35;
+}
+
+.question-card-head {
+  align-items: flex-start;
+  min-width: 0;
+}
+
+.question-card-head > :first-child {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
 .draft-card-actions,
 .hero-actions {
   display: flex;
@@ -1164,8 +1184,29 @@ textarea {
   overflow: hidden;
 }
 
+.smart-name-layout {
+  display: grid;
+  grid-template-columns: 300px minmax(0, 1fr);
+  gap: 18px;
+  height: clamp(720px, calc(100dvh - 230px), 980px);
+  min-height: 0;
+  max-height: calc(100dvh - 230px);
+  align-items: stretch;
+  overflow: hidden;
+}
+
+.smart-name-main {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 18px;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
 .result-sidebar,
 .result-workspace {
+  min-width: 0;
   min-height: 0;
 }
 
@@ -1178,6 +1219,7 @@ textarea {
 
 .result-sidebar-scroll,
 .result-workspace-scroll {
+  min-width: 0;
   min-height: 0;
   overflow: auto;
   overscroll-behavior: contain;
@@ -1227,14 +1269,18 @@ textarea {
 }
 
 .result-panel-head--with-tools {
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: start;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
   gap: 14px;
 }
 
 .result-workspace-head {
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: start;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
 }
 
 .result-sidebar-stats {
@@ -1402,6 +1448,8 @@ textarea {
   justify-content: flex-end;
   gap: 10px;
   flex-wrap: wrap;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .preview-overlay-toggle {
@@ -1449,12 +1497,14 @@ textarea {
 .result-workspace-stack {
   display: grid;
   gap: 18px;
+  min-width: 0;
   contain: layout;
 }
 
 .result-subsection-card {
   display: grid;
   gap: 16px;
+  min-width: 0;
   padding: 18px;
   border-radius: 22px;
   border: 1px solid rgba(148, 163, 184, 0.2);
@@ -1606,6 +1656,7 @@ textarea {
 .question-card-actions {
   justify-items: end;
   align-content: start;
+  min-width: 0;
 }
 
 .question-score-pill {
@@ -1613,12 +1664,14 @@ textarea {
   align-items: center;
   justify-content: center;
   padding: 6px 12px;
+  max-width: 100%;
   border-radius: 999px;
   background: rgba(15, 139, 141, 0.08);
   color: var(--accent-deep);
   font-size: 13px;
   font-weight: 700;
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .question-toggle-button {
@@ -1794,6 +1847,7 @@ textarea {
 .result-stage-stack {
   display: grid;
   gap: 16px;
+  min-width: 0;
 }
 
 .result-stage-stack--embedded {
@@ -1834,6 +1888,16 @@ textarea {
   gap: 14px;
 }
 
+.result-duplicate-check-panel {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+  min-height: 0;
+  max-height: min(360px, 36vh);
+  overflow: auto;
+  padding: 22px;
+}
+
 .smart-name-summary-grid {
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
@@ -1843,6 +1907,44 @@ textarea {
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
+}
+
+.smart-name-duplicate-list {
+  display: grid;
+  gap: 10px;
+}
+
+.smart-name-duplicate-item {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  background: rgba(248, 250, 252, 0.7);
+}
+
+.smart-name-duplicate-item--danger {
+  border-color: rgba(220, 38, 38, 0.24);
+  background: rgba(254, 242, 242, 0.9);
+  box-shadow: inset 0 0 0 1px rgba(220, 38, 38, 0.04);
+}
+
+.smart-name-duplicate-item--danger .smart-name-duplicate-item__meta strong {
+  color: #b91c1c;
+}
+
+.smart-name-duplicate-item__meta {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.smart-name-duplicate-item__meta span {
+  color: var(--muted);
+  line-height: 1.6;
+  overflow-wrap: anywhere;
 }
 
 .question-card--smart-name {
@@ -2066,12 +2168,15 @@ textarea {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  height: 28px;
   min-height: 28px;
   padding: 0 10px;
   border-radius: 999px;
   font-size: 12px;
   font-weight: 700;
+  line-height: 1;
   white-space: nowrap;
+  align-self: flex-start;
   flex-shrink: 0;
 }
 
@@ -2931,6 +3036,149 @@ textarea {
   box-sizing: border-box;
 }
 
+.statistics-export-stack {
+  display: grid;
+  gap: 18px;
+  min-width: 0;
+}
+
+.statistics-export-hero > .n-card__content {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 22px;
+  flex-wrap: wrap;
+}
+
+.statistics-export-hero-copy {
+  display: grid;
+  gap: 10px;
+  max-width: 760px;
+}
+
+.statistics-export-actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+
+.statistics-main-column {
+  display: grid;
+  gap: 18px;
+  min-width: 0;
+}
+
+.statistics-metrics-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 170px), 1fr));
+}
+
+.statistics-filter-card > .n-card__content {
+  display: grid;
+}
+
+.statistics-filter-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  flex-wrap: wrap;
+}
+
+.statistics-filter-select {
+  width: min(280px, 100%);
+}
+
+.statistics-chart-card > .n-card__content,
+.statistics-question-card > .n-card__content {
+  display: grid;
+  gap: 18px;
+}
+
+.statistics-question-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.statistics-score-chart {
+  width: 100%;
+  height: 320px;
+  min-width: 0;
+  border-radius: 22px;
+  background:
+    radial-gradient(circle at top left, rgba(15, 139, 141, 0.12), transparent 34%),
+    linear-gradient(135deg, rgba(255, 255, 255, 0.94), rgba(244, 249, 250, 0.84));
+  border: 1px solid rgba(148, 163, 184, 0.16);
+}
+
+.statistics-question-list {
+  display: grid;
+  gap: 14px;
+  max-height: 520px;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.statistics-question-row {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border-radius: 18px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  background: rgba(255, 255, 255, 0.78);
+}
+
+.statistics-question-row-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.statistics-question-main {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 12px;
+  align-items: flex-start;
+  min-width: 0;
+}
+
+.statistics-question-row-head strong {
+  color: #0f8b8d;
+  font-size: 18px;
+}
+
+.statistics-question-title {
+  font-weight: 800;
+  color: var(--text);
+  line-height: 1.35;
+  min-width: 0;
+}
+
+.statistics-question-meta {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.statistics-rate-track {
+  height: 9px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: rgba(148, 163, 184, 0.16);
+}
+
+.statistics-rate-bar {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #0f8b8d, #62c3a5);
+  box-shadow: 0 8px 22px rgba(15, 139, 141, 0.22);
+}
+
 .debug-panel-actions {
   margin-bottom: 16px;
 }
@@ -3489,6 +3737,10 @@ textarea {
     grid-template-columns: 240px 1fr;
   }
 
+  .three-col {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .result-stage {
     grid-column: 1 / -1;
   }
@@ -3497,8 +3749,24 @@ textarea {
     grid-template-columns: 260px 1fr;
   }
 
+  .smart-name-layout {
+    grid-template-columns: 260px 1fr;
+  }
+
   .result-workspace-head {
     grid-template-columns: 1fr;
+  }
+
+  .question-card-head {
+    flex-direction: column;
+  }
+
+  .question-card-actions {
+    justify-items: start;
+  }
+
+  .question-toggle-button {
+    justify-self: start;
   }
 
   .score-postprocess-result-layout {
@@ -3516,7 +3784,7 @@ textarea {
 
   .result-sidebar-scroll,
   .result-workspace-scroll {
-    overflow: visible;
+    overflow: auto;
     padding-right: 0;
   }
 
@@ -3529,6 +3797,23 @@ textarea {
   .result-review-layout {
     grid-template-columns: 1fr;
     height: auto;
+    max-height: none;
+    overflow: visible;
+  }
+
+  .smart-name-layout {
+    grid-template-columns: 1fr;
+    height: auto;
+    max-height: none;
+    overflow: visible;
+  }
+
+  .smart-name-main {
+    grid-template-rows: auto;
+    overflow: visible;
+  }
+
+  .result-duplicate-check-panel {
     max-height: none;
     overflow: visible;
   }
@@ -3561,7 +3846,7 @@ textarea {
 
   .result-sidebar-scroll,
   .result-workspace-scroll {
-    overflow: visible;
+    overflow: auto;
     padding-right: 0;
   }
 

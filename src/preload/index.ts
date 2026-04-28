@@ -12,6 +12,8 @@ const api: NeuromarkApi = {
     getVersion: () => ipcRenderer.invoke('app:get-version'),
     getDefaultProjectBasePath: () =>
       ipcRenderer.invoke('app:get-default-project-base-path'),
+    setMainWindowTitle: (title) =>
+      ipcRenderer.invoke('app:set-main-window-title', title),
     selectDirectory: () => ipcRenderer.invoke('app:select-directory'),
     selectExportDirectory: () =>
       ipcRenderer.invoke('app:select-export-directory'),
@@ -20,6 +22,20 @@ const api: NeuromarkApi = {
       ipcRenderer.invoke('app:select-paper-image-directory'),
     selectJsonSavePath: (defaultFileName) =>
       ipcRenderer.invoke('app:select-json-save-path', defaultFileName),
+    selectExcelSavePath: (defaultFileName) =>
+      ipcRenderer.invoke('app:select-excel-save-path', defaultFileName),
+    selectPdfSavePath: (defaultFileName) =>
+      ipcRenderer.invoke('app:select-pdf-save-path', defaultFileName),
+    exportCurrentWindowToPdf: (targetPath) =>
+      ipcRenderer.invoke('app:export-current-window-to-pdf', targetPath),
+    notifyResultPdfPrintReady: (token) =>
+      ipcRenderer.invoke('app:notify-result-pdf-print-ready', token),
+    notifyResultPdfPrintFailed: (token, errorMessage) =>
+      ipcRenderer.invoke(
+        'app:notify-result-pdf-print-failed',
+        token,
+        errorMessage,
+      ),
     openPath: (targetPath) => ipcRenderer.invoke('app:open-path', targetPath),
     openDevTools: () => ipcRenderer.invoke('app:open-devtools'),
     enableDebugPanel: () => ipcRenderer.invoke('app:enable-debug-panel'),
@@ -111,6 +127,16 @@ const api: NeuromarkApi = {
       ipcRenderer.invoke('results:delete', projectId, paperId),
     exportJson: (projectId, options) =>
       ipcRenderer.invoke('results:export-json', projectId, options),
+    exportExcel: (projectId, options) =>
+      ipcRenderer.invoke('results:export-excel', projectId, options),
+    exportQuestionAccuracyExcel: (projectId, options) =>
+      ipcRenderer.invoke(
+        'results:export-question-accuracy-excel',
+        projectId,
+        options,
+      ),
+    exportAllPdfs: (projectId, options) =>
+      ipcRenderer.invoke('results:export-all-pdfs', projectId, options),
     getSmartNameMatchSnapshot: (projectId) =>
       ipcRenderer.invoke('results:get-smart-name-match-snapshot', projectId),
     startSmartNameMatch: (projectId, rosterText, options) =>

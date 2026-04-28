@@ -37,6 +37,101 @@ import {
 
 type AnswerGeneratorListener = (snapshot: AnswerGeneratorSnapshot) => void;
 
+type BuiltinPromptPresetDefinition = Omit<PromptPreset, 'source' | 'readonly'>;
+
+const BUILTIN_PROMPT_PRESETS: BuiltinPromptPresetDefinition[] = [
+  {
+    id: 'builtin-general-grading-template',
+    name: '通用理科批改模板',
+    description: '适合理工科题目的参考答案与评分细则模板。',
+    prompt: [
+      '# Role',
+      '你是一位资深的理工科（数学、物理、计算机、工程等领域）出题专家与高级阅卷人。你具备极其深厚的学术功底，精通各类复杂的数学推导、算法逻辑与物理过程。',
+      '',
+      '# Task',
+      '我将为你提供一张包含理工科题目的图片。请你仔细识别图片中的文字、公式、图表和数据，然后给出一份逻辑严密的【参考答案】以及一份科学合理的【评分细则】。',
+      '',
+      '# Guidelines',
+      '请严格遵循以下准则进行作答：',
+      '1. 精准识别与分析：仔细提取图片中的已知条件、隐含条件和求解目标。如果图片包含电路图、受力分析图、数据结构或几何图形，请在解析中用文字简述你的理解，确保没有遗漏关键信息。',
+      '2. 严密的逻辑推导：理工科注重过程。解答必须循序渐进，写出必要的假设、前置定理或公式。绝不能跳步或直接给出结论。',
+      '3. 规范的数学表达：所有数学公式、变量名、矩阵和微积分符号必须使用标准的 LaTeX 格式进行渲染（行内公式使用 $...$，行间公式使用 $$...$$）。',
+      '4. 科学的赋分机制：默认该题满分为 10 分（若题目自带分数请以原分为准）。评分细则需要细化到“写出核心公式得几分”、“得出中间变量得几分”、“最终结果正确（含单位）得几分”。',
+      '',
+      '# Output Format',
+      '请严格按照以下结构输出你的回答：',
+      '',
+      '## 【题目解析】 (Problem Analysis)',
+      '- **核心考点**：用一句话总结本题考察的知识点。',
+      '- **已知与求解**：简明扼要地列出题目给定的关键参数以及最终需要求解的目标。',
+      '',
+      '## 【参考答案】 (Reference Solution)',
+      '（请在此处输出详细的解答过程，分步骤撰写）',
+      '- **Step 1**：[写明本步目的，列出公式，代入数据]',
+      '- **Step 2**：[推导中间结果]',
+      '...',
+      '- **最终结论**：[加粗显示最终答案，若有物理量请务必带上准确的单位]',
+      '',
+      '## 【评分细则】 (Grading Rubric)',
+      '（假设本题满分 10 分，按步骤拆解分数）',
+      '- **步骤 1**：写出 [某某关键公式/状态方程] （X分）',
+      '- **步骤 2**：正确计算出中间变量 [变量名] （X分）',
+      '- **步骤 3**：逻辑正确并得出最终结果 [正确答案] （X分）',
+      '- **扣分项说明**：列出常见的易错点（如：未写明单位扣X分；符号正负号弄反扣X分；缺失关键推导过程仅有答案不得分等）。',
+    ].join('\n'),
+  },
+  {
+    id: 'builtin-general-liberal-arts-grading-template',
+    name: '通用文科批改模板',
+    description: '适合文科题目的参考答案与评分细则模板。',
+    prompt: [
+      '# Role',
+      '你是一位资深的文科（语文、历史、政治、地理、人文社科等领域）出题专家与高级阅卷人。你具备扎实的学术素养与丰富的阅卷经验，擅长文本细读、材料分析、观点提炼、史实归纳与论证评价。',
+      '',
+      '# Task',
+      '我将为你提供一张包含文科题目的图片。请你仔细识别图片中的文字、材料、图表、地图、时间线和数据，然后给出一份逻辑清晰的【参考答案】以及一份科学合理的【评分细则】。',
+      '',
+      '# Guidelines',
+      '请严格遵循以下准则进行作答：',
+      '1. 精准识别与分析：仔细提取题干要求、材料信息、设问限定词和作答任务。如果图片包含材料阅读、古诗文、史料、地图、统计图表或时间轴，请在解析中用文字简述其关键信息与作答关联。',
+      '2. 紧扣题意与论证链条：文科题强调“观点 + 依据 + 论证”。解答必须围绕设问逐点展开，明确核心观点，并结合材料信息、文本内容或学科知识给出支撑，避免只写结论不写依据。',
+      '3. 规范的学科表达：表述要准确、完整、简洁，学科术语、历史时期、人物、地名、概念和引文必须规范；若题目中出现年份、数据、专有名词或需要引用原文，请尽量准确保留。',
+      '4. 科学的赋分机制：默认该题满分为 10 分（若题目自带分数请以原分为准）。评分细则需要细化到“答出核心观点得几分”、“结合材料或史实论证得几分”、“结构完整、表述准确得几分”。',
+      '',
+      '# Output Format',
+      '请严格按照以下结构输出你的回答：',
+      '',
+      '## 【题目解析】 (Problem Analysis)',
+      '- **核心考点**：用一句话总结本题考察的知识点或能力要求。',
+      '- **材料与任务**：简明扼要地列出题目给定的关键材料信息、设问限制以及最终需要完成的作答任务。',
+      '',
+      '## 【参考答案】 (Reference Solution)',
+      '（请在此处输出详细的作答过程，分步骤撰写）',
+      '- **Step 1**：[审题并提炼设问关键词、作答方向]',
+      '- **Step 2**：[结合材料或学科知识逐点展开分析]',
+      '...',
+      '- **最终结论**：[用规范、完整的语言给出最终答案；若是开放性试题，请给出标准作答要点与可接受表述范围]',
+      '',
+      '## 【评分细则】 (Grading Rubric)',
+      '（假设本题满分 10 分，按步骤拆解分数）',
+      '- **步骤 1**：准确点出 [核心观点/中心主旨/答题方向] （X分）',
+      '- **步骤 2**：能够结合 [材料信息/文本依据/史实案例] 展开分析 （X分）',
+      '- **步骤 3**：逻辑清晰、表述规范并完成最终作答 （X分）',
+      '- **扣分项说明**：列出常见的易错点（如：偏离题意扣X分；只写观点不写依据扣X分；遗漏关键要点扣X分；表述空泛、概念混淆扣X分等）。',
+    ].join('\n'),
+  },
+];
+
+function toBuiltinPromptPreset(
+  preset: BuiltinPromptPresetDefinition,
+): PromptPreset {
+  return {
+    ...preset,
+    source: 'builtin',
+    readonly: true,
+  };
+}
+
 const answerGenerationResponseSchema = z
   .object({
     summary: z.string().trim().min(1),
@@ -51,6 +146,8 @@ function toPromptPresetRecord(item: typeof promptPresetsTable.$inferSelect): Pro
     name: item.name,
     description: item.description,
     prompt: item.prompt,
+    source: 'custom',
+    readonly: false,
   };
 }
 
@@ -380,18 +477,35 @@ export class AnswerGeneratorService {
 
   async listPromptPresets(): Promise<PromptPreset[]> {
     const db = getDatabase();
-    return db
+    const customPresets = db
       .select()
       .from(promptPresetsTable)
       .orderBy(desc(promptPresetsTable.updatedAt))
       .all()
+      .filter(
+        (item) => !BUILTIN_PROMPT_PRESETS.some((preset) => preset.id === item.id),
+      )
       .map(toPromptPresetRecord);
+
+    return [
+      ...BUILTIN_PROMPT_PRESETS.map(toBuiltinPromptPreset),
+      ...customPresets,
+    ];
   }
 
   async savePromptPreset(input: PromptPresetInput): Promise<PromptPreset> {
+    const trimmedInputId = input.id?.trim();
+
+    if (
+      trimmedInputId &&
+      BUILTIN_PROMPT_PRESETS.some((preset) => preset.id === trimmedInputId)
+    ) {
+      throw new Error('系统内置模板不能直接修改，请先复制为自定义模板。');
+    }
+
     const db = getDatabase();
     const now = new Date().toISOString();
-    const id = input.id?.trim() || nanoid();
+    const id = trimmedInputId || nanoid();
 
     db.insert(promptPresetsTable)
       .values({
@@ -423,6 +537,10 @@ export class AnswerGeneratorService {
   }
 
   async deletePromptPreset(presetId: string): Promise<void> {
+    if (BUILTIN_PROMPT_PRESETS.some((preset) => preset.id === presetId)) {
+      throw new Error('系统内置模板不能删除。');
+    }
+
     const db = getDatabase();
     db.delete(promptPresetsTable).where(eq(promptPresetsTable.id, presetId)).run();
     await this.emit();

@@ -1,3 +1,4 @@
+#include <cmath>
 #include <memory>
 #include <filesystem>
 #include <optional>
@@ -45,6 +46,7 @@ class ScannerWrap final : public Napi::ObjectWrap<ScannerWrap> {
         std::string debugOutputPrefix;
         bool writeDebugImages = false;
         bool applyPostProcess = true;
+        float scanMarginRatio = 1.0f;
     };
 
     class ScanWorker final : public Napi::AsyncWorker {
@@ -67,6 +69,7 @@ class ScannerWrap final : public Napi::ObjectWrap<ScannerWrap> {
             request.writeOverlay = !request_.overlayOutputPath.empty();
             request.writeDebugImages = request_.writeDebugImages;
             request.applyPostProcess = request_.applyPostProcess;
+            request.scanMarginRatio = request_.scanMarginRatio;
             result_ = scanner_->scanFile(request);
         }
 
@@ -88,6 +91,15 @@ class ScannerWrap final : public Napi::ObjectWrap<ScannerWrap> {
                 corners.Set(index, point);
             }
             result.Set("corners", corners);
+
+            Napi::Array detectedCorners = Napi::Array::New(env, result_.detectedCorners.size());
+            for (std::size_t index = 0; index < result_.detectedCorners.size(); index += 1) {
+                Napi::Object point = Napi::Object::New(env);
+                point.Set("x", result_.detectedCorners[index].x);
+                point.Set("y", result_.detectedCorners[index].y);
+                detectedCorners.Set(index, point);
+            }
+            result.Set("detectedCorners", detectedCorners);
 
             Napi::Array debugPaths = Napi::Array::New(env, result_.debugOutputPaths.size());
             for (std::size_t index = 0; index < result_.debugOutputPaths.size(); index += 1) {
@@ -142,6 +154,7 @@ class ScannerWrap final : public Napi::ObjectWrap<ScannerWrap> {
         request.debugOutputPrefix = getOptionalString(options, "debugOutputPrefix").value_or("");
         request.writeDebugImages = getOptionalBool(options, "writeDebugImages").value_or(false);
         request.applyPostProcess = getOptionalBool(options, "applyPostProcess").value_or(true);
+        request.scanMarginRatio = getOptionalFloat(options, "scanMarginRatio").value_or(1.0f);
 
         auto* worker = new ScanWorker(env, scanner_, std::move(request));
         Napi::Promise promise = worker->Promise();
@@ -184,6 +197,25 @@ class ScannerWrap final : public Napi::ObjectWrap<ScannerWrap> {
             throw Napi::TypeError::New(object.Env(), std::string("options.") + key + " must be a boolean.");
         }
         return value.As<Napi::Boolean>().Value();
+    }
+
+    static std::optional<float> getOptionalFloat(
+        const Napi::Object& object,
+        const char* key) {
+        const Napi::Value value = object.Get(key);
+        if (value.IsUndefined() || value.IsNull()) {
+            return std::nullopt;
+        }
+        if (!value.IsNumber()) {
+            throw Napi::TypeError::New(object.Env(), std::string("options.") + key + " must be a number.");
+        }
+
+        const double numericValue = value.As<Napi::Number>().DoubleValue();
+        if (!std::isfinite(numericValue)) {
+            throw Napi::TypeError::New(object.Env(), std::string("options.") + key + " must be finite.");
+        }
+
+        return static_cast<float>(numericValue);
     }
 
     static Napi::FunctionReference& constructor() {

@@ -10,6 +10,7 @@ asarUnpack:
   - node_modules/sharp/**
   - node_modules/@img/sharp-*/**
   - node_modules/@img/sharp-libvips-*/**
+  - node_modules/@napi-rs/canvas*/**
 extraResources:
   - from: build/native
     to: native

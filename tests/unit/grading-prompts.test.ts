@@ -41,11 +41,11 @@ describe('grading prompt guards', () => {
     expect(GRADING_RUBRIC_SYSTEM_PROMPT).toContain('行内公式使用 `$...$`');
     expect(GRADING_RUBRIC_SYSTEM_PROMPT).toContain('裸写 `\\frac{2}{3}`');
     expect(rubricUserPrompt).toContain('不得私自改掉上下标、括号、分式、符号');
-    expect(rubricUserPrompt).toContain('必须带数学定界符 $');
+    expect(rubricUserPrompt).toContain('必须带数学定界符 `$`');
     expect(rubricUserPrompt).toContain('可被 JSON.parse 直接解析的合法 JSON');
     expect(rubricUserPrompt).toContain('JSON 字符串里的反斜杠必须双写');
-    expect(rubricUserPrompt).toContain('行内公式使用 $...$');
-    expect(rubricUserPrompt).toContain('裸写 \\frac{2}{3}');
+    expect(rubricUserPrompt).toContain('行内公式使用 `$...$`');
+    expect(rubricUserPrompt).toContain('裸写 `\\frac{2}{3}`');
   });
 
   it('tells grading prompts to prioritize the original reference standard over rubric summaries', () => {
@@ -66,16 +66,16 @@ describe('grading prompt guards', () => {
     expect(gradingSystemPrompt).toContain('绝对禁止用反引号包裹任何数学表达');
     expect(gradingSystemPrompt).toContain('可被 `JSON.parse` 直接解析');
     expect(gradingSystemPrompt).toContain('`\\\\frac`');
-    expect(gradingSystemPrompt).toContain('把数学表达写成行内代码同样是格式错误');
+    expect(gradingSystemPrompt).toContain('绝对禁止在数学定界符内部使用 Markdown 强调语法');
     expect(gradingSystemPrompt).toContain('裸写 `\\frac{2}{3}`');
     expect(gradingUserPrompt).toContain('rubric 只提供固定评分单元、满分和采分点约束');
     expect(gradingUserPrompt).toContain('这里的内容是本次阅卷更主要的判分依据');
     expect(gradingUserPrompt).toContain('scoreBreakdown.evidence、scoreBreakdown.criterion');
-    expect(gradingUserPrompt).toContain('只要出现任何数学表达，都必须带数学定界符 $');
+    expect(gradingUserPrompt).toContain('只要出现任何数学表达，都必须带数学定界符 `$`');
     expect(gradingUserPrompt).toContain('绝对禁止用反引号包裹任何数学表达');
     expect(gradingUserPrompt).toContain('可被 JSON.parse 直接解析的合法 JSON');
     expect(gradingUserPrompt).toContain('JSON 字符串里的反斜杠必须双写');
     expect(gradingUserPrompt).toContain('不得出现被反引号包裹的数学表达');
-    expect(gradingUserPrompt).toContain('裸写 \\frac{2}{3}');
+    expect(gradingUserPrompt).toContain('裸写 `\\frac{2}{3}`');
   });
 });

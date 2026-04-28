@@ -11,6 +11,7 @@ const createProjectSchema = z.object({
   defaultImageDetail: z.enum(['low', 'high', 'auto']).optional(),
   enableScanPostProcess: z.boolean().optional(),
   skipScanProcessing: z.boolean().optional(),
+  scanMarginRatio: z.number().finite().min(1).optional(),
 });
 
 const projectNameSchema = z.string().trim().min(1);
@@ -21,6 +22,23 @@ const projectSettingsSchema = z.object({
   defaultImageDetail: z.enum(['low', 'high', 'auto']),
   enableScanPostProcess: z.boolean(),
   skipScanProcessing: z.boolean(),
+  scanMarginRatio: z.number().finite().min(1),
+  studentRoster: z
+    .object({
+      rawText: z.string(),
+      columnFields: z.array(
+        z.enum(['studentId', 'name', 'className', 'ignore']),
+      ),
+      entries: z.array(
+        z.object({
+          id: z.string().min(1),
+          className: z.string(),
+          studentId: z.string(),
+          name: z.string(),
+        }),
+      ),
+    })
+    .nullable(),
 });
 
 const referenceAnswerSchema = z.string().trim().min(1);
@@ -32,8 +50,12 @@ export function registerProjectIpc(services: ServiceBundle): void {
       win.webContents.send('projects:updated', projects);
     }
   });
-  ipcMain.handle('projects:validate-create', (_event, payload: Pick<CreateProjectInput, 'name' | 'basePath'>) =>
-    services.projects.validateCreateProject(createProjectSchema.parse(payload)),
+  ipcMain.handle(
+    'projects:validate-create',
+    (_event, payload: Pick<CreateProjectInput, 'name' | 'basePath'>) =>
+      services.projects.validateCreateProject(
+        createProjectSchema.parse(payload),
+      ),
   );
   ipcMain.handle('projects:get-detail', (_event, projectId: string) =>
     services.projects.getProjectDetail(projectId),
@@ -44,14 +66,21 @@ export function registerProjectIpc(services: ServiceBundle): void {
   ipcMain.handle('projects:delete', (_event, projectId: string) =>
     services.tasks.deleteProject(projectId),
   );
-  ipcMain.handle('projects:remove-paper', (_event, projectId: string, paperId: string) =>
-    services.projects.removePaper(projectId, paperId),
+  ipcMain.handle(
+    'projects:remove-paper',
+    (_event, projectId: string, paperId: string) =>
+      services.projects.removePaper(projectId, paperId),
   );
   ipcMain.handle('projects:create', (_event, payload: CreateProjectInput) =>
     services.projects.createProject(createProjectSchema.parse(payload)),
   );
-  ipcMain.handle('projects:update-name', (_event, projectId: string, name: string) =>
-    services.projects.updateProjectName(projectId, projectNameSchema.parse(name)),
+  ipcMain.handle(
+    'projects:update-name',
+    (_event, projectId: string, name: string) =>
+      services.projects.updateProjectName(
+        projectId,
+        projectNameSchema.parse(name),
+      ),
   );
   ipcMain.handle(
     'projects:import-original-images',

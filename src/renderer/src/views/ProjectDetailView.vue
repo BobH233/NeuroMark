@@ -10,6 +10,17 @@ import {
 } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { MdEditor } from 'md-editor-v3';
+import * as echarts from 'echarts/core';
+import { LineChart } from 'echarts/charts';
+import {
+  GridComponent,
+  TooltipComponent,
+  type GridComponentOption,
+  type TooltipComponentOption,
+} from 'echarts/components';
+import { CanvasRenderer } from 'echarts/renderers';
+import type { ComposeOption, ECharts } from 'echarts/core';
+import type { LineSeriesOption } from 'echarts/charts';
 import {
   NAlert,
   NButton,
@@ -40,6 +51,9 @@ import type {
   PaperRecord,
   PreviewDisplayOptions,
   PreviewImageItem,
+  StudentInfo,
+  StudentRosterColumnField,
+  StudentRosterEntry,
   ResultExportScope,
   ResultRecord,
   ScoreBreakdownItem,
@@ -47,6 +61,7 @@ import type {
   SmartNameMatchSnapshot,
   SmartNameMatchSuggestion,
   ProjectSettings,
+  ScorePostProcessProjectSnapshot,
 } from '@preload/contracts';
 import ImagePreviewTile from '@/components/ImagePreviewTile.vue';
 import JsonTreeView from '@/components/JsonTreeView.vue';
@@ -54,12 +69,27 @@ import MarkdownRenderer from '@/components/MarkdownRenderer.vue';
 import MetricCard from '@/components/MetricCard.vue';
 import ScorePostProcessPanel from '@/components/ScorePostProcessPanel.vue';
 import StatusPill from '@/components/StatusPill.vue';
+import StudentInfoAutocompleteInput from '@/components/StudentInfoAutocompleteInput.vue';
 import { useDebugPanelStore } from '@/stores/debug-panel';
 import { useProjectsStore } from '@/stores/projects';
 import { useTasksStore } from '@/stores/tasks';
 import { useTokenVisualizerStore } from '@/stores/token-visualizer';
 import { toImageSrc } from '@/utils/file';
 import { cloneFinalResult, computeDisplayedTotal } from '@/utils/result';
+import {
+  buildStudentRosterData,
+  detectStudentRosterColumnFields,
+  getNameSearchKeys,
+  normalizeSearchText,
+  normalizeStudentRosterColumnFields,
+  parseStudentRosterText,
+} from '@/utils/student-roster';
+
+echarts.use([CanvasRenderer, GridComponent, LineChart, TooltipComponent]);
+
+type ScoreDistributionChartOption = ComposeOption<
+  GridComponentOption | TooltipComponentOption | LineSeriesOption
+>;
 
 const route = useRoute();
 const router = useRouter();
@@ -76,11 +106,47 @@ const DEFAULT_PREVIEW_DISPLAY_OPTIONS: PreviewDisplayOptions = {
 };
 const PREVIEW_DISPLAY_OPTIONS_STORAGE_KEY_PREFIX =
   'neuromark:preview-display-options:';
+const STUDENT_ROSTER_COLUMN_FIELD_OPTIONS = [
+  { label: '忽略此列', value: 'ignore' },
+  { label: '学号', value: 'studentId' },
+  { label: '姓名', value: 'name' },
+  { label: '班级', value: 'className' },
+] satisfies Array<{ label: string; value: StudentRosterColumnField }>;
+
+function cloneStudentRosterEntries(
+  entries: StudentRosterEntry[],
+): StudentRosterEntry[] {
+  return entries.map((entry) => ({ ...entry }));
+}
+
+function cloneProjectSettings(settings: ProjectSettings): ProjectSettings {
+  return {
+    gradingConcurrency: settings.gradingConcurrency,
+    drawRegions: settings.drawRegions,
+    defaultImageDetail: settings.defaultImageDetail,
+    enableScanPostProcess: settings.enableScanPostProcess,
+    skipScanProcessing: settings.skipScanProcessing,
+    scanMarginRatio: settings.scanMarginRatio,
+    studentRoster: settings.studentRoster
+      ? {
+          rawText: settings.studentRoster.rawText,
+          columnFields: [...settings.studentRoster.columnFields],
+          entries: cloneStudentRosterEntries(settings.studentRoster.entries),
+        }
+      : null,
+  };
+}
 
 const activeTab = ref('overview');
 const selectedResultId = ref('');
 const resultSearchKeyword = ref('');
-type ResultSortMode = 'input-order' | 'score-desc' | 'score-asc' | 'student-id';
+type ResultSortMode =
+  | 'input-order'
+  | 'score-desc'
+  | 'score-asc'
+  | 'student-id'
+  | 'unverified-first'
+  | 'verified-first';
 const resultSortMode = ref<ResultSortMode>('input-order');
 const editableResult = ref<FinalResult | null>(null);
 const referenceAnswerDraft = ref('');
@@ -93,6 +159,8 @@ const projectSettingsDraft = ref<ProjectSettings>({
   defaultImageDetail: 'high',
   enableScanPostProcess: true,
   skipScanProcessing: false,
+  scanMarginRatio: 1,
+  studentRoster: null,
 });
 const projectSettingsDraftProjectId = ref('');
 const rubricLoading = ref(false);
@@ -102,11 +170,17 @@ const scanActionLoading = ref(false);
 const gradingActionLoading = ref(false);
 const exportDialogVisible = ref(false);
 const exportJsonLoading = ref(false);
+const exportExcelLoading = ref(false);
+const exportQuestionAccuracyExcelLoading = ref(false);
+const exportAllPdfsLoading = ref(false);
+const stoppingResultPdfExport = ref(false);
 const printResultLoading = ref(false);
 const exportScope = ref<ResultExportScope>('graded');
+const statisticsScoreMode = ref<'original' | 'post-processed'>('original');
 const projectSettingsSaving = ref(false);
 const removingPaperId = ref('');
 const deletingResultPaperId = ref('');
+const markResultAsVerifiedOnSave = ref(true);
 const importActionLoading = ref(false);
 const smartNameMatchSnapshot = ref<SmartNameMatchSnapshot | null>(null);
 const smartNameRosterText = ref('');
@@ -123,6 +197,7 @@ const smartNameContextMenu = ref({
 });
 const smartNameReasoningRef = ref<HTMLElement | null>(null);
 const smartNamePreviewRef = ref<HTMLElement | null>(null);
+const scoreDistributionChartRef = ref<HTMLElement | null>(null);
 const activeQuestionId = ref('');
 const previewDisplayOptions = ref<PreviewDisplayOptions>({
   ...DEFAULT_PREVIEW_DISPLAY_OPTIONS,
@@ -140,6 +215,10 @@ let lockedShellContent: HTMLElement | null = null;
 let smartNameMatchUnsubscribe: (() => void) | null = null;
 let shellScrollObserver: ResizeObserver | null = null;
 let resultPrintDocumentTitleBeforePrint: string | null = null;
+let scoreDistributionChart: ECharts | null = null;
+const scorePostProcessSnapshot = ref<ScorePostProcessProjectSnapshot | null>(
+  null,
+);
 
 function setShellScrollLocked(locked: boolean) {
   if (typeof document === 'undefined') {
@@ -342,6 +421,15 @@ const currentGradingTask = computed(
     ) ?? null,
 );
 const hasActiveGradingTask = computed(() => Boolean(currentGradingTask.value));
+const currentResultPdfExportTask = computed(
+  () =>
+    tasksStore.tasks.find(
+      (task) =>
+        task.projectId === projectId.value &&
+        task.kind === 'result-pdf-export' &&
+        ['queued', 'running', 'paused'].includes(task.status),
+    ) ?? null,
+);
 const visualizerSourceTask = computed(
   () =>
     currentGradingTask.value ??
@@ -378,6 +466,8 @@ const resultSortOptions = [
   { label: '按分数由高到低', value: 'score-desc' },
   { label: '按分数由低到高', value: 'score-asc' },
   { label: '按学号排序', value: 'student-id' },
+  { label: '按未核对名优先', value: 'unverified-first' },
+  { label: '按已核名优先', value: 'verified-first' },
 ];
 const gradedResultEntries = computed(() =>
   results.value
@@ -434,6 +524,20 @@ const gradedResultEntries = computed(() =>
         }
       }
 
+      if (resultSortMode.value === 'unverified-first') {
+        const leftPriority = left.result.nameMatchStatus === 'verified' ? 1 : 0;
+        const rightPriority =
+          right.result.nameMatchStatus === 'verified' ? 1 : 0;
+        return leftPriority - rightPriority || fallback;
+      }
+
+      if (resultSortMode.value === 'verified-first') {
+        const leftPriority = left.result.nameMatchStatus === 'verified' ? 0 : 1;
+        const rightPriority =
+          right.result.nameMatchStatus === 'verified' ? 0 : 1;
+        return leftPriority - rightPriority || fallback;
+      }
+
       return fallback;
     }),
 );
@@ -457,6 +561,264 @@ const selectableResultEntries = computed(() =>
     ? reviewResultEntries.value
     : gradedResultEntries.value,
 );
+const latestPostProcessRun = computed(
+  () =>
+    scorePostProcessSnapshot.value?.projectId === projectId.value
+      ? scorePostProcessSnapshot.value.latestRun
+      : null,
+);
+const latestPostProcessScoreMap = computed(
+  () =>
+    new Map(
+      (latestPostProcessRun.value?.results ?? []).map((item) => [
+        item.paperId,
+        item.processedScore,
+      ]),
+    ),
+);
+const hasPostProcessedScores = computed(() =>
+  latestPostProcessRun.value?.results.some((item) =>
+    Number.isFinite(item.processedScore),
+  ),
+);
+const statisticsScoreOptions = computed(() => {
+  const options: Array<{
+    label: string;
+    value: 'original' | 'post-processed';
+  }> = [
+    { label: '原始分数', value: 'original' as const },
+  ];
+
+  if (hasPostProcessedScores.value) {
+    options.push({ label: '后处理分数', value: 'post-processed' as const });
+  }
+
+  return options;
+});
+const statisticsScoreEntries = computed(() =>
+  gradedResultEntries.value.map((entry) => {
+    const originalScore = entry.displayScore;
+    const postProcessedScore =
+      latestPostProcessScoreMap.value.get(entry.result.paperId) ?? null;
+
+    return {
+      ...entry,
+      originalScore,
+      postProcessedScore,
+      statisticsScore:
+        statisticsScoreMode.value === 'post-processed' && postProcessedScore != null
+          ? postProcessedScore
+          : originalScore,
+    };
+  }),
+);
+const scoreValues = computed(() =>
+  statisticsScoreEntries.value.map((entry) => entry.statisticsScore),
+);
+const scoreStats = computed(() => {
+  const scores = scoreValues.value;
+  if (!scores.length) {
+    return {
+      count: 0,
+      average: 0,
+      max: 0,
+      min: 0,
+      variance: 0,
+      standardDeviation: 0,
+    };
+  }
+
+  const sum = scores.reduce((total, score) => total + score, 0);
+  const average = sum / scores.length;
+  const variance =
+    scores.reduce((total, score) => total + (score - average) ** 2, 0) /
+    scores.length;
+
+  return {
+    count: scores.length,
+    average,
+    max: Math.max(...scores),
+    min: Math.min(...scores),
+    variance,
+    standardDeviation: Math.sqrt(variance),
+  };
+});
+const questionStats = computed(() => {
+  const questionMap = new Map<
+    string,
+    {
+      questionId: string;
+      questionTitle: string;
+      maxScore: number;
+      correctCount: number;
+      totalCount: number;
+    }
+  >();
+
+  for (const entry of gradedResultEntries.value) {
+    for (const question of entry.result.finalResult.questionScores) {
+      const current =
+        questionMap.get(question.questionId) ??
+        {
+          questionId: question.questionId,
+          questionTitle: question.questionTitle,
+          maxScore: question.maxScore,
+          correctCount: 0,
+          totalCount: 0,
+        };
+
+      current.totalCount += 1;
+      if (question.score >= question.maxScore) {
+        current.correctCount += 1;
+      }
+      questionMap.set(question.questionId, current);
+    }
+  }
+
+  return [...questionMap.values()]
+    .map((item) => ({
+      ...item,
+      correctRate: item.totalCount
+        ? (item.correctCount / item.totalCount) * 100
+        : 0,
+    }))
+    .sort((left, right) =>
+      left.questionId.localeCompare(right.questionId, 'zh-CN', {
+        numeric: true,
+      }),
+    );
+});
+const scoreDistribution = computed(() => {
+  const scores = scoreValues.value;
+  if (!scores.length) {
+    return [] as Array<{ score: number; count: number }>;
+  }
+
+  const bucketMap = new Map<number, number>();
+  for (const score of scores) {
+    const bucket = Math.round(score);
+    bucketMap.set(bucket, (bucketMap.get(bucket) ?? 0) + 1);
+  }
+
+  return [...bucketMap.entries()]
+    .map(([score, count]) => ({ score, count }))
+    .sort((left, right) => left.score - right.score);
+});
+const exportAllPdfsButtonText = computed(() => {
+  const task = currentResultPdfExportTask.value;
+  if (!exportAllPdfsLoading.value && !task) {
+    return '批量导出 PDF';
+  }
+
+  if (!task) {
+    return '正在导出 PDF';
+  }
+
+  return `正在导出 ${Math.round(task.progress * 100)}%`;
+});
+
+function formatStatNumber(value: number): string {
+  return Number.isInteger(value) ? String(value) : value.toFixed(2);
+}
+
+function renderScoreDistributionChart() {
+  const chartHost = scoreDistributionChartRef.value;
+  if (!chartHost) {
+    return;
+  }
+
+  if (
+    scoreDistributionChart &&
+    scoreDistributionChart.getDom() !== chartHost
+  ) {
+    scoreDistributionChart.dispose();
+    scoreDistributionChart = null;
+  }
+
+  scoreDistributionChart ??= echarts.init(chartHost);
+  const distribution = scoreDistribution.value;
+  const minScore = distribution.length
+    ? Math.min(...distribution.map((item) => item.score))
+    : 0;
+  const maxScore = distribution.length
+    ? Math.max(...distribution.map((item) => item.score))
+    : 100;
+  const option: ScoreDistributionChartOption = {
+    color: ['#0f8b8d'],
+    tooltip: {
+      trigger: 'axis',
+      formatter: (params) => {
+        const item = Array.isArray(params) ? params[0] : params;
+        const value = Array.isArray(item.value) ? item.value : [item.name, item.value];
+        return `总分：${value[0]}<br />人数：${value[1]}`;
+      },
+    },
+    grid: {
+      left: 40,
+      right: 22,
+      top: 28,
+      bottom: 34,
+      containLabel: true,
+    },
+    xAxis: {
+      type: 'value',
+      name: '分数',
+      min: minScore - 1,
+      max: maxScore + 1,
+      interval:
+        maxScore - minScore <= 10
+          ? 1
+          : Math.max(Math.ceil((maxScore - minScore) / 10), 1),
+      axisLine: { lineStyle: { color: '#b8c4d1' } },
+      axisLabel: { color: '#5f7388' },
+    },
+    yAxis: {
+      type: 'value',
+      minInterval: 1,
+      axisLabel: { color: '#5f7388' },
+      splitLine: { lineStyle: { color: 'rgba(148, 163, 184, 0.2)' } },
+    },
+    series: [
+      {
+        name: '人数',
+        type: 'line',
+        smooth: true,
+        symbolSize: 8,
+        data: distribution.map((item) => [item.score, item.count]),
+        areaStyle: {
+          color: {
+            type: 'linear',
+            x: 0,
+            y: 0,
+            x2: 0,
+            y2: 1,
+            colorStops: [
+              { offset: 0, color: 'rgba(15, 139, 141, 0.28)' },
+              { offset: 1, color: 'rgba(15, 139, 141, 0.02)' },
+            ],
+          },
+        },
+        lineStyle: { width: 3 },
+      },
+    ],
+  };
+
+  scoreDistributionChart.setOption(option, true);
+}
+
+function resizeScoreDistributionChart() {
+  scoreDistributionChart?.resize();
+}
+
+async function loadScorePostProcessSnapshot() {
+  if (!projectId.value) {
+    scorePostProcessSnapshot.value = null;
+    return;
+  }
+
+  scorePostProcessSnapshot.value =
+    await window.neuromark.scorePostProcess.getProjectSnapshot(projectId.value);
+}
 
 function buildOriginalPreviewImage(
   paper: PaperRecord,
@@ -529,8 +891,23 @@ const rubricDebug = computed(() =>
     : null,
 );
 const showRubricDebugTab = computed(() => debugPanelStore.enabled);
-const referenceAnswerDirty = computed(() =>
-  referenceAnswerDraft.value !== savedReferenceAnswerMarkdown.value,
+const referenceAnswerDirty = computed(
+  () => referenceAnswerDraft.value !== savedReferenceAnswerMarkdown.value,
+);
+const normalizedProjectRosterDraft = computed(() => {
+  const currentRoster = projectSettingsDraft.value.studentRoster;
+  if (!currentRoster?.rawText.trim()) {
+    return null;
+  }
+
+  return {
+    rawText: currentRoster.rawText,
+    columnFields: currentRoster.columnFields,
+    entries: currentRoster.entries,
+  };
+});
+const serializedProjectRosterDraft = computed(() =>
+  JSON.stringify(normalizedProjectRosterDraft.value),
 );
 const projectSettingsDirty = computed(() => {
   if (!selectedProject.value) {
@@ -548,8 +925,84 @@ const projectSettingsDirty = computed(() => {
     projectSettingsDraft.value.enableScanPostProcess !==
       current.settings.enableScanPostProcess ||
     projectSettingsDraft.value.skipScanProcessing !==
-      current.settings.skipScanProcessing
+      current.settings.skipScanProcessing ||
+    projectSettingsDraft.value.scanMarginRatio !==
+      current.settings.scanMarginRatio ||
+    serializedProjectRosterDraft.value !==
+      JSON.stringify(current.settings.studentRoster ?? null)
   );
+});
+const projectRosterDraftText = computed({
+  get: () => projectSettingsDraft.value.studentRoster?.rawText ?? '',
+  set: (value: string) => {
+    const currentRoster = projectSettingsDraft.value.studentRoster;
+    if (!value.trim() && !(currentRoster?.entries.length ?? 0)) {
+      projectSettingsDraft.value.studentRoster = null;
+      return;
+    }
+    projectSettingsDraft.value.studentRoster = {
+      rawText: value,
+      columnFields: currentRoster?.columnFields ?? [],
+      entries: currentRoster?.entries ?? [],
+    };
+  },
+});
+const parsedProjectRoster = computed(() =>
+  parseStudentRosterText(projectRosterDraftText.value),
+);
+const projectRosterColumnFields = computed({
+  get: () => {
+    const currentFields =
+      projectSettingsDraft.value.studentRoster?.columnFields;
+    if (!parsedProjectRoster.value.columnCount) {
+      return [];
+    }
+    if (currentFields?.length === parsedProjectRoster.value.columnCount) {
+      return normalizeStudentRosterColumnFields(
+        parsedProjectRoster.value.columnCount,
+        currentFields,
+      );
+    }
+    return detectStudentRosterColumnFields(parsedProjectRoster.value);
+  },
+  set: (value: StudentRosterColumnField[]) => {
+    const nextColumnFields = normalizeStudentRosterColumnFields(
+      parsedProjectRoster.value.columnCount,
+      value,
+    );
+    const currentRoster = projectSettingsDraft.value.studentRoster;
+    if (!currentRoster?.rawText.trim()) {
+      projectSettingsDraft.value.studentRoster = null;
+      return;
+    }
+    projectSettingsDraft.value.studentRoster = {
+      rawText: currentRoster?.rawText ?? '',
+      columnFields: nextColumnFields,
+      entries: currentRoster?.entries ?? [],
+    };
+  },
+});
+const projectRosterPreviewEntries = computed(
+  () =>
+    buildStudentRosterData(
+      projectRosterDraftText.value,
+      projectRosterColumnFields.value,
+    )?.entries ?? [],
+);
+const savedProjectRosterEntries = computed<StudentRosterEntry[]>(
+  () => selectedProject.value?.settings.studentRoster?.entries ?? [],
+);
+const defaultSmartNameRosterText = computed(() => {
+  if (!savedProjectRosterEntries.value.length) {
+    return '';
+  }
+
+  return [
+    '班级 学号 姓名',
+    ...savedProjectRosterEntries.value.map(
+      (entry) => `${entry.className} ${entry.studentId} ${entry.name}`,
+    ),
+  ].join('\n');
 });
 const selectedResultUsesLatestReference = computed(() => {
   if (!selectedResult.value) {
@@ -639,6 +1092,82 @@ const smartNameMatchUncertainSuggestions = computed(() =>
     (item) => item.decision === 'uncertain' || item.decision === 'no_match',
   ),
 );
+const simpleSmartNameDuplicateCheck = computed(() => {
+  const nameGroups = new Map<
+    string,
+    Array<{
+      paperId: string;
+      paperCode: string;
+      studentName: string;
+      studentId: string;
+      className: string;
+    }>
+  >();
+  const studentIdGroups = new Map<
+    string,
+    Array<{
+      paperId: string;
+      paperCode: string;
+      studentName: string;
+      studentId: string;
+      className: string;
+    }>
+  >();
+
+  gradedResultEntries.value.forEach((entry) => {
+    const studentName = entry.studentName.trim();
+    const studentId = entry.studentId.trim();
+    const className = entry.className.trim();
+    const item = {
+      paperId: entry.result.paperId,
+      paperCode: entry.paperLabel,
+      studentName,
+      studentId,
+      className,
+    };
+
+    if (studentName) {
+      const bucket = nameGroups.get(studentName) ?? [];
+      bucket.push(item);
+      nameGroups.set(studentName, bucket);
+    }
+
+    if (studentId) {
+      const bucket = studentIdGroups.get(studentId) ?? [];
+      bucket.push(item);
+      studentIdGroups.set(studentId, bucket);
+    }
+  });
+
+  const duplicateNames = Array.from(nameGroups.entries())
+    .filter(([, items]) => items.length > 1)
+    .map(([value, items]) => ({
+      value,
+      items,
+    }))
+    .sort((left, right) => right.items.length - left.items.length);
+  const duplicateStudentIds = Array.from(studentIdGroups.entries())
+    .filter(([, items]) => items.length > 1)
+    .map(([value, items]) => ({
+      value,
+      items,
+    }))
+    .sort((left, right) => right.items.length - left.items.length);
+
+  return {
+    duplicateNames,
+    duplicateStudentIds,
+    duplicateNamePaperCount: duplicateNames.reduce(
+      (sum, group) => sum + group.items.length,
+      0,
+    ),
+    duplicateStudentIdPaperCount: duplicateStudentIds.reduce(
+      (sum, group) => sum + group.items.length,
+      0,
+    ),
+    hasIssue: duplicateNames.length > 0 || duplicateStudentIds.length > 0,
+  };
+});
 const smartNameMatchHasPreview = computed(() =>
   Boolean(smartNameMatchState.value.previewText.trim()),
 );
@@ -760,13 +1289,15 @@ watch(
     if (!nextProject) {
       projectNameDraft.value = '';
       projectSettingsDraftProjectId.value = '';
-      projectSettingsDraft.value = {
+      projectSettingsDraft.value = cloneProjectSettings({
         gradingConcurrency: 1,
         drawRegions: false,
         defaultImageDetail: 'high',
         enableScanPostProcess: true,
         skipScanProcessing: false,
-      };
+        scanMarginRatio: 1,
+        studentRoster: null,
+      });
       return;
     }
 
@@ -778,13 +1309,7 @@ watch(
     ) {
       projectSettingsDraftProjectId.value = nextProject.id;
       projectNameDraft.value = nextProject.name;
-      projectSettingsDraft.value = {
-        gradingConcurrency: nextProject.settings.gradingConcurrency,
-        drawRegions: nextProject.settings.drawRegions,
-        defaultImageDetail: nextProject.settings.defaultImageDetail,
-        enableScanPostProcess: nextProject.settings.enableScanPostProcess,
-        skipScanProcessing: nextProject.settings.skipScanProcessing,
-      };
+      projectSettingsDraft.value = cloneProjectSettings(nextProject.settings);
     }
   },
   { immediate: true, deep: true },
@@ -811,7 +1336,10 @@ watch(
       return;
     }
 
-    if (!referenceAnswerDirty.value || nextMarkdown === referenceAnswerDraft.value) {
+    if (
+      !referenceAnswerDirty.value ||
+      nextMarkdown === referenceAnswerDraft.value
+    ) {
       referenceAnswerDraft.value = nextMarkdown;
       savedReferenceAnswerMarkdown.value = nextMarkdown;
     }
@@ -835,7 +1363,7 @@ watch(
 );
 
 function normalizeResultSearchText(value: string): string {
-  return value.trim().toLocaleLowerCase('zh-CN');
+  return normalizeSearchText(value.trim());
 }
 
 function matchesResultSearch(
@@ -846,11 +1374,15 @@ function matchesResultSearch(
     return true;
   }
 
+  const nameSearchKeys = getNameSearchKeys(entry.studentName);
+
   return [
     entry.paperLabel,
-    entry.studentName,
     entry.studentId,
     entry.className,
+    nameSearchKeys.text,
+    nameSearchKeys.fullPinyin,
+    nameSearchKeys.initials,
   ].some((field) => normalizeResultSearchText(field ?? '').includes(keyword));
 }
 
@@ -861,6 +1393,7 @@ watch(
       ? cloneFinalResult(value.finalResult)
       : null;
     expandedQuestionIds.value = [];
+    markResultAsVerifiedOnSave.value = true;
   },
   { immediate: true },
 );
@@ -1014,16 +1547,42 @@ watch(
   { immediate: true },
 );
 
+watch(
+  hasPostProcessedScores,
+  (value) => {
+    if (!value && statisticsScoreMode.value === 'post-processed') {
+      statisticsScoreMode.value = 'original';
+    }
+  },
+  { immediate: true },
+);
+
+watch(
+  [scoreDistribution, activeTab],
+  async () => {
+    if (activeTab.value !== 'statistics-export') {
+      return;
+    }
+    await nextTick();
+    renderScoreDistributionChart();
+    scoreDistributionChart?.resize();
+  },
+  { deep: true },
+);
+
 onMounted(async () => {
   window.addEventListener('afterprint', restoreResultPrintMode);
   window.addEventListener('resize', updateOuterScrollState);
+  window.addEventListener('resize', resizeScoreDistributionChart);
   await debugPanelStore.initialize();
   smartNameMatchUnsubscribe = window.neuromark.results.onSmartNameMatchUpdated(
     (snapshot) => {
       if (snapshot.projectId === projectId.value) {
         smartNameMatchSnapshot.value = snapshot;
-        if (!smartNameRosterText.value.trim() && snapshot.rosterText.trim()) {
-          smartNameRosterText.value = snapshot.rosterText;
+        if (!smartNameRosterText.value.trim()) {
+          smartNameRosterText.value = resolveSmartNameRosterText(
+            snapshot.rosterText,
+          );
         }
       }
     },
@@ -1033,13 +1592,17 @@ onMounted(async () => {
     await projectsStore.bootstrap();
   }
 
+  await loadScorePostProcessSnapshot();
   await refreshOuterScrollState();
 });
 
 onBeforeUnmount(() => {
   window.removeEventListener('afterprint', restoreResultPrintMode);
   window.removeEventListener('resize', updateOuterScrollState);
+  window.removeEventListener('resize', resizeScoreDistributionChart);
   restoreResultPrintMode();
+  scoreDistributionChart?.dispose();
+  scoreDistributionChart = null;
   smartNameMatchUnsubscribe?.();
   smartNameMatchUnsubscribe = null;
   smartNameContextMenu.value.visible = false;
@@ -1051,6 +1614,7 @@ onBeforeUnmount(() => {
 });
 
 watch(projectId, () => {
+  void loadScorePostProcessSnapshot();
   void refreshOuterScrollState();
 });
 
@@ -1101,9 +1665,7 @@ watch(
     }
 
     smartNameMatchSnapshot.value = snapshot;
-    if (snapshot.rosterText.trim()) {
-      smartNameRosterText.value = snapshot.rosterText;
-    }
+    smartNameRosterText.value = resolveSmartNameRosterText(snapshot.rosterText);
 
     if (showRubricDebugTab.value) {
       await loadRubricDebug();
@@ -1124,11 +1686,22 @@ watch(
     const snapshot =
       await window.neuromark.results.getSmartNameMatchSnapshot(nextProjectId);
     smartNameMatchSnapshot.value = snapshot;
-    if (snapshot.rosterText.trim()) {
-      smartNameRosterText.value = snapshot.rosterText;
-    }
+    smartNameRosterText.value = resolveSmartNameRosterText(snapshot.rosterText);
   },
   { immediate: false },
+);
+
+watch(
+  defaultSmartNameRosterText,
+  (nextDefaultText) => {
+    if (
+      !smartNameRosterText.value.trim() &&
+      !(smartNameMatchSnapshot.value?.rosterText.trim() ?? '')
+    ) {
+      smartNameRosterText.value = nextDefaultText;
+    }
+  },
+  { immediate: true },
 );
 
 async function loadRubricDebug() {
@@ -1158,7 +1731,7 @@ async function importImages() {
       files,
     );
     message.success(
-      `已导入 ${result.addedPaperCount} 份试卷，共 ${result.addedPageCount} 张图片。`,
+      `已导入 ${result.addedPaperCount} 份试卷，共 ${result.addedPageCount} 页。`,
     );
   } catch (error) {
     message.error(error instanceof Error ? error.message : '导入图片失败。');
@@ -1183,7 +1756,7 @@ async function importImageDirectory() {
       directoryPath,
     );
     message.success(
-      `已从文件夹导入 ${result.addedPaperCount} 份试卷，共 ${result.addedPageCount} 张图片。`,
+      `已从文件夹导入 ${result.addedPaperCount} 份试卷，共 ${result.addedPageCount} 页。`,
     );
   } catch (error) {
     message.error(error instanceof Error ? error.message : '导入文件夹失败。');
@@ -1391,7 +1964,7 @@ function buildSelectedResultPdfBaseName(): string {
   return verifiedParts.join('_') || paperFallback;
 }
 
-function applySelectedResultPrintTitle(): void {
+async function applySelectedResultPrintTitle(): Promise<void> {
   if (typeof document === 'undefined') {
     return;
   }
@@ -1400,10 +1973,12 @@ function applySelectedResultPrintTitle(): void {
     resultPrintDocumentTitleBeforePrint = document.title;
   }
 
-  document.title = buildSelectedResultPdfBaseName();
+  const nextTitle = buildSelectedResultPdfBaseName();
+  document.title = nextTitle;
+  await window.neuromark.app.setMainWindowTitle(nextTitle);
 }
 
-function restoreSelectedResultPrintTitle(): void {
+async function restoreSelectedResultPrintTitle(): Promise<void> {
   if (
     typeof document === 'undefined' ||
     resultPrintDocumentTitleBeforePrint == null
@@ -1412,6 +1987,9 @@ function restoreSelectedResultPrintTitle(): void {
   }
 
   document.title = resultPrintDocumentTitleBeforePrint;
+  await window.neuromark.app.setMainWindowTitle(
+    resultPrintDocumentTitleBeforePrint,
+  );
   resultPrintDocumentTitleBeforePrint = null;
 }
 
@@ -1471,9 +2049,114 @@ async function confirmExportResults() {
   }
 }
 
+async function exportResultsExcel() {
+  if (!selectedProject.value || exportExcelLoading.value) {
+    return;
+  }
+
+  const defaultFileName = `${normalizeExportFileName(
+    selectedProject.value.name,
+  )}-scores.xlsx`;
+  const targetPath =
+    await window.neuromark.app.selectExcelSavePath(defaultFileName);
+  if (!targetPath) {
+    return;
+  }
+
+  exportExcelLoading.value = true;
+  try {
+    const outputPath = await projectsStore.exportResultsExcel(
+      selectedProject.value.id,
+      { targetPath },
+    );
+    message.success(`Excel 已导出到 ${outputPath}`);
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : '导出 Excel 失败。');
+  } finally {
+    exportExcelLoading.value = false;
+  }
+}
+
+async function exportQuestionAccuracyExcel() {
+  if (!selectedProject.value || exportQuestionAccuracyExcelLoading.value) {
+    return;
+  }
+
+  const defaultFileName = `${normalizeExportFileName(
+    selectedProject.value.name,
+  )}-question-accuracy.xlsx`;
+  const targetPath =
+    await window.neuromark.app.selectExcelSavePath(defaultFileName);
+  if (!targetPath) {
+    return;
+  }
+
+  exportQuestionAccuracyExcelLoading.value = true;
+  try {
+    const outputPath = await projectsStore.exportQuestionAccuracyExcel(
+      selectedProject.value.id,
+      { targetPath },
+    );
+    message.success(`小题正确率 Excel 已导出到 ${outputPath}`);
+  } catch (error) {
+    message.error(
+      error instanceof Error ? error.message : '导出小题正确率 Excel 失败。',
+    );
+  } finally {
+    exportQuestionAccuracyExcelLoading.value = false;
+  }
+}
+
+async function exportAllResultPdfs() {
+  if (
+    !selectedProject.value ||
+    exportAllPdfsLoading.value ||
+    currentResultPdfExportTask.value
+  ) {
+    return;
+  }
+
+  const targetDirectory = await window.neuromark.app.selectExportDirectory();
+  if (!targetDirectory) {
+    return;
+  }
+
+  exportAllPdfsLoading.value = true;
+
+  try {
+    await projectsStore.exportAllPdfs(selectedProject.value.id, {
+      targetDirectory,
+    });
+    await tasksStore.refresh();
+    message.success('批量 PDF 导出任务已在后台开始。');
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : '批量导出 PDF 失败。');
+  } finally {
+    exportAllPdfsLoading.value = false;
+  }
+}
+
+async function stopResultPdfExport() {
+  const task = currentResultPdfExportTask.value;
+  if (!task || stoppingResultPdfExport.value) {
+    return;
+  }
+
+  stoppingResultPdfExport.value = true;
+  try {
+    await window.neuromark.grading.cancel(task.id);
+    await tasksStore.refresh();
+    message.success('PDF 导出任务已停止。');
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : '停止 PDF 导出失败。');
+  } finally {
+    stoppingResultPdfExport.value = false;
+  }
+}
+
 function restoreResultPrintMode() {
   if (!isResultPrintMode.value) {
-    restoreSelectedResultPrintTitle();
+    void restoreSelectedResultPrintTitle();
     printResultLoading.value = false;
     return;
   }
@@ -1483,7 +2166,7 @@ function restoreResultPrintMode() {
     expandedQuestionIds.value = [...expandedQuestionIdsBeforePrint.value];
   }
   expandedQuestionIdsBeforePrint.value = null;
-  restoreSelectedResultPrintTitle();
+  void restoreSelectedResultPrintTitle();
   printResultLoading.value = false;
 }
 
@@ -1508,7 +2191,7 @@ async function waitForSelectedResultPrintReady() {
 }
 
 async function prepareSelectedResultForPrint() {
-  applySelectedResultPrintTitle();
+  await applySelectedResultPrintTitle();
   expandedQuestionIdsBeforePrint.value = [...expandedQuestionIds.value];
   expandedQuestionIds.value = editableResult.value!.questionScores.map(
     (question) => question.questionId,
@@ -1529,15 +2212,26 @@ async function printSelectedResult() {
 
   printResultLoading.value = true;
   try {
+    const targetPath = await window.neuromark.app.selectPdfSavePath(
+      buildSelectedResultPdfBaseName(),
+    );
+    if (!targetPath) {
+      printResultLoading.value = false;
+      return;
+    }
+
     await prepareSelectedResultForPrint();
-    window.print();
+    const outputPath =
+      await window.neuromark.app.exportCurrentWindowToPdf(targetPath);
+    message.success(`PDF 已导出到 ${outputPath}`);
+    restoreResultPrintMode();
   } catch (error) {
     restoreResultPrintMode();
     message.error(error instanceof Error ? error.message : '打印导出失败。');
   }
 }
 
-async function saveResult() {
+async function saveResult(markAsVerified = editableStudentInfoChanged.value) {
   if (
     !selectedProject.value ||
     !selectedResult.value ||
@@ -1547,19 +2241,24 @@ async function saveResult() {
   }
   const nextResult = cloneFinalResult(editableResult.value);
   nextResult.manualTotalScore = editableAutoTotal.value;
-  const saveOptions = editableStudentInfoChanged.value
-    ? {
-        nameMatchStatus: 'verified' as NameMatchStatus,
-        nameMatchUpdatedAt: new Date().toISOString(),
-        nameMatchSource: 'manual-review',
-      }
-    : undefined;
+  const saveOptions =
+    editableStudentInfoChanged.value && markAsVerified
+      ? {
+          nameMatchStatus: 'verified' as NameMatchStatus,
+          nameMatchUpdatedAt: new Date().toISOString(),
+          nameMatchSource: 'manual-review',
+        }
+      : undefined;
   await projectsStore.saveFinalResult(
     selectedProject.value.id,
     selectedResult.value.paperId,
     nextResult,
     saveOptions,
   );
+}
+
+async function saveResultByToggle() {
+  await saveResult(markResultAsVerifiedOnSave.value);
 }
 
 async function startSmartNameMatch(scope: SmartNameMatchScope = 'unverified') {
@@ -1667,6 +2366,52 @@ function formatStudentInfo(
   ].join(' · ');
 }
 
+function updateProjectRosterColumnField(
+  index: number,
+  value: StudentRosterColumnField,
+) {
+  const nextFields = [...projectRosterColumnFields.value];
+  nextFields[index] = value;
+  projectRosterColumnFields.value = nextFields;
+}
+
+function updateStudentInfoFromRosterEntry(
+  target: StudentInfo,
+  entry: StudentRosterEntry,
+) {
+  target.className = entry.className;
+  target.studentId = entry.studentId;
+  target.name = entry.name;
+}
+
+function applyRosterSuggestionToEditableResult(entry: StudentRosterEntry) {
+  if (!editableResult.value) {
+    return;
+  }
+
+  updateStudentInfoFromRosterEntry(editableResult.value.studentInfo, entry);
+}
+
+function applyRosterSuggestionToManualSmartName(entry: StudentRosterEntry) {
+  if (!manualSmartNameDraft.value) {
+    return;
+  }
+
+  updateStudentInfoFromRosterEntry(
+    manualSmartNameDraft.value.studentInfo,
+    entry,
+  );
+}
+
+function resolveSmartNameRosterText(snapshotRosterText?: string | null): string {
+  const trimmedSnapshotText = snapshotRosterText?.trim() ?? '';
+  if (trimmedSnapshotText) {
+    return trimmedSnapshotText;
+  }
+
+  return defaultSmartNameRosterText.value;
+}
+
 function getSmartNameFieldLabel(
   field: 'className' | 'studentId' | 'name',
 ): string {
@@ -1714,6 +2459,11 @@ function buildPaperPreviewImages(paperId: string): PreviewImageItem[] {
     title: `${paper.paperCode} · 第 ${index + 1} 页`,
     caption: page.scannedPath ? '扫描答卷' : '原始答卷',
   }));
+}
+
+function focusResultByPaperId(paperId: string) {
+  selectedResultId.value =
+    results.value.find((result) => result.paperId === paperId)?.id ?? '';
 }
 
 async function openPaperPreviewByPaperId(paperId: string) {
@@ -1821,12 +2571,34 @@ async function saveProjectSettings() {
     return;
   }
 
+  const nextStudentRoster = buildStudentRosterData(
+    projectRosterDraftText.value,
+    projectRosterColumnFields.value,
+  );
+  const assignedRosterFields = projectRosterColumnFields.value.filter(
+    (field) => field !== 'ignore',
+  );
+  if (new Set(assignedRosterFields).size !== assignedRosterFields.length) {
+    message.error('班级花名册的列属性不能重复，请调整列映射。');
+    return;
+  }
+  if (
+    projectRosterDraftText.value.trim() &&
+    (!parsedProjectRoster.value.rows.length ||
+      parsedProjectRoster.value.columnCount === 0)
+  ) {
+    message.error('班级花名册未识别出有效列，请检查粘贴内容。');
+    return;
+  }
+
   const nextSettings = {
     gradingConcurrency: projectSettingsDraft.value.gradingConcurrency,
     drawRegions: projectSettingsDraft.value.drawRegions,
     defaultImageDetail: projectSettingsDraft.value.defaultImageDetail,
     enableScanPostProcess: projectSettingsDraft.value.enableScanPostProcess,
     skipScanProcessing: projectSettingsDraft.value.skipScanProcessing,
+    scanMarginRatio: projectSettingsDraft.value.scanMarginRatio,
+    studentRoster: nextStudentRoster,
   };
   const projectIdToSave = selectedProject.value.id;
   const nameChanged = nextName !== selectedProject.value.name;
@@ -1874,6 +2646,7 @@ async function saveReferenceAnswer() {
       selectedProject.value.id,
       nextMarkdown,
     );
+    savedReferenceAnswerMarkdown.value = nextMarkdown;
     await loadRubricDebug();
   } finally {
     referenceAnswerSaving.value = false;
@@ -2111,7 +2884,7 @@ function goBack() {
             :loading="importActionLoading"
             @click="importImages"
           >
-            导入图片
+            导入图片/PDF
           </n-button>
           <n-button
             secondary
@@ -2165,7 +2938,6 @@ function goBack() {
           >
             开始批阅
           </n-button>
-          <n-button tertiary @click="exportResults">导出 JSON</n-button>
         </div>
       </div>
       <div class="hero-actions">
@@ -2258,7 +3030,9 @@ function goBack() {
                               ? '扫描任务'
                               : task.kind === 'grading'
                                 ? '批阅任务'
-                                : '参考答案生成任务'
+                                : task.kind === 'result-pdf-export'
+                                  ? 'PDF 导出任务'
+                                  : '参考答案生成任务'
                           }}
                         </div>
                         <div class="task-preview-inline-tags">
@@ -2635,15 +3409,17 @@ function goBack() {
                     </template>
                     删除后会移除这张试卷当前的批阅结果，并恢复为“未批改”状态，可重新发起批阅。确认继续吗？
                   </n-popconfirm>
-                  <n-button type="primary" @click="saveResult"
-                    >保存修改</n-button
-                  >
+                  <n-button type="primary" @click="saveResultByToggle">
+                    保存修改
+                  </n-button>
                 </n-space>
               </div>
 
               <div class="result-workspace-scroll">
                 <div class="result-workspace-stack">
-                  <div class="result-subsection-card">
+                  <div
+                    class="result-subsection-card result-subsection-card--allow-overflow"
+                  >
                     <div
                       class="result-panel-head result-panel-head--with-tools"
                     >
@@ -2790,12 +3566,15 @@ function goBack() {
                                 >{{ region.questionId }}</span
                               >
                               <strong
-                              v-if="previewDisplayOptions.showQuestionScores"
-                              class="paper-stage-region-score"
-                            >
-                              {{
-                                formatRegionScore(region.score, region.maxScore)
-                              }}
+                                v-if="previewDisplayOptions.showQuestionScores"
+                                class="paper-stage-region-score"
+                              >
+                                {{
+                                  formatRegionScore(
+                                    region.score,
+                                    region.maxScore,
+                                  )
+                                }}
                               </strong>
                             </div>
                           </template>
@@ -2855,7 +3634,9 @@ function goBack() {
                     >
                   </div>
 
-                  <div class="result-subsection-card">
+                  <div
+                    class="result-subsection-card result-subsection-card--allow-overflow"
+                  >
                     <div class="result-panel-head">
                       <div>
                         <div class="result-section-title">基础信息与总分</div>
@@ -2868,26 +3649,50 @@ function goBack() {
                     <n-form label-placement="top">
                       <div class="three-col">
                         <n-form-item label="班级">
-                          <n-input
+                          <StudentInfoAutocompleteInput
                             v-model:value="editableResult.studentInfo.className"
+                            field="className"
+                            :roster-entries="savedProjectRosterEntries"
+                            @select-entry="
+                              applyRosterSuggestionToEditableResult
+                            "
                           />
                         </n-form-item>
                         <n-form-item label="学号">
-                          <n-input
+                          <StudentInfoAutocompleteInput
                             v-model:value="editableResult.studentInfo.studentId"
+                            field="studentId"
+                            :roster-entries="savedProjectRosterEntries"
+                            @select-entry="
+                              applyRosterSuggestionToEditableResult
+                            "
                           />
                         </n-form-item>
                         <n-form-item label="姓名">
-                          <n-input
+                          <StudentInfoAutocompleteInput
                             v-model:value="editableResult.studentInfo.name"
+                            field="name"
+                            :roster-entries="savedProjectRosterEntries"
+                            @select-entry="
+                              applyRosterSuggestionToEditableResult
+                            "
                           />
                         </n-form-item>
                       </div>
                       <div
                         v-if="editableStudentInfoChanged"
                         class="smart-name-save-hint"
+                        style="
+                          display: inline-flex;
+                          align-items: center;
+                          gap: 12px;
+                        "
                       >
-                        保存后，这份答卷会被标记为已核名。
+                        <span>标记为已核名</span>
+                        <n-switch
+                          v-model:value="markResultAsVerifiedOnSave"
+                          style="flex-shrink: 0"
+                        />
                       </div>
                     </n-form>
 
@@ -3166,7 +3971,7 @@ function goBack() {
         <n-tab-pane name="smart-name-match" tab="智能核名">
           <div
             v-if="results.length"
-            class="result-review-layout"
+            class="smart-name-layout"
             @mouseenter="isReviewScrollActive = true"
             @mouseleave="isReviewScrollActive = false"
             @click="hideSmartNameContextMenu"
@@ -3240,7 +4045,163 @@ function goBack() {
               </div>
             </aside>
 
-            <section class="result-workspace surface-card">
+            <div class="smart-name-main">
+              <section class="surface-card result-duplicate-check-panel">
+                <div class="result-panel-head">
+                  <div>
+                    <div class="result-section-title">基础重复检查</div>
+                    <div class="detail-subtitle">
+                      检查当前批阅结果中存在的重复卷情况。
+                    </div>
+                  </div>
+                </div>
+
+                <div class="smart-name-summary-grid">
+                  <div class="result-score-summary-card">
+                    <span>重复姓名组</span>
+                    <strong>{{
+                      simpleSmartNameDuplicateCheck.duplicateNames.length
+                    }}</strong>
+                  </div>
+                  <div class="result-score-summary-card">
+                    <span>重复姓名试卷</span>
+                    <strong>{{
+                      simpleSmartNameDuplicateCheck.duplicateNamePaperCount
+                    }}</strong>
+                  </div>
+                  <div class="result-score-summary-card">
+                    <span>重复学号组</span>
+                    <strong>{{
+                      simpleSmartNameDuplicateCheck.duplicateStudentIds.length
+                    }}</strong>
+                  </div>
+                  <div class="result-score-summary-card">
+                    <span>重复学号试卷</span>
+                    <strong>{{
+                      simpleSmartNameDuplicateCheck.duplicateStudentIdPaperCount
+                    }}</strong>
+                  </div>
+                </div>
+
+                <template v-if="simpleSmartNameDuplicateCheck.hasIssue">
+                  <div
+                    v-if="simpleSmartNameDuplicateCheck.duplicateNames.length"
+                    class="question-list"
+                  >
+                    <div
+                      v-for="group in simpleSmartNameDuplicateCheck.duplicateNames"
+                      :key="`simple-duplicate-name-${group.value}`"
+                      class="question-card question-card--smart-name"
+                    >
+                      <div class="smart-name-card-head">
+                        <div>
+                          <div class="question-card-title">
+                            重复姓名：{{ group.value }}
+                          </div>
+                          <div class="question-card-meta">
+                            共 {{ group.items.length }} 份试卷
+                          </div>
+                        </div>
+                        <n-tag
+                          size="small"
+                          round
+                          type="error"
+                          :bordered="false"
+                        >
+                          姓名重复
+                        </n-tag>
+                      </div>
+                      <div class="smart-name-duplicate-list">
+                        <div
+                          v-for="item in group.items"
+                          :key="`simple-duplicate-name-item-${group.value}-${item.paperId}`"
+                          class="smart-name-duplicate-item smart-name-duplicate-item--danger"
+                        >
+                          <div class="smart-name-duplicate-item__meta">
+                            <strong>{{ item.paperCode }}</strong>
+                            <span>{{
+                              formatStudentInfo({
+                                name: item.studentName,
+                                studentId: item.studentId,
+                                className: item.className,
+                              })
+                            }}</span>
+                          </div>
+                          <n-button
+                            secondary
+                            size="small"
+                            @click="focusResultByPaperId(item.paperId)"
+                          >
+                            定位试卷
+                          </n-button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div
+                    v-if="simpleSmartNameDuplicateCheck.duplicateStudentIds.length"
+                    class="question-list"
+                  >
+                    <div
+                      v-for="group in simpleSmartNameDuplicateCheck.duplicateStudentIds"
+                      :key="`simple-duplicate-student-id-${group.value}`"
+                      class="question-card question-card--smart-name"
+                    >
+                      <div class="smart-name-card-head">
+                        <div>
+                          <div class="question-card-title">
+                            重复学号：{{ group.value }}
+                          </div>
+                          <div class="question-card-meta">
+                            共 {{ group.items.length }} 份试卷
+                          </div>
+                        </div>
+                        <n-tag
+                          size="small"
+                          round
+                          type="error"
+                          :bordered="false"
+                        >
+                          学号重复
+                        </n-tag>
+                      </div>
+                      <div class="smart-name-duplicate-list">
+                        <div
+                          v-for="item in group.items"
+                          :key="`simple-duplicate-student-id-item-${group.value}-${item.paperId}`"
+                          class="smart-name-duplicate-item smart-name-duplicate-item--danger"
+                        >
+                          <div class="smart-name-duplicate-item__meta">
+                            <strong>{{ item.paperCode }}</strong>
+                            <span>{{
+                              formatStudentInfo({
+                                name: item.studentName,
+                                studentId: item.studentId,
+                                className: item.className,
+                              })
+                            }}</span>
+                          </div>
+                          <n-button
+                            secondary
+                            size="small"
+                            @click="focusResultByPaperId(item.paperId)"
+                          >
+                            定位试卷
+                          </n-button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </template>
+
+                <n-empty
+                  v-else
+                  description="当前没有发现姓名重复或学号重复的试卷。"
+                />
+              </section>
+
+              <section class="result-workspace surface-card">
               <div class="result-workspace-head">
                 <div>
                   <div class="result-section-title">
@@ -3371,23 +4332,38 @@ function goBack() {
                     <n-form label-placement="top">
                       <div class="three-col">
                         <n-form-item label="班级">
-                          <n-input
+                          <StudentInfoAutocompleteInput
                             v-model:value="
                               manualSmartNameDraft.studentInfo.className
+                            "
+                            field="className"
+                            :roster-entries="savedProjectRosterEntries"
+                            @select-entry="
+                              applyRosterSuggestionToManualSmartName
                             "
                           />
                         </n-form-item>
                         <n-form-item label="学号">
-                          <n-input
+                          <StudentInfoAutocompleteInput
                             v-model:value="
                               manualSmartNameDraft.studentInfo.studentId
+                            "
+                            field="studentId"
+                            :roster-entries="savedProjectRosterEntries"
+                            @select-entry="
+                              applyRosterSuggestionToManualSmartName
                             "
                           />
                         </n-form-item>
                         <n-form-item label="姓名">
-                          <n-input
+                          <StudentInfoAutocompleteInput
                             v-model:value="
                               manualSmartNameDraft.studentInfo.name
+                            "
+                            field="name"
+                            :roster-entries="savedProjectRosterEntries"
+                            @select-entry="
+                              applyRosterSuggestionToManualSmartName
                             "
                           />
                         </n-form-item>
@@ -3451,8 +4427,8 @@ function goBack() {
                       >
                         {{ smartNameMatchState.stage }}
                       </n-tag>
+                      </div>
                     </div>
-                  </div>
 
                   <n-alert
                     v-if="
@@ -4014,32 +4990,31 @@ function goBack() {
                       />
                       <div v-else class="detail-subtitle">
                         已折叠
-                        {{
-                          smartNameMatchCertainKeepSuggestions.length
-                        }}
+                        {{ smartNameMatchCertainKeepSuggestions.length }}
                         条确定无误结果。
                       </div>
                     </div>
                   </template>
                 </div>
               </div>
-            </section>
+              </section>
 
-            <div
-              v-if="smartNameContextMenu.visible"
-              class="preview-context-menu smart-name-context-menu"
-              :style="{
-                left: `${smartNameContextMenu.x}px`,
-                top: `${smartNameContextMenu.y}px`,
-              }"
-              @click.stop
-            >
-              <button
-                class="preview-context-menu__item"
-                @click="startManualSmartName(smartNameContextMenu.paperId)"
+              <div
+                v-if="smartNameContextMenu.visible"
+                class="preview-context-menu smart-name-context-menu"
+                :style="{
+                  left: `${smartNameContextMenu.x}px`,
+                  top: `${smartNameContextMenu.y}px`,
+                }"
+                @click.stop
               >
-                手动核名
-              </button>
+                <button
+                  class="preview-context-menu__item"
+                  @click="startManualSmartName(smartNameContextMenu.paperId)"
+                >
+                  手动核名
+                </button>
+              </div>
             </div>
           </div>
           <n-empty v-else description="先完成批阅后再进行智能核名。" />
@@ -4052,6 +5027,218 @@ function goBack() {
             :results="detail.results"
             :papers="detail.originals"
           />
+        </n-tab-pane>
+
+        <n-tab-pane name="statistics-export" tab="统计与导出">
+          <div class="statistics-export-stack">
+            <n-card class="surface-card statistics-export-hero">
+              <div class="statistics-export-hero-copy">
+                <div class="eyebrow">统计与导出</div>
+                <div class="project-section-title">
+                  阅卷统计信息及导出选项
+                </div>
+                <div class="project-section-copy">
+                  你可以在此处查看试卷分数的分布情况，以及题目的错误率，也可以导出结果为各种格式。
+                </div>
+              </div>
+              <div class="statistics-export-actions">
+                <n-button
+                  type="primary"
+                  secondary
+                  :loading="exportJsonLoading"
+                  @click="exportResults"
+                >
+                  导出 JSON
+                </n-button>
+                <n-button
+                  type="primary"
+                  secondary
+                  :loading="exportExcelLoading"
+                  @click="exportResultsExcel"
+                >
+                  导出成绩 Excel
+                </n-button>
+                <n-button
+                  type="primary"
+                  secondary
+                  :loading="exportAllPdfsLoading || Boolean(currentResultPdfExportTask)"
+                  :disabled="!gradedResultEntries.length || Boolean(currentResultPdfExportTask)"
+                  @click="exportAllResultPdfs"
+                >
+                  {{ exportAllPdfsButtonText }}
+                </n-button>
+                <n-button
+                  v-if="currentResultPdfExportTask"
+                  tertiary
+                  type="error"
+                  :loading="stoppingResultPdfExport"
+                  @click="stopResultPdfExport"
+                >
+                  停止导出
+                </n-button>
+              </div>
+            </n-card>
+
+            <div v-if="gradedResultEntries.length" class="statistics-main-column">
+              <section class="statistics-main-column">
+                <n-card
+                  v-if="hasPostProcessedScores"
+                  class="surface-card statistics-filter-card"
+                >
+                  <div class="statistics-filter-row">
+                    <div>
+                      <div class="project-section-title">统计口径</div>
+                      <div class="project-section-copy">
+                        选择按原始分数还是后处理分数查看统计图表与汇总指标。
+                      </div>
+                    </div>
+                    <n-select
+                      v-model:value="statisticsScoreMode"
+                      class="statistics-filter-select"
+                      :options="statisticsScoreOptions"
+                    />
+                  </div>
+                </n-card>
+
+                <div class="metrics-grid statistics-metrics-grid">
+                  <MetricCard
+                    label="已批改"
+                    :value="scoreStats.count"
+                    value-mode="text"
+                    hint="参与统计的答卷数"
+                  />
+                  <MetricCard
+                    label="平均分"
+                    :value="formatStatNumber(scoreStats.average)"
+                    value-mode="text"
+                    :hint="
+                      statisticsScoreMode === 'post-processed'
+                        ? '后处理总分平均值'
+                        : '原始最终总分平均值'
+                    "
+                  />
+                  <MetricCard
+                    label="最高分"
+                    :value="formatStatNumber(scoreStats.max)"
+                    value-mode="text"
+                    :hint="
+                      statisticsScoreMode === 'post-processed'
+                        ? '后处理总分最高值'
+                        : '原始最终总分最高值'
+                    "
+                  />
+                  <MetricCard
+                    label="最低分"
+                    :value="formatStatNumber(scoreStats.min)"
+                    value-mode="text"
+                    :hint="
+                      statisticsScoreMode === 'post-processed'
+                        ? '后处理总分最低值'
+                        : '原始最终总分最低值'
+                    "
+                  />
+                  <MetricCard
+                    label="方差"
+                    :value="formatStatNumber(scoreStats.variance)"
+                    value-mode="text"
+                    hint="按总体方差计算"
+                  />
+                  <MetricCard
+                    label="标准差"
+                    :value="formatStatNumber(scoreStats.standardDeviation)"
+                    value-mode="text"
+                    hint="分数离散程度"
+                  />
+                </div>
+
+                <n-card class="surface-card statistics-chart-card">
+                  <div class="project-section-head">
+                    <div class="project-section-title">总分分布</div>
+                    <div class="project-section-copy" style="margin-bottom:10px;">
+                      图表统计自动四舍五入到整数。
+                    </div>
+                  </div>
+                  <div
+                    ref="scoreDistributionChartRef"
+                    class="statistics-score-chart"
+                  />
+                </n-card>
+
+                <n-card class="surface-card statistics-question-card">
+                  <div
+                    class="project-section-head statistics-question-card-head"
+                  >
+                    <div>
+                      <div class="project-section-title">小题正确率</div>
+                      <div class="project-section-copy">
+                        满分记为正确，非满分记为错误。
+                      </div>
+                    </div>
+                    <n-button
+                      secondary
+                      :loading="exportQuestionAccuracyExcelLoading"
+                      @click="exportQuestionAccuracyExcel"
+                    >
+                      导出正确率 Excel
+                    </n-button>
+                  </div>
+                  <div class="statistics-question-list">
+                    <div
+                      v-for="question in questionStats"
+                      :key="question.questionId"
+                      class="statistics-question-row"
+                    >
+                      <div class="statistics-question-row-head">
+                        <div class="statistics-question-main">
+                          <n-tag
+                            size="small"
+                            round
+                            :bordered="false"
+                            type="info"
+                          >
+                            {{ question.questionId }}
+                          </n-tag>
+                          <div>
+                            <div
+                              class="statistics-question-title question-card-title--markdown"
+                            >
+                              <MarkdownRenderer
+                                class="question-card-title-content"
+                                :source="
+                                  question.questionTitle || question.questionId
+                                "
+                              />
+                            </div>
+                            <div class="statistics-question-meta">
+                              满分 {{ question.maxScore }} 分 ·
+                              {{ question.correctCount }}/{{
+                                question.totalCount
+                              }}
+                              人满分
+                            </div>
+                          </div>
+                        </div>
+                        <strong>
+                          {{ formatStatNumber(question.correctRate) }}%
+                        </strong>
+                      </div>
+                      <div class="statistics-rate-track">
+                        <div
+                          class="statistics-rate-bar"
+                          :style="{ width: `${question.correctRate}%` }"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </n-card>
+              </section>
+            </div>
+
+            <n-empty
+              v-else
+              description="完成批阅后，这里会显示分数统计与导出入口。"
+            />
+          </div>
         </n-tab-pane>
 
         <n-tab-pane name="project-settings" tab="项目设置">
@@ -4087,6 +5274,15 @@ function goBack() {
                       ]"
                     />
                   </n-form-item>
+                  <n-form-item label="扫描裕度比例">
+                    <n-input-number
+                      v-model:value="projectSettingsDraft.scanMarginRatio"
+                      :min="1"
+                      :step="0.01"
+                      :precision="2"
+                      class="create-project-half-input"
+                    />
+                  </n-form-item>
                 </div>
                 <div class="create-project-toggle-row">
                   <div class="create-project-toggle-copy">
@@ -4119,6 +5315,84 @@ function goBack() {
                     </div>
                   </div>
                   <n-switch v-model:value="projectSettingsDraft.drawRegions" />
+                </div>
+                <div class="result-subsection-card">
+                  <div class="result-panel-head">
+                    <div>
+                      <div class="result-section-title">班级花名册</div>
+                      <div class="detail-subtitle">
+                        粘贴花名册文本后，系统会自动拆分列，并允许你指定每一列对应学号、姓名或班级。
+                      </div>
+                    </div>
+                    <n-tag round :bordered="false">
+                      已保存 {{ savedProjectRosterEntries.length }} 条
+                    </n-tag>
+                  </div>
+
+                  <n-input
+                    v-model:value="projectRosterDraftText"
+                    type="textarea"
+                    :autosize="{ minRows: 6, maxRows: 12 }"
+                    placeholder="逐行粘贴花名册，如：1120240584    郭爽    06212404"
+                  />
+
+                  <div
+                    v-if="parsedProjectRoster.columnCount"
+                    class="project-roster-column-grid"
+                  >
+                    <div
+                      v-for="columnIndex in parsedProjectRoster.columnCount"
+                      :key="columnIndex"
+                      class="project-roster-column-card"
+                    >
+                      <div class="field-label">第 {{ columnIndex }} 列</div>
+                      <n-select
+                        :value="projectRosterColumnFields[columnIndex - 1]"
+                        :options="STUDENT_ROSTER_COLUMN_FIELD_OPTIONS"
+                        @update:value="
+                          (value) =>
+                            updateProjectRosterColumnField(
+                              columnIndex - 1,
+                              value,
+                            )
+                        "
+                      />
+                      <div class="project-roster-column-sample">
+                        示例：
+                        {{
+                          parsedProjectRoster.rows
+                            .slice(0, 3)
+                            .map((row) => row[columnIndex - 1] || '空')
+                            .join(' / ')
+                        }}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div
+                    v-if="projectRosterPreviewEntries.length"
+                    class="project-roster-preview"
+                  >
+                    <div class="project-roster-preview-head">
+                      <span class="field-label">
+                        预览 {{ projectRosterPreviewEntries.length }} 条
+                      </span>
+                      <span class="detail-subtitle">
+                        点击保存项目设置后生效
+                      </span>
+                    </div>
+                    <div class="project-roster-preview-list">
+                      <div
+                        v-for="entry in projectRosterPreviewEntries.slice(0, 5)"
+                        :key="entry.id"
+                        class="project-roster-preview-row"
+                      >
+                        <strong>{{ entry.name || '未填写姓名' }}</strong>
+                        <span>学号 {{ entry.studentId || '未填写' }}</span>
+                        <span>班级 {{ entry.className || '未填写' }}</span>
+                      </div>
+                    </div>
+                  </div>
                 </div>
                 <n-button
                   type="primary"
@@ -4312,3 +5586,68 @@ function goBack() {
     </div>
   </div>
 </template>
+
+<style scoped>
+.result-subsection-card--allow-overflow {
+  position: relative;
+  z-index: 12;
+  overflow: visible;
+  contain: layout;
+  content-visibility: visible;
+}
+
+.project-roster-column-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.project-roster-column-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 14px;
+  background: rgba(248, 250, 252, 0.9);
+}
+
+.project-roster-column-sample {
+  font-size: 12px;
+  line-height: 1.6;
+  color: #64748b;
+}
+
+.project-roster-preview {
+  margin-top: 14px;
+  padding: 14px;
+  border: 1px solid rgba(15, 118, 110, 0.12);
+  border-radius: 14px;
+  background: rgba(240, 253, 250, 0.65);
+}
+
+.project-roster-preview-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.project-roster-preview-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.project-roster-preview-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.86);
+  color: #1e293b;
+}
+</style>

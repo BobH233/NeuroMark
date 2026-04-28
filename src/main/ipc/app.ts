@@ -9,6 +9,9 @@ export function registerAppIpc(services: ServiceBundle): void {
   ipcMain.handle('app:get-default-project-base-path', () =>
     services.app.getDefaultProjectBasePath(),
   );
+  ipcMain.handle('app:set-main-window-title', (_event, title: string) =>
+    services.app.setMainWindowTitle(title),
+  );
   ipcMain.handle('app:select-directory', () => services.app.selectDirectory());
   ipcMain.handle('app:select-export-directory', () =>
     services.app.selectExportDirectory(),
@@ -21,6 +24,27 @@ export function registerAppIpc(services: ServiceBundle): void {
     'app:select-json-save-path',
     (_event, defaultFileName: string) =>
       services.app.selectJsonSavePath(defaultFileName),
+  );
+  ipcMain.handle(
+    'app:select-excel-save-path',
+    (_event, defaultFileName: string) =>
+      services.app.selectExcelSavePath(defaultFileName),
+  );
+  ipcMain.handle(
+    'app:select-pdf-save-path',
+    (_event, defaultFileName: string) =>
+      services.app.selectPdfSavePath(defaultFileName),
+  );
+  ipcMain.handle('app:export-current-window-to-pdf', (_event, targetPath) =>
+    services.app.exportCurrentWindowToPdf(targetPath),
+  );
+  ipcMain.handle('app:notify-result-pdf-print-ready', (_event, token: string) =>
+    services.app.notifyResultPdfPrintReady(token),
+  );
+  ipcMain.handle(
+    'app:notify-result-pdf-print-failed',
+    (_event, token: string, errorMessage: string) =>
+      services.app.notifyResultPdfPrintFailed(token, errorMessage),
   );
   ipcMain.handle('app:open-path', (_event, targetPath: string) =>
     services.app.openPath(targetPath),

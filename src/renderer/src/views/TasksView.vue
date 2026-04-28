@@ -22,7 +22,7 @@ const pageTitle = computed(() => (showArchived.value ? '已删除后台任务' :
 const pageCopy = computed(() =>
   showArchived.value
     ? '这里显示已经从前台清空的后台任务记录。归档不会影响任务原始结果，只是不再在默认任务页显示。'
-    : '扫描与批阅任务会常驻主进程运行，你可以随时切换页面查看结果，而不会中断后台进度。',
+    : '扫描、批阅与导出任务会常驻主进程运行，你可以随时切换页面查看结果，而不会中断后台进度。',
 );
 
 async function cancelTask(jobId: string) {
@@ -104,10 +104,17 @@ function getTaskSpeedLabel(task: BackgroundJob) {
       ? '排队中'
       : task.kind === 'scan'
         ? '等待首张完成'
-        : '等待首套完成';
+        : task.kind === 'result-pdf-export'
+          ? '等待首份完成'
+          : '等待首套完成';
   }
 
-  const unit = task.kind === 'scan' ? '页' : '套';
+  const unit =
+    task.kind === 'scan'
+      ? '页'
+      : task.kind === 'result-pdf-export'
+        ? '份'
+        : '套';
   return `${task.speed.toFixed(task.speed >= 10 ? 1 : 2)} 秒/${unit}`;
 }
 
@@ -132,7 +139,25 @@ function getTaskEtaLabel(task: BackgroundJob) {
     ? '排队中'
     : task.kind === 'scan'
       ? '等待首张完成'
-      : '等待首套完成';
+      : task.kind === 'result-pdf-export'
+        ? '等待首份完成'
+        : '等待首套完成';
+}
+
+function getTaskKindLabel(task: BackgroundJob) {
+  if (task.kind === 'scan') {
+    return '批量扫描任务';
+  }
+
+  if (task.kind === 'grading') {
+    return '批量批阅任务';
+  }
+
+  if (task.kind === 'result-pdf-export') {
+    return '批量导出 PDF 任务';
+  }
+
+  return '参考答案生成任务';
 }
 
 function getTaskRuntimeLogs(task: BackgroundJob) {
@@ -220,7 +245,7 @@ async function archiveVisibleTasks() {
       >
         <template #header>
           <div class="task-list-card-title">
-            {{ task.kind === 'scan' ? '批量扫描任务' : task.kind === 'grading' ? '批量批阅任务' : '参考答案生成任务' }}
+            {{ getTaskKindLabel(task) }}
           </div>
         </template>
         <template #header-extra>

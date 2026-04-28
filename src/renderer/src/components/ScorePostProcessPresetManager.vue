@@ -150,14 +150,14 @@ async function deletePreset(presetId: string) {
         class="settings-actions settings-template-actions"
         :class="{ 'settings-actions--empty': !presets.length }"
       >
-        <n-button tertiary @click="startCreatePreset">新建自定义预设</n-button>
+        <n-button tertiary @click="startCreatePreset">新建预设</n-button>
         <n-button
           v-if="presetForm.code.trim()"
           tertiary
           type="primary"
           @click="clonePreset"
         >
-          复制当前预设
+          克隆预设
         </n-button>
         <n-popconfirm
           v-if="presetForm.id && !presetForm.readonly"
@@ -166,7 +166,7 @@ async function deletePreset(presetId: string) {
           @positive-click="deletePreset(presetForm.id)"
         >
           <template #trigger>
-            <n-button tertiary type="error">删除当前预设</n-button>
+            <n-button tertiary type="error">删除预设</n-button>
           </template>
           删除后将无法恢复，确认继续吗？
         </n-popconfirm>

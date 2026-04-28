@@ -3,63 +3,64 @@ export interface ScorePostProcessScriptDocItem {
   description: string;
 }
 
-export const SCORE_POST_PROCESS_SCRIPT_DOC_ITEMS: ScorePostProcessScriptDocItem[] = [
-  {
-    title: '可用全局对象',
-    description:
-      '`project`、`papers`、`utils`、`output()`、`outputMany()`、`log()`',
-  },
-  {
-    title: 'project',
-    description:
-      '当前项目信息，只读。包含 `id`、`name`、`rootPath`、`referenceAnswerVersion`、`stats`、`settings`。',
-  },
-  {
-    title: 'papers',
-    description:
-      '已批改答卷数组，只读。每项都有 `paperId`、`paperCode`、`originalScore`、`totalScore`、`modelScore`、`manualScore`、`studentInfo`、`questionScores`、`nameMatchStatus`、`referenceAnswerVersion`、`updatedAt`、`pageCount`、`scanStatus`、`gradingStatus`。',
-  },
-  {
-    title: 'studentInfo',
-    description:
-      '`studentInfo.className` 是班级，`studentInfo.studentId` 是学号，`studentInfo.name` 是姓名。',
-  },
-  {
-    title: 'questionScores',
-    description:
-      '`questionScores[*].questionId` 是题目 ID，`questionTitle` 是题目标题，`score` 是该题得分，`maxScore` 是该题满分。',
-  },
-  {
-    title: 'utils',
-    description:
-      '内置数学工具：`clamp`、`round`、`sum`、`average`、`min`、`max`、`quantile`、`percentile`、`zScore`、`normalizeToRange`。',
-  },
-  {
-    title: 'JS 内建对象',
-    description:
-      '可以使用安全的 JavaScript 内建对象，例如 `Math`、`Number`、`String`、`Boolean`、`Array`、`Object`、`JSON`。',
-  },
-  {
-    title: '输出结果',
-    description:
-      '可以直接 `return [...]`，也可以 `return { outputs, summary }`，还可以调用 `output(...)` / `outputMany(...)`。每条输出至少要有 `paperId`。',
-  },
-  {
-    title: 'summary',
-    description:
-      '`return { summary }` 里的 `summary` 会显示在“脚本汇总”里，必须是普通 JSON 对象。',
-  },
-  {
-    title: 'log()',
-    description:
-      '`log(...args)` 会把调试信息写到“脚本日志”区域，适合排查计算逻辑。',
-  },
-  {
-    title: '限制',
-    description:
-      '脚本必须是同步 JavaScript 正文，不要写 `async` / `await`、`import`、`require`、文件系统、网络请求或无限循环。',
-  },
-];
+export const SCORE_POST_PROCESS_SCRIPT_DOC_ITEMS: ScorePostProcessScriptDocItem[] =
+  [
+    {
+      title: '可用全局对象',
+      description:
+        '`project`、`papers`、`utils`、`output()`、`outputMany()`、`log()`',
+    },
+    {
+      title: 'project',
+      description:
+        '当前项目信息，只读。包含 `id`、`name`、`rootPath`、`referenceAnswerVersion`、`stats`、`settings`。',
+    },
+    {
+      title: 'papers',
+      description:
+        '已批改答卷数组，只读。每项都有 `paperId`、`paperCode`、`originalScore`、`totalScore`、`modelScore`、`manualScore`、`studentInfo`、`questionScores`、`nameMatchStatus`、`referenceAnswerVersion`、`updatedAt`、`pageCount`、`scanStatus`、`gradingStatus`。',
+    },
+    {
+      title: 'studentInfo',
+      description:
+        '`studentInfo.className` 是班级，`studentInfo.studentId` 是学号，`studentInfo.name` 是姓名。',
+    },
+    {
+      title: 'questionScores',
+      description:
+        '`questionScores[*].questionId` 是题目 ID，`questionTitle` 是题目标题，`score` 是该题得分，`maxScore` 是该题满分。',
+    },
+    {
+      title: 'utils',
+      description:
+        '内置数学工具：`clamp`、`round`、`sum`、`average`、`min`、`max`、`quantile`、`percentile`、`zScore`、`normalizeToRange`。',
+    },
+    {
+      title: 'JS 内建对象',
+      description:
+        '可以使用安全的 JavaScript 内建对象，例如 `Math`、`Number`、`String`、`Boolean`、`Array`、`Object`、`JSON`。',
+    },
+    {
+      title: '输出结果',
+      description:
+        '可以直接 `return [...]`，也可以 `return { outputs, summary }`，还可以调用 `output(...)` / `outputMany(...)`。每条输出至少要有 `paperId`。',
+    },
+    {
+      title: 'summary',
+      description:
+        '`return { summary }` 里的 `summary` 会显示在“脚本汇总”里，必须是普通 JSON 对象。',
+    },
+    {
+      title: 'log()',
+      description:
+        '`log(...args)` 会把调试信息写到“脚本日志”区域，适合排查计算逻辑。',
+    },
+    {
+      title: '限制',
+      description:
+        '脚本必须是同步 JavaScript 正文，不要写 `async` / `await`、`import`、`require`、文件系统、网络请求或无限循环。',
+    },
+  ];
 
 export const SCORE_POST_PROCESS_AI_SCRIPT_RUNTIME_PROMPT = `
 当前分数后处理脚本运行环境如下，请严格按这个环境生成代码：
@@ -85,6 +86,7 @@ export const SCORE_POST_PROCESS_AI_SCRIPT_RUNTIME_PROMPT = `
   - \`project.settings.defaultImageDetail\`: 图像细节等级
   - \`project.settings.enableScanPostProcess\`: 是否开启扫描后处理
   - \`project.settings.skipScanProcessing\`: 是否跳过扫描处理
+  - \`project.settings.scanMarginRatio\`: 扫描裕度比例
 
 - \`papers\`: 已批改答卷数组，只读。每个元素都表示一份答卷。
   - \`paper.paperId\`: 试卷唯一 ID，输出结果时必须原样带回
@@ -170,6 +172,7 @@ declare interface ScorePostProcessProject {
     defaultImageDetail: 'low' | 'high' | 'auto';
     enableScanPostProcess: boolean;
     skipScanProcessing: boolean;
+    scanMarginRatio: number;
   };
 }
 

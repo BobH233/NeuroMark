@@ -1,6 +1,10 @@
 export type ImageDetailLevel = 'low' | 'high' | 'auto';
 export type LlmReasoningEffort = 'low' | 'medium' | 'high';
-export type JobKind = 'scan' | 'grading' | 'answer-generation';
+export type JobKind =
+  | 'scan'
+  | 'grading'
+  | 'answer-generation'
+  | 'result-pdf-export';
 export type NameMatchStatus = 'unverified' | 'verified';
 export type JobStatus =
   | 'queued'
@@ -36,6 +40,8 @@ export interface ProjectSettings {
   defaultImageDetail: ImageDetailLevel;
   enableScanPostProcess: boolean;
   skipScanProcessing: boolean;
+  scanMarginRatio: number;
+  studentRoster: StudentRosterData | null;
 }
 
 export interface ProjectStats {
@@ -91,6 +97,19 @@ export interface StudentInfo {
   className: string;
   studentId: string;
   name: string;
+}
+
+export type StudentRosterField = keyof StudentInfo;
+export type StudentRosterColumnField = StudentRosterField | 'ignore';
+
+export interface StudentRosterEntry extends StudentInfo {
+  id: string;
+}
+
+export interface StudentRosterData {
+  rawText: string;
+  columnFields: StudentRosterColumnField[];
+  entries: StudentRosterEntry[];
 }
 
 export interface ScoreBreakdownItem {
@@ -547,6 +566,8 @@ export interface PromptPreset {
   name: string;
   description: string;
   prompt: string;
+  source: 'builtin' | 'custom';
+  readonly: boolean;
 }
 
 export interface PromptPresetInput {
@@ -588,6 +609,46 @@ export interface ExportResultsOptions {
   targetPath?: string;
 }
 
+export interface ExportResultsExcelOptions {
+  targetPath?: string;
+}
+
+export interface ExportQuestionAccuracyExcelOptions {
+  targetPath?: string;
+}
+
+export interface ExportAllResultPdfsOptions {
+  targetDirectory: string;
+}
+
+export interface ResultPdfExportFile {
+  paperId: string;
+  paperCode: string;
+  path: string;
+}
+
+export interface ResultPdfExportFailure {
+  paperId: string;
+  paperCode: string;
+  errorMessage: string;
+}
+
+export interface ExportAllResultPdfsResult {
+  exportedCount: number;
+  failedCount: number;
+  outputDirectory: string;
+  files: ResultPdfExportFile[];
+  failures: ResultPdfExportFailure[];
+}
+
+export interface ExportAllResultPdfsProgress {
+  projectId: string;
+  total: number;
+  completed: number;
+  failed: number;
+  currentPaperCode: string | null;
+}
+
 export interface CreateProjectInput {
   name: string;
   basePath: string;
@@ -596,6 +657,7 @@ export interface CreateProjectInput {
   defaultImageDetail?: ImageDetailLevel;
   enableScanPostProcess?: boolean;
   skipScanProcessing?: boolean;
+  scanMarginRatio?: number;
 }
 
 export interface CreateProjectValidationResult {
@@ -665,11 +727,20 @@ export interface NeuromarkApi {
   app: {
     getVersion: () => Promise<string>;
     getDefaultProjectBasePath: () => Promise<string>;
+    setMainWindowTitle: (title: string) => Promise<void>;
     selectDirectory: () => Promise<string | null>;
     selectExportDirectory: () => Promise<string | null>;
     selectImages: () => Promise<string[]>;
     selectPaperImageDirectory: () => Promise<string | null>;
     selectJsonSavePath: (defaultFileName: string) => Promise<string | null>;
+    selectExcelSavePath: (defaultFileName: string) => Promise<string | null>;
+    selectPdfSavePath: (defaultFileName: string) => Promise<string | null>;
+    exportCurrentWindowToPdf: (targetPath: string) => Promise<string>;
+    notifyResultPdfPrintReady: (token: string) => Promise<void>;
+    notifyResultPdfPrintFailed: (
+      token: string,
+      errorMessage: string,
+    ) => Promise<void>;
     openPath: (targetPath: string) => Promise<void>;
     openDevTools: () => Promise<void>;
     enableDebugPanel: () => Promise<void>;
@@ -736,6 +807,18 @@ export interface NeuromarkApi {
       projectId: string,
       options?: ExportResultsOptions,
     ) => Promise<string>;
+    exportExcel: (
+      projectId: string,
+      options?: ExportResultsExcelOptions,
+    ) => Promise<string>;
+    exportQuestionAccuracyExcel: (
+      projectId: string,
+      options?: ExportQuestionAccuracyExcelOptions,
+    ) => Promise<string>;
+    exportAllPdfs: (
+      projectId: string,
+      options: ExportAllResultPdfsOptions,
+    ) => Promise<BackgroundJob>;
     getSmartNameMatchSnapshot: (
       projectId: string,
     ) => Promise<SmartNameMatchSnapshot>;
@@ -776,9 +859,7 @@ export interface NeuromarkApi {
       projectId: string,
       input: GenerateScorePostProcessAiScriptInput,
     ) => Promise<ScorePostProcessAiScriptSnapshot>;
-    onAiScriptUpdated: (
-      handler: ScorePostProcessAiUpdateHandler,
-    ) => () => void;
+    onAiScriptUpdated: (handler: ScorePostProcessAiUpdateHandler) => () => void;
     exportLatest: (
       projectId: string,
       options?: ExportScorePostProcessOptions,
