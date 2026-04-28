@@ -29,7 +29,7 @@
 
 <p>
   <a href="https://github.com/BobH233/NeuroMark/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/BobH233/NeuroMark/ci.yml?branch=main&style=for-the-badge&label=CI"></a>
-  <a href="https://github.com/BobH233/NeuroMark/actions/workflows/electron-build.yml?query=branch%3Av0.2.0"><img alt="Release v0.2.0" src="https://img.shields.io/github/actions/workflow/status/BobH233/NeuroMark/electron-build.yml?branch=v0.2.0&style=for-the-badge&label=Release%20v0.2.0"></a>
+  <a href="https://github.com/BobH233/NeuroMark/actions/workflows/electron-build.yml?query=branch%3Av0.3.0"><img alt="Release v0.3.0" src="https://img.shields.io/github/actions/workflow/status/BobH233/NeuroMark/electron-build.yml?branch=v0.3.0&style=for-the-badge&label=Release%20v0.3.0"></a>
 </p>
 
 <p>
@@ -256,7 +256,7 @@ npm run test:unit
 ## 开源说明
 
 - License: MIT
-- 当前版本：`0.2.0`
+- 当前版本：`0.3.0`
 - 项目状态：可运行、可演示、适合继续打磨，不建议在高风险正式场景中直接无验证投入使用
 
 ## 致谢
