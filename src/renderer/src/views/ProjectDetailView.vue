@@ -1060,6 +1060,15 @@ const smartNameMatchState = computed<SmartNameMatchSnapshot>(() =>
 const smartNameMatchIsRunning = computed(
   () => smartNameMatchState.value.status === 'running',
 );
+const smartNameMatchHasResult = computed(() =>
+  Boolean(smartNameMatchState.value.result),
+);
+const smartNameLayoutShouldExpandLogs = computed(
+  () =>
+    smartNameWorkspaceMode.value === 'auto' &&
+    smartNameMatchIsRunning.value &&
+    !smartNameMatchHasResult.value,
+);
 const smartNameMatchSuggestions = computed<SmartNameMatchSuggestion[]>(
   () => smartNameMatchState.value.result?.suggestions ?? [],
 );
@@ -3972,6 +3981,10 @@ function goBack() {
           <div
             v-if="results.length"
             class="smart-name-layout"
+            :class="{
+              'smart-name-layout--expanded-logs': smartNameLayoutShouldExpandLogs,
+              'smart-name-layout--suggestions': smartNameMatchHasResult,
+            }"
             @mouseenter="isReviewScrollActive = true"
             @mouseleave="isReviewScrollActive = false"
             @click="hideSmartNameContextMenu"
