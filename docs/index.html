@@ -1,0 +1,1654 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="NeuroMark 是一个本地优先的 AI 自动阅卷桌面工作台，覆盖答卷导入、扫描矫正、参考答案生成、批量批阅、结果复核与导出归档。"
+    />
+    <meta name="theme-color" content="#06110f" />
+    <meta property="og:title" content="NeuroMark | 本地优先的 AI 自动阅卷工作台" />
+    <meta
+      property="og:description"
+      content="把扫描、批阅、复核、统计和导出放进一个真正可用的桌面工作流。"
+    />
+    <meta property="og:type" content="website" />
+    <title>NeuroMark | 本地优先的 AI 自动阅卷工作台</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #06110f;
+        --bg-deep: #020504;
+        --paper: #f2ead7;
+        --paper-ink: #263228;
+        --ink: #eef7e8;
+        --muted: #9eb3a9;
+        --line: rgba(238, 247, 232, 0.15);
+        --line-strong: rgba(238, 247, 232, 0.28);
+        --card: rgba(11, 31, 27, 0.72);
+        --card-strong: rgba(20, 48, 42, 0.86);
+        --mint: #73f7bd;
+        --cyan: #63d9ff;
+        --amber: #ffcc66;
+        --rose: #ff8f8f;
+        --shadow: 0 26px 80px rgba(0, 0, 0, 0.45);
+        --radius-xl: 34px;
+        --radius-lg: 24px;
+        --radius-md: 18px;
+        --font-display: "Songti SC", "Noto Serif CJK SC", "STSong", serif;
+        --font-body: "LXGW WenKai Screen", "Hiragino Sans GB", "Microsoft YaHei",
+          sans-serif;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html {
+        scroll-behavior: smooth;
+      }
+
+      body {
+        margin: 0;
+        min-width: 320px;
+        background:
+          radial-gradient(circle at 18% 12%, rgba(115, 247, 189, 0.16), transparent 28rem),
+          radial-gradient(circle at 86% 4%, rgba(99, 217, 255, 0.13), transparent 26rem),
+          radial-gradient(circle at 72% 72%, rgba(255, 204, 102, 0.12), transparent 24rem),
+          linear-gradient(145deg, var(--bg-deep) 0%, var(--bg) 48%, #0d1914 100%);
+        color: var(--ink);
+        font-family: var(--font-body);
+        overflow-x: hidden;
+      }
+
+      body::before,
+      body::after {
+        position: fixed;
+        inset: 0;
+        z-index: -2;
+        content: "";
+        pointer-events: none;
+      }
+
+      body::before {
+        background-image:
+          linear-gradient(rgba(238, 247, 232, 0.045) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(238, 247, 232, 0.045) 1px, transparent 1px);
+        background-size: 58px 58px;
+        mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.9), transparent 82%);
+      }
+
+      body::after {
+        background:
+          repeating-radial-gradient(
+            circle at 78% 18%,
+            transparent 0 19px,
+            rgba(115, 247, 189, 0.055) 20px 21px
+          ),
+          linear-gradient(120deg, transparent 0 45%, rgba(255, 255, 255, 0.04) 45.2% 45.6%, transparent 45.8%);
+        opacity: 0.8;
+      }
+
+      a {
+        color: inherit;
+        text-decoration: none;
+      }
+
+      img {
+        display: block;
+        max-width: 100%;
+      }
+
+      .page-shell {
+        width: min(1180px, calc(100% - 36px));
+        margin: 0 auto;
+      }
+
+      .site-nav {
+        position: sticky;
+        top: 14px;
+        z-index: 20;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 18px;
+        margin-top: 14px;
+        padding: 13px 16px 13px 18px;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        background: rgba(3, 11, 9, 0.72);
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.26);
+        backdrop-filter: blur(18px);
+      }
+
+      .brand {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        font-weight: 800;
+        letter-spacing: 0.04em;
+      }
+
+      .brand-mark {
+        display: grid;
+        width: 34px;
+        height: 34px;
+        place-items: center;
+        border: 1px solid rgba(115, 247, 189, 0.5);
+        border-radius: 12px;
+        background:
+          linear-gradient(135deg, rgba(115, 247, 189, 0.26), rgba(99, 217, 255, 0.1)),
+          rgba(255, 255, 255, 0.04);
+        color: var(--mint);
+        box-shadow: 0 0 28px rgba(115, 247, 189, 0.18);
+        font-family: var(--font-display);
+      }
+
+      .nav-links {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        color: var(--muted);
+        font-size: 14px;
+      }
+
+      .nav-links a {
+        padding: 9px 12px;
+        border-radius: 999px;
+        transition: background 180ms ease, color 180ms ease;
+      }
+
+      .nav-links a:hover {
+        background: rgba(255, 255, 255, 0.08);
+        color: var(--ink);
+      }
+
+      .nav-cta,
+      .button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        border: 0;
+        border-radius: 999px;
+        color: #02100c;
+        font: inherit;
+        font-weight: 800;
+        cursor: pointer;
+        transition:
+          transform 180ms ease,
+          box-shadow 180ms ease,
+          background 180ms ease,
+          border-color 180ms ease;
+      }
+
+      .nav-cta {
+        min-height: 40px;
+        padding: 0 16px;
+        background: var(--mint);
+      }
+
+      .button {
+        min-height: 50px;
+        padding: 0 20px;
+        background: linear-gradient(135deg, var(--mint), var(--cyan));
+        box-shadow: 0 16px 42px rgba(115, 247, 189, 0.22);
+      }
+
+      .button:hover,
+      .nav-cta:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 18px 52px rgba(115, 247, 189, 0.28);
+      }
+
+      .button.secondary {
+        border: 1px solid var(--line-strong);
+        background: rgba(255, 255, 255, 0.06);
+        color: var(--ink);
+        box-shadow: none;
+      }
+
+      .hero {
+        position: relative;
+        display: grid;
+        grid-template-columns: minmax(0, 1.02fr) minmax(360px, 0.98fr);
+        gap: 42px;
+        align-items: center;
+        min-height: 760px;
+        padding: 88px 0 78px;
+      }
+
+      .hero::before {
+        position: absolute;
+        top: 100px;
+        left: 48%;
+        width: 2px;
+        height: 430px;
+        content: "";
+        background: linear-gradient(to bottom, transparent, rgba(115, 247, 189, 0.65), transparent);
+        filter: blur(0.4px);
+        transform: rotate(22deg);
+      }
+
+      .eyebrow {
+        display: inline-flex;
+        align-items: center;
+        gap: 9px;
+        width: fit-content;
+        padding: 8px 12px;
+        border: 1px solid rgba(115, 247, 189, 0.38);
+        border-radius: 999px;
+        background: rgba(115, 247, 189, 0.08);
+        color: #c8ffe7;
+        font-size: 13px;
+        font-weight: 800;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .pulse-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--mint);
+        box-shadow: 0 0 0 7px rgba(115, 247, 189, 0.13);
+      }
+
+      h1,
+      h2,
+      h3 {
+        margin: 0;
+        font-family: var(--font-display);
+        letter-spacing: -0.035em;
+      }
+
+      h1 {
+        max-width: 850px;
+        margin-top: 22px;
+        font-size: clamp(54px, 8vw, 104px);
+        line-height: 0.95;
+      }
+
+      .gradient-text {
+        color: transparent;
+        background: linear-gradient(100deg, var(--paper), var(--mint) 42%, var(--cyan));
+        background-clip: text;
+        -webkit-background-clip: text;
+      }
+
+      .hero-copy {
+        max-width: 650px;
+        margin: 24px 0 0;
+        color: #c7d8cf;
+        font-size: clamp(17px, 2vw, 21px);
+        line-height: 1.82;
+      }
+
+      .hero-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 14px;
+        margin-top: 32px;
+      }
+
+      .hero-stats {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 12px;
+        margin-top: 34px;
+      }
+
+      .stat-card {
+        min-height: 118px;
+        padding: 18px;
+        border: 1px solid var(--line);
+        border-radius: var(--radius-md);
+        background: rgba(255, 255, 255, 0.045);
+      }
+
+      .stat-card strong {
+        display: block;
+        color: var(--paper);
+        font-family: var(--font-display);
+        font-size: 30px;
+        line-height: 1;
+      }
+
+      .stat-card span {
+        display: block;
+        margin-top: 12px;
+        color: var(--muted);
+        line-height: 1.55;
+      }
+
+      .hero-art {
+        position: relative;
+        min-height: 640px;
+        perspective: 1200px;
+      }
+
+      .scan-beam {
+        position: absolute;
+        inset: 30px 36px auto auto;
+        z-index: 4;
+        width: 210px;
+        height: 520px;
+        background: linear-gradient(to right, transparent, rgba(115, 247, 189, 0.34), transparent);
+        filter: blur(6px);
+        transform: rotate(18deg);
+        animation: scanBeam 5.8s ease-in-out infinite;
+      }
+
+      .paper-stack {
+        position: absolute;
+        inset: 54px 30px auto auto;
+        width: min(430px, 92%);
+        min-height: 535px;
+        padding: 24px;
+        border: 1px solid rgba(242, 234, 215, 0.4);
+        border-radius: 30px;
+        background:
+          linear-gradient(135deg, rgba(242, 234, 215, 0.96), rgba(214, 231, 205, 0.92)),
+          var(--paper);
+        color: var(--paper-ink);
+        box-shadow: var(--shadow);
+        transform: rotateY(-13deg) rotateX(7deg) rotateZ(2deg);
+      }
+
+      .paper-stack::before,
+      .paper-stack::after {
+        position: absolute;
+        inset: 18px;
+        z-index: -1;
+        content: "";
+        border-radius: 28px;
+        background: rgba(242, 234, 215, 0.5);
+        box-shadow: var(--shadow);
+      }
+
+      .paper-stack::before {
+        transform: translate(18px, 22px) rotate(5deg);
+      }
+
+      .paper-stack::after {
+        transform: translate(-18px, 35px) rotate(-4deg);
+      }
+
+      .paper-head {
+        display: flex;
+        justify-content: space-between;
+        gap: 16px;
+        padding-bottom: 20px;
+        border-bottom: 2px solid rgba(38, 50, 40, 0.18);
+      }
+
+      .paper-title {
+        font-family: var(--font-display);
+        font-size: 28px;
+        font-weight: 900;
+      }
+
+      .paper-score {
+        display: grid;
+        width: 76px;
+        height: 76px;
+        place-items: center;
+        border: 2px solid rgba(255, 92, 92, 0.48);
+        border-radius: 50%;
+        color: #bf302b;
+        font-family: var(--font-display);
+        font-size: 26px;
+        font-weight: 900;
+        transform: rotate(-12deg);
+      }
+
+      .answer-lines {
+        display: grid;
+        gap: 14px;
+        margin-top: 26px;
+      }
+
+      .answer-line {
+        height: 14px;
+        border-radius: 999px;
+        background: rgba(38, 50, 40, 0.13);
+      }
+
+      .answer-line:nth-child(1) {
+        width: 88%;
+      }
+
+      .answer-line:nth-child(2) {
+        width: 72%;
+      }
+
+      .answer-line:nth-child(3) {
+        width: 94%;
+      }
+
+      .answer-line:nth-child(4) {
+        width: 66%;
+      }
+
+      .rubric-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px;
+        margin-top: 32px;
+      }
+
+      .rubric-cell {
+        min-height: 90px;
+        padding: 14px;
+        border: 1px solid rgba(38, 50, 40, 0.15);
+        border-radius: 18px;
+        background: rgba(255, 255, 255, 0.46);
+      }
+
+      .rubric-cell b {
+        color: #0f5e45;
+      }
+
+      .floating-chip {
+        position: absolute;
+        z-index: 6;
+        max-width: 240px;
+        padding: 14px 16px;
+        border: 1px solid rgba(115, 247, 189, 0.33);
+        border-radius: 18px;
+        background: rgba(5, 20, 17, 0.86);
+        box-shadow: 0 20px 70px rgba(0, 0, 0, 0.32);
+        backdrop-filter: blur(18px);
+      }
+
+      .floating-chip strong {
+        display: block;
+        color: var(--mint);
+      }
+
+      .floating-chip span {
+        display: block;
+        margin-top: 6px;
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.55;
+      }
+
+      .chip-one {
+        top: 38px;
+        left: 10px;
+      }
+
+      .chip-two {
+        right: 0;
+        bottom: 72px;
+      }
+
+      .chip-three {
+        bottom: 188px;
+        left: 34px;
+      }
+
+      section {
+        padding: 84px 0;
+      }
+
+      .section-head {
+        display: grid;
+        grid-template-columns: minmax(0, 0.82fr) minmax(280px, 0.52fr);
+        gap: 42px;
+        align-items: end;
+        margin-bottom: 34px;
+      }
+
+      .section-kicker {
+        color: var(--mint);
+        font-size: 14px;
+        font-weight: 900;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
+
+      h2 {
+        margin-top: 12px;
+        font-size: clamp(36px, 5vw, 64px);
+        line-height: 1.05;
+      }
+
+      .section-lede {
+        margin: 0;
+        color: var(--muted);
+        font-size: 17px;
+        line-height: 1.85;
+      }
+
+      .feature-grid {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 16px;
+      }
+
+      .feature-card {
+        position: relative;
+        min-height: 260px;
+        padding: 24px;
+        overflow: hidden;
+        border: 1px solid var(--line);
+        border-radius: var(--radius-lg);
+        background:
+          radial-gradient(circle at 90% 12%, rgba(115, 247, 189, 0.16), transparent 9rem),
+          linear-gradient(150deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.025));
+        box-shadow: 0 20px 70px rgba(0, 0, 0, 0.18);
+      }
+
+      .feature-card::after {
+        position: absolute;
+        right: -40px;
+        bottom: -44px;
+        width: 130px;
+        height: 130px;
+        content: "";
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 40px;
+        transform: rotate(20deg);
+      }
+
+      .feature-icon {
+        display: grid;
+        width: 48px;
+        height: 48px;
+        place-items: center;
+        border: 1px solid rgba(115, 247, 189, 0.3);
+        border-radius: 16px;
+        background: rgba(115, 247, 189, 0.08);
+        color: var(--mint);
+        font-weight: 900;
+      }
+
+      .feature-card h3 {
+        margin-top: 22px;
+        color: var(--paper);
+        font-size: 25px;
+      }
+
+      .feature-card p {
+        margin: 13px 0 0;
+        color: #b8cbc1;
+        line-height: 1.72;
+      }
+
+      .showcase {
+        position: relative;
+        display: grid;
+        grid-template-columns: minmax(0, 1.1fr) minmax(320px, 0.9fr);
+        gap: 20px;
+      }
+
+      .showcase::before {
+        position: absolute;
+        inset: 12% -10% auto auto;
+        width: 44%;
+        height: 52%;
+        content: "";
+        border: 1px solid rgba(115, 247, 189, 0.1);
+        border-radius: 50%;
+        background: rgba(115, 247, 189, 0.04);
+        filter: blur(2px);
+      }
+
+      .screenshot-card {
+        position: relative;
+        overflow: hidden;
+        border: 1px solid var(--line);
+        border-radius: var(--radius-xl);
+        background: rgba(255, 255, 255, 0.05);
+        box-shadow: var(--shadow);
+      }
+
+      .screenshot-card.large {
+        transform: rotate(-1.8deg);
+      }
+
+      .screenshot-card.side:nth-child(1) {
+        transform: translateY(22px) rotate(2deg);
+      }
+
+      .screenshot-card.side:nth-child(2) {
+        transform: translateY(-2px) rotate(-2deg);
+      }
+
+      .screenshot-card.side:nth-child(3) {
+        transform: translateY(-26px) rotate(1.6deg);
+      }
+
+      .screenshot-card img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+      }
+
+      .screenshot-caption {
+        position: absolute;
+        right: 16px;
+        bottom: 16px;
+        left: 16px;
+        padding: 14px 16px;
+        border: 1px solid rgba(255, 255, 255, 0.16);
+        border-radius: 18px;
+        background: rgba(1, 8, 6, 0.76);
+        backdrop-filter: blur(14px);
+      }
+
+      .screenshot-caption strong {
+        color: var(--paper);
+      }
+
+      .screenshot-caption span {
+        display: block;
+        margin-top: 5px;
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .showcase-side {
+        display: grid;
+        gap: 18px;
+      }
+
+      .workflow {
+        display: grid;
+        grid-template-columns: repeat(6, minmax(0, 1fr));
+        gap: 12px;
+      }
+
+      .workflow-step {
+        position: relative;
+        min-height: 190px;
+        padding: 20px;
+        border: 1px solid var(--line);
+        border-radius: var(--radius-lg);
+        background: var(--card);
+      }
+
+      .workflow-step::before {
+        display: grid;
+        width: 38px;
+        height: 38px;
+        place-items: center;
+        margin-bottom: 22px;
+        border-radius: 50%;
+        background: rgba(115, 247, 189, 0.12);
+        color: var(--mint);
+        content: attr(data-step);
+        font-weight: 900;
+      }
+
+      .workflow-step h3 {
+        font-size: 22px;
+      }
+
+      .workflow-step p {
+        margin: 10px 0 0;
+        color: var(--muted);
+        font-size: 14px;
+        line-height: 1.65;
+      }
+
+      .download-panel {
+        overflow: hidden;
+        border: 1px solid var(--line);
+        border-radius: var(--radius-xl);
+        background:
+          linear-gradient(135deg, rgba(115, 247, 189, 0.12), transparent 34%),
+          rgba(255, 255, 255, 0.045);
+        box-shadow: var(--shadow);
+      }
+
+      .download-toolbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 18px;
+        padding: 24px;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .release-status {
+        color: var(--muted);
+        line-height: 1.65;
+      }
+
+      .release-status strong {
+        color: var(--ink);
+      }
+
+      .source-toggle {
+        display: inline-flex;
+        padding: 5px;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        background: rgba(0, 0, 0, 0.22);
+      }
+
+      .source-toggle button {
+        min-height: 40px;
+        padding: 0 15px;
+        border: 0;
+        border-radius: 999px;
+        background: transparent;
+        color: var(--muted);
+        font: inherit;
+        font-weight: 800;
+        cursor: pointer;
+      }
+
+      .source-toggle button[aria-pressed="true"] {
+        background: var(--paper);
+        color: #10251e;
+      }
+
+      .download-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 14px;
+        padding: 24px;
+      }
+
+      .download-card {
+        display: grid;
+        gap: 16px;
+        padding: 20px;
+        border: 1px solid var(--line);
+        border-radius: var(--radius-lg);
+        background: rgba(2, 10, 8, 0.42);
+      }
+
+      .download-card.recommended {
+        border-color: rgba(115, 247, 189, 0.55);
+        box-shadow: 0 0 0 1px rgba(115, 247, 189, 0.1), 0 22px 55px rgba(115, 247, 189, 0.08);
+      }
+
+      .download-card-head {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 12px;
+      }
+
+      .platform-name {
+        font-family: var(--font-display);
+        font-size: 25px;
+        font-weight: 900;
+      }
+
+      .format-tag {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 46px;
+        min-height: 40px;
+        padding: 6px 10px;
+        border: 1px solid rgba(115, 247, 189, 0.28);
+        border-radius: 999px;
+        color: #c8ffe7;
+        font-size: 12px;
+        font-weight: 900;
+      }
+
+      .format-tag svg {
+        width: 30px;
+        height: 30px;
+        fill: currentColor;
+      }
+
+      .format-tag.macos svg {
+        width: 30px;
+        height: 30px;
+      }
+
+      .download-meta {
+        display: grid;
+        gap: 8px;
+        color: var(--muted);
+        font-size: 14px;
+      }
+
+      .download-meta span {
+        display: grid;
+        grid-template-columns: 112px minmax(0, 1fr);
+        align-items: start;
+        gap: 12px;
+        padding-bottom: 8px;
+        border-bottom: 1px dashed rgba(255, 255, 255, 0.12);
+      }
+
+      .download-meta em {
+        font-style: normal;
+      }
+
+      .download-meta b {
+        color: var(--ink);
+        line-height: 1.35;
+        word-break: break-word;
+      }
+
+      .download-link {
+        width: 100%;
+      }
+
+      .download-note {
+        padding: 0 24px 24px;
+        color: var(--muted);
+        font-size: 14px;
+        line-height: 1.7;
+      }
+
+      .download-note a {
+        color: var(--mint);
+        text-decoration: underline;
+        text-decoration-color: rgba(115, 247, 189, 0.35);
+      }
+
+      .community-band {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 24px;
+        align-items: center;
+        padding: 34px;
+        border: 1px solid var(--line);
+        border-radius: var(--radius-xl);
+        background:
+          radial-gradient(circle at 10% 20%, rgba(255, 204, 102, 0.14), transparent 18rem),
+          var(--card-strong);
+      }
+
+      .community-band h2 {
+        max-width: 780px;
+      }
+
+      .community-band p {
+        max-width: 760px;
+        color: var(--muted);
+        line-height: 1.8;
+      }
+
+      footer {
+        padding: 52px 0 34px;
+        color: var(--muted);
+      }
+
+      .footer-inner {
+        display: flex;
+        justify-content: space-between;
+        gap: 24px;
+        padding-top: 24px;
+        border-top: 1px solid var(--line);
+      }
+
+      .footer-links {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 14px;
+      }
+
+      .footer-links a {
+        color: var(--ink);
+      }
+
+      .reveal {
+        opacity: 0;
+        transform: translateY(22px);
+        animation: reveal 760ms ease forwards;
+      }
+
+      .delay-1 {
+        animation-delay: 120ms;
+      }
+
+      .delay-2 {
+        animation-delay: 240ms;
+      }
+
+      .delay-3 {
+        animation-delay: 360ms;
+      }
+
+      @keyframes reveal {
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+
+      @keyframes scanBeam {
+        0%,
+        100% {
+          opacity: 0.4;
+          transform: translateX(-24px) rotate(18deg);
+        }
+
+        50% {
+          opacity: 0.95;
+          transform: translateX(54px) rotate(18deg);
+        }
+      }
+
+      @media (max-width: 1040px) {
+        .hero,
+        .section-head,
+        .showcase,
+        .community-band {
+          grid-template-columns: 1fr;
+        }
+
+        .hero {
+          min-height: auto;
+          padding-top: 66px;
+        }
+
+        .hero-art {
+          min-height: 580px;
+        }
+
+        .feature-grid {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
+        .workflow {
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+        }
+
+        .download-grid {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+      }
+
+      @media (max-width: 760px) {
+        .page-shell {
+          width: min(100% - 24px, 1180px);
+        }
+
+        .site-nav {
+          align-items: flex-start;
+          border-radius: 24px;
+        }
+
+        .download-meta span {
+          grid-template-columns: 1fr;
+          gap: 4px;
+        }
+
+        .nav-links {
+          display: none;
+        }
+
+        .hero {
+          padding-top: 48px;
+        }
+
+        h1 {
+          font-size: clamp(44px, 15vw, 68px);
+        }
+
+        .hero-stats,
+        .feature-grid,
+        .workflow,
+        .download-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .hero-art {
+          min-height: 540px;
+        }
+
+        .paper-stack {
+          right: 8px;
+          width: 88%;
+          min-height: 490px;
+          transform: rotateY(-8deg) rotateX(5deg) rotateZ(1deg);
+        }
+
+        .floating-chip {
+          max-width: 210px;
+        }
+
+        .chip-one {
+          top: 8px;
+        }
+
+        .chip-three {
+          bottom: 118px;
+          left: 8px;
+        }
+
+        section {
+          padding: 58px 0;
+        }
+
+        .download-toolbar,
+        .footer-inner {
+          align-items: flex-start;
+          flex-direction: column;
+        }
+
+        .source-toggle {
+          width: 100%;
+        }
+
+        .source-toggle button {
+          flex: 1;
+        }
+
+        .community-band {
+          padding: 24px;
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        *,
+        *::before,
+        *::after {
+          scroll-behavior: auto !important;
+          animation-duration: 0.01ms !important;
+          animation-iteration-count: 1 !important;
+          transition-duration: 0.01ms !important;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="page-shell">
+      <nav class="site-nav" aria-label="主导航">
+        <a class="brand" href="#top" aria-label="NeuroMark 首页">
+          <span class="brand-mark">N</span>
+          <span>NeuroMark</span>
+        </a>
+        <div class="nav-links" aria-label="页面导航">
+          <a href="#features">功能亮点</a>
+          <a href="#showcase">界面预览</a>
+          <a href="#workflow">工作流</a>
+          <a href="#download">下载</a>
+        </div>
+        <a class="nav-cta" href="#download">立即下载</a>
+      </nav>
+
+      <main id="top">
+        <section class="hero" aria-labelledby="hero-title">
+          <div class="hero-content">
+            <div class="eyebrow reveal"><span class="pulse-dot"></span> NeuroMark</div>
+            <h1 id="hero-title" class="reveal delay-1">
+              把 AI 阅卷从Demo变成<br/>
+              <span class="gradient-text">真正可用的工作台</span>
+            </h1>
+            <p class="hero-copy reveal delay-2">
+              NeuroMark 将答卷导入、扫描矫正、参考答案生成、批量批阅、人工复核和导出归档串成一个桌面工作流。
+              数据留在本地，模型负责推理，教师保留最后判断权。
+            </p>
+            <div class="hero-actions reveal delay-3">
+              <a class="button" href="#download">下载桌面版</a>
+              <a class="button secondary" href="https://github.com/BobH233/NeuroMark">查看 GitHub</a>
+            </div>
+            <div class="hero-stats reveal delay-3" aria-label="项目能力摘要">
+              <div class="stat-card">
+                <strong>6 步</strong>
+                <span>从导入答卷到导出成绩，形成完整闭环。</span>
+              </div>
+              <div class="stat-card">
+                <strong>本地</strong>
+                <span>图片、答案、结果和导出文件都可落地归档。</span>
+              </div>
+              <div class="stat-card">
+                <strong>开放</strong>
+                <span>兼容 OpenAI API 后端，MIT 开源。</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="hero-art" aria-hidden="true">
+            <div class="scan-beam"></div>
+            <div class="floating-chip chip-one">
+              <strong>高性能扫描</strong>
+              <span>高效检测边界、透视拉平、生成可复核扫描件。</span>
+            </div>
+            <div class="floating-chip chip-two">
+              <strong>一视同仁的阅卷标准</strong>
+              <span>参考答案、评分细则和题目得分严格结构化，改卷真实客观。</span>
+            </div>
+            <div class="floating-chip chip-three">
+              <strong>支持人工复核</strong>
+              <span>模型给出建议，教师可逐题核对与修正。</span>
+            </div>
+            <div class="paper-stack">
+              <div class="paper-head">
+                <div>
+                  <div class="paper-title">期末答卷 · 批阅中</div>
+                  <div>学生身份、题目区域、评分细则正在对齐</div>
+                </div>
+                <div class="paper-score">92</div>
+              </div>
+              <div class="answer-lines">
+                <div class="answer-line"></div>
+                <div class="answer-line"></div>
+                <div class="answer-line"></div>
+                <div class="answer-line"></div>
+              </div>
+              <div class="rubric-grid">
+                <div class="rubric-cell"><b>Step 1</b><br />核心公式正确 +3</div>
+                <div class="rubric-cell"><b>Step 2</b><br />推导过程完整 +4</div>
+                <div class="rubric-cell"><b>Issue</b><br />单位遗漏 -1</div>
+                <div class="rubric-cell"><b>Review</b><br />等待人工确认</div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section id="features" aria-labelledby="features-title">
+          <div class="section-head">
+            <div>
+              <div class="section-kicker">功能亮点</div>
+              <h2 id="features-title">不止“调用模型”，而且把阅卷现场收进一个可靠系统。</h2>
+            </div>
+            <p class="section-lede">
+              真实阅卷需要的不只是答案，还需要项目目录、扫描件、评分标准、任务状态、人工复核、导出和后续追踪。
+              NeuroMark 关注的是这条链路里的每一个接缝。
+            </p>
+          </div>
+
+          <div class="feature-grid">
+            <article class="feature-card">
+              <div class="feature-icon">01</div>
+              <h3>本地优先归档</h3>
+              <p>项目数据、答卷图片、参考答案和导出结果落在本地目录，SQLite 管理状态，适合长期归档和二次处理。</p>
+            </article>
+            <article class="feature-card">
+              <div class="feature-icon">02</div>
+              <h3>原生扫描矫正</h3>
+              <p>C++/OpenCV 模块处理文档检测、透视矫正、调试预览和后处理，让手机拍照或扫描件更可用。</p>
+            </article>
+            <article class="feature-card">
+              <div class="feature-icon">03</div>
+              <h3>严格客观的阅卷</h3>
+              <p>基于题目图片和提示词模板生成 Markdown 参考答案与评分细则，批阅时再转成结构化评分依据。</p>
+            </article>
+            <article class="feature-card">
+              <div class="feature-icon">04</div>
+              <h3>批量后台任务</h3>
+              <p>扫描、参考答案生成、批阅和 PDF 导出都以后台任务运行，切换页面不打断长流程。</p>
+            </article>
+            <article class="feature-card">
+              <div class="feature-icon">05</div>
+              <h3>逐题人工复核</h3>
+              <p>在同一工作台查看原卷、扫描件、题目框、模型评分、问题点和答题提醒，并可手动修正分数。</p>
+            </article>
+            <article class="feature-card">
+              <div class="feature-icon">06</div>
+              <h3>智能核名</h3>
+              <p>给定班级花名册，一键与试卷信息智能对应。</p>
+            </article>
+            <article class="feature-card">
+              <div class="feature-icon">07</div>
+              <h3>统计与导出</h3>
+              <p>支持成绩 Excel、小题正确率 Excel、JSON 和批量 PDF 导出，批阅结果可以继续进入教学分析流程。</p>
+            </article>
+            <article class="feature-card">
+              <div class="feature-icon">08</div>
+              <h3>OpenAI 兼容</h3>
+              <p>可配置兼容 OpenAI API 的模型后端、模型名、超时、温度与推理强度，方便接入不同服务。</p>
+            </article>
+          </div>
+        </section>
+
+        <section id="showcase" aria-labelledby="showcase-title">
+          <div class="section-head">
+            <div>
+              <div class="section-kicker">界面预览</div>
+              <h2 id="showcase-title">一个为批阅节奏设计的多面板桌面空间。</h2>
+            </div>
+            <p class="section-lede">
+              页面不追求把教师变成运维，也不把模型包装成黑箱。你能看到项目、任务、答案、扫描件和每一题的判断依据。
+            </p>
+          </div>
+
+          <div class="showcase">
+            <figure class="screenshot-card large">
+              <img src="images/project-detail-overview.png" alt="NeuroMark 项目详情界面截图" loading="lazy" />
+              <figcaption class="screenshot-caption">
+                <strong>项目级批阅工作台</strong>
+                <span>扫描答卷、批阅结果、复核面板和导出入口集中在一个项目中。</span>
+              </figcaption>
+            </figure>
+            <div class="showcase-side">
+              <figure class="screenshot-card side">
+                <img src="images/projects-overview.png" alt="NeuroMark 项目总览界面截图" loading="lazy" />
+                <figcaption class="screenshot-caption">
+                  <strong>项目总览</strong>
+                  <span>按项目管理答卷和结果。</span>
+                </figcaption>
+              </figure>
+              <figure class="screenshot-card side">
+                <img src="images/tasks-dashboard.png" alt="NeuroMark 后台任务中心截图" loading="lazy" />
+                <figcaption class="screenshot-caption">
+                  <strong>任务中心</strong>
+                  <span>长任务可追踪、可停止。</span>
+                </figcaption>
+              </figure>
+              <figure class="screenshot-card side">
+                <img src="images/answer-generator-detail.png" alt="NeuroMark 参考答案生成界面截图" loading="lazy" />
+                <figcaption class="screenshot-caption">
+                  <strong>参考答案生成</strong>
+                  <span>从题目图片生成答案草稿和评分细则。</span>
+                </figcaption>
+              </figure>
+            </div>
+          </div>
+        </section>
+
+        <section id="workflow" aria-labelledby="workflow-title">
+          <div class="section-head">
+            <div>
+              <div class="section-kicker">工作流预览</div>
+              <h2 id="workflow-title">从一叠答卷，到可复核、可导出的结果。</h2>
+            </div>
+            <p class="section-lede">
+              NeuroMark 把阅卷拆成清晰阶段：每一步都能被查看、调整和重新执行，适合教学现场的反复确认。
+            </p>
+          </div>
+
+          <div class="workflow">
+            <article class="workflow-step" data-step="1">
+              <h3>导入答卷</h3>
+              <p>导入图片或 PDF，为每份试卷建立项目记录。</p>
+            </article>
+            <article class="workflow-step" data-step="2">
+              <h3>扫描矫正</h3>
+              <p>检测答卷边界，裁切、拉平并生成扫描件。</p>
+            </article>
+            <article class="workflow-step" data-step="3">
+              <h3>准备答案</h3>
+              <p>编辑或生成参考答案与评分细则。</p>
+            </article>
+            <article class="workflow-step" data-step="4">
+              <h3>批量批阅</h3>
+              <p>按项目并发设置调用模型，缓存结构化结果。</p>
+            </article>
+            <article class="workflow-step" data-step="5">
+              <h3>复核核名</h3>
+              <p>逐题修改分数，结合名册校对学生身份。</p>
+            </article>
+            <article class="workflow-step" data-step="6">
+              <h3>统计导出</h3>
+              <p>导出 Excel、JSON 和 PDF，进入归档或分析流程。</p>
+            </article>
+          </div>
+        </section>
+
+        <section id="download" aria-labelledby="download-title">
+          <div class="section-head">
+            <div>
+              <div class="section-kicker">下载NeuroMark</div>
+              <h2 id="download-title">选择适用于你电脑平台的下载链接</h2>
+            </div>
+            <p class="section-lede">
+              国内用户可以使用 ghproxy 加速 GitHub Release 下载；如果加速服务不可用，随时切回官方 GitHub 直连。
+            </p>
+          </div>
+
+          <div class="download-panel">
+            <div class="download-toolbar">
+              <div class="release-status" id="release-status">
+                正在读取 <strong>GitHub 最新 Release</strong>，如果失败会使用 v0.3.0 备用下载列表。
+              </div>
+              <div class="source-toggle" aria-label="下载源选择">
+                <button type="button" data-source="proxy" aria-pressed="true">国内加速</button>
+                <button type="button" data-source="github" aria-pressed="false">GitHub 直连</button>
+              </div>
+            </div>
+            <div class="download-grid" id="download-grid" aria-live="polite"></div>
+            
+          </div>
+        </section>
+
+        <section aria-labelledby="community-title">
+          <div class="community-band">
+            <div>
+              <div class="section-kicker">Open Source</div>
+              <h2 id="community-title">欢迎一起把 AI 阅卷做成可被信任的开源基础设施。</h2>
+              <p>
+                如果你关心 OCR、文档扫描、评分系统、教育工作流的实践，
+                NeuroMark 都欢迎真实反馈、问题复现和代码贡献。
+              </p>
+            </div>
+            <a class="button secondary" href="https://github.com/BobH233/NeuroMark">参与共建</a>
+          </div>
+        </section>
+      </main>
+
+      <footer>
+        <div class="footer-inner">
+          <div>
+            <strong>NeuroMark</strong><br />
+            本地优先的 AI 自动阅卷桌面工作台。MIT Licensed.
+          </div>
+          <div class="footer-links">
+            <a href="https://github.com/BobH233/NeuroMark">GitHub</a>
+            <a href="https://github.com/BobH233/NeuroMark/releases">Releases</a>
+            <a href="https://github.com/BobH233/NeuroMark#readme">README</a>
+            <a href="https://github.com/BobH233/NeuroMark/blob/main/LICENSE">License</a>
+          </div>
+        </div>
+      </footer>
+    </div>
+
+    <script>
+      const GH_PROXY_PREFIX = "https://ghproxy.net/";
+      const REPO_RELEASE_API = "https://api.github.com/repos/BobH233/NeuroMark/releases/latest";
+      const FALLBACK_TAG = "v0.3.0";
+      const FALLBACK_ASSETS = [
+        {
+          name: "NeuroMark-0.3.0-windows-x64-setup.exe",
+          size: 173 * 1024 * 1024,
+          browser_download_url:
+            "https://github.com/BobH233/NeuroMark/releases/download/v0.3.0/NeuroMark-0.3.0-windows-x64-setup.exe",
+        },
+        {
+          name: "NeuroMark-0.3.0-macos-arm64.dmg",
+          size: 212 * 1024 * 1024,
+          browser_download_url:
+            "https://github.com/BobH233/NeuroMark/releases/download/v0.3.0/NeuroMark-0.3.0-macos-arm64.dmg",
+        },
+        {
+          name: "NeuroMark-0.3.0-macos-x64.dmg",
+          size: 220 * 1024 * 1024,
+          browser_download_url:
+            "https://github.com/BobH233/NeuroMark/releases/download/v0.3.0/NeuroMark-0.3.0-macos-x64.dmg",
+        },
+        {
+          name: "NeuroMark-0.3.0-linux-amd64.deb",
+          size: 187 * 1024 * 1024,
+          browser_download_url:
+            "https://github.com/BobH233/NeuroMark/releases/download/v0.3.0/NeuroMark-0.3.0-linux-amd64.deb",
+        },
+        {
+          name: "NeuroMark-0.3.0-linux-x86_64.AppImage",
+          size: 244 * 1024 * 1024,
+          browser_download_url:
+            "https://github.com/BobH233/NeuroMark/releases/download/v0.3.0/NeuroMark-0.3.0-linux-x86_64.AppImage",
+        },
+      ];
+
+      const PLATFORM_ICONS = {
+        windows:
+          '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 3.6 10.8 2v9H2zm10.8-1.74L22 0v11h-9.2zM2 12.98h8.8V22L2 20.4zm10.8 0H22v11l-9.2-1.6z"/></svg>',
+        macos:
+          '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16.42 12.48c.02 2.28 2 3.04 2.02 3.05-.02.05-.31 1.07-1.03 2.12-.62.91-1.27 1.82-2.28 1.84-.99.02-1.31-.59-2.45-.59-1.15 0-1.5.57-2.43.61-.97.04-1.71-.97-2.34-1.87-1.28-1.84-2.26-5.18-.95-7.46.65-1.13 1.82-1.84 3.1-1.86.97-.02 1.88.65 2.45.65.57 0 1.64-.81 2.77-.69.47.02 1.8.19 2.65 1.43-.07.04-1.58.92-1.56 2.77ZM14.44 4.12c.52-.63.87-1.5.77-2.37-.75.03-1.66.5-2.2 1.13-.48.56-.9 1.45-.79 2.3.84.07 1.7-.43 2.22-1.06Z"/></svg>',
+        linux:
+          '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" aria-hidden="true"><path fill="currentColor" d="M15.6 8.1c0 .1-.1.1-.1.1h-.1c-.1 0-.1-.1-.2-.2 0 0-.1-.1-.1-.2s0-.1.1-.1l.2.1c.1.1.2.2.2.3m-1.9-1c0-.5-.2-.8-.5-.8 0 0 0 .1-.1.1v.2h.3c0 .2.1.3.1.5h.2m3.6-.5c.2 0 .3.2.4.5h.2c-.1-.1-.1-.2-.1-.3 0-.1 0-.2-.1-.3-.1-.1-.2-.2-.3-.2 0 0-.1.1-.2.1 0 .1.1.1.1.2m-3.1 1.6c-.1 0-.1 0-.1-.1s0-.2.1-.3c.2 0 .3-.1.3-.1.1 0 .1.1.1.1 0 .1-.1.2-.3.4h-.1m-1.1-.1c-.4-.2-.5-.5-.5-1 0-.3 0-.5.2-.7.1-.2.3-.3.5-.3s.3.1.5.3c.1.3.2.6.2.9v.2h.1v-.1c.1 0 .1-.2.1-.6 0-.3 0-.6-.2-.9-.2-.3-.4-.5-.8-.5-.3 0-.6.2-.7.5-.2.4-.2.7-.2 1.2 0 .4.1.8.6 1.2 0-.1.1-.1.2-.2m12.8 14.5c.1 0 .1 0 .1-.1 0-.2-.1-.5-.4-.8-.3-.3-.8-.5-1.4-.6h-.4c-.1 0-.3 0-.4-.1.3-1 .4-1.8.4-2.5 0-1-.2-1.7-.6-2.4-.4-.6-.8-.9-1.3-1-.1.1-.1.1-.1.2.5.2 1 .6 1.3 1.2.3.7.4 1.3.4 2.1 0 .6-.1 1.4-.5 2.5-.4.2-.8.5-1.1 1.1 0 .1 0 .1.1.1 0 0 .1-.1.2-.3l.5-.5c.3-.2.5-.3.8-.3.5 0 1 .1 1.3.2.4.1.6.3.7.4.1.2.2.3.3.4 0 .3.1.4.1.4M16.5 7.7c-.1-.1-.1-.3-.1-.5 0-.4 0-.6.2-.9.2-.2.4-.3.6-.3.3 0 .5.2.7.4.1.3.2.5.2.8 0 .5-.2.8-.6.9 0 0 .1.1.2.1.2 0 .3.1.5.2.1-.6.2-1 .2-1.5 0-.6-.1-1-.3-1.3-.3-.3-.6-.4-1-.4-.3 0-.6.1-.9.3-.2.3-.3.5-.3.8 0 .5.1.9.3 1.3.1 0 .2.1.3.1m1.2 1.7c-1.3.9-2.4 1.3-3.2 1.3-.7 0-1.4-.3-2.1-.8.1.2.2.4.3.5l.6.6c.4.4.9.6 1.4.6.7 0 1.5-.4 2.6-1.1l.9-.6c.2-.2.4-.4.4-.7 0-.1 0-.2-.1-.2 0-.3-.5-.6-1.5-.9-.9-.4-1.6-.6-2.1-.6-.3 0-.8.2-1.5.6-.6.4-1 .8-1 1.2 0 0 .1.1.2.3.6.5 1.2.8 1.8.8.8 0 1.8-.4 3.2-1.4v.2c.1.1.1.2.1.2m2.4 20.7c.4.8 1.1 1.2 1.9 1.2.2 0 .4 0 .6-.1.2 0 .4-.1.5-.2.1-.1.2-.1.3-.2.2-.1.2-.1.3-.2l1.7-1.5c.4-.3.8-.6 1.3-.9l1-.5c.3-.1.5-.2.7-.4.1-.2.2-.3.2-.6s-.2-.5-.4-.7c-.2-.2-.4-.3-.6-.3-.2-.1-.4-.2-.7-.5-.2-.3-.4-.6-.5-1.1l-.1-.6c-.1-.3-.1-.5-.2-.6H26c-.1 0-.3.1-.4.3l-.6.6c-.1.2-.4.4-.6.6-.3.2-.6.3-.8.3-.8 0-1.2-.2-1.5-.7-.2-.3-.3-.7-.4-1.1-.2-.2-.3-.3-.5-.3-.5 0-.7.5-.7 1.6V27.3c0 .1-.1.3-.1.6-.1.3-.1.7-.1 1.1l-.2 1.1m-14.9-.6c1 .1 2.1.4 3.3.9 1.2.5 2 .7 2.3.7.7 0 1.3-.3 1.8-.9.1-.2.1-.4.1-.7 0-1-.6-2.2-1.8-3.7l-.7-.9c-.1-.2-.3-.5-.5-.9s-.4-.7-.6-.9c-.1-.2-.3-.5-.6-.7-.3-.2-.6-.4-.9-.5-.4.1-.7.2-.9.4s-.2.4-.2.6c0 .2-.1.4-.2.4-.1.1-.3.1-.5.2h-.6c-.5 0-.9.1-1.1.2-.3.3-.4.6-.4 1 0 .2 0 .4.1.8s.1.7.1.9c0 .4-.1.8-.4 1.3-.3.4-.4.8-.4 1 .2.4.9.7 2.1.8m3.4-9.3c0-.7.2-1.5.6-2.4.4-.9.7-1.5 1.1-1.9 0-.1-.1-.1-.2-.1l-.1-.2c-.3.3-.7 1-1.1 2.1-.4.9-.7 1.8-.7 2.4 0 .5.1.9.3 1.2.2.3.8.8 1.6 1.5l1.1.7c1.2 1 1.8 1.7 1.8 2.1 0 .2-.1.4-.4.7-.2.2-.5.4-.7.4v.1l.3.6c.4.6 1.4.9 2.6.9 2.3 0 4-.9 5.3-2.8 0-.5 0-.8-.1-1v-.4c0-.7.1-1.2.3-1.5.2-.3.4-.5.7-.5.2 0 .4.1.6.2.1-.8.1-1.5.1-2.1 0-.9 0-1.7-.2-2.4-.1-.6-.3-1.1-.5-1.5l-.6-.9c-.2-.3-.3-.6-.5-.9-.1-.4-.2-.7-.2-1.2-.3-.5-.5-1-.8-1.5-.2-.5-.4-1-.6-1.4l-.9.7c-1 .7-1.8 1-2.6 1-.6 0-1.1-.1-1.4-.5l-.6-.5c0 .3-.1.7-.3 1.1l-.6 1.2c-.3.7-.4 1.1-.5 1.4 0 .2-.1.4-.1.4l-.8 1.5c-.8 1.5-1.3 3-1.3 4.1 0 .2 0 .5.1.7-.5-.3-.7-.7-.7-1.3m7.4 9.7c-1.3 0-2.4.2-3.1.5-.5.6-1.1.9-1.9.9-.5 0-1.3-.2-2.4-.6-1.1-.4-2-.7-2.9-.8-.1 0-.3-.1-.6-.1s-.6-.1-.8-.1c-.2 0-.5-.1-.7-.2-.3-.1-.5-.2-.6-.3-.1-.1-.2-.3-.2-.4 0-.2 0-.3.1-.5s.2-.3.3-.4c.1-.1.1-.2.2-.3.1-.1.1-.2.1-.3 0-.1.1-.2.1-.3v-.3s0-.4-.1-1c-.1-.5-.1-.9-.1-1 0-.5.1-.8.3-1.1.2-.3.4-.4.7-.4h1.2c.1 0 .2-.1.5-.2.1-.2.1-.3.2-.4.1-.1.1-.2.1-.3 0-.1 0-.1.1-.2 0-.1.1-.2.2-.2-.1-.1-.1-.2-.1-.4v-.3c0-.4.2-.9.5-1.6l.4-.6.7-1.4c.2-.4.4-1 .6-1.8.2-.7.6-1.4 1.2-2.2l.8-.9c.5-.6.9-1.1 1.1-1.5.2-.4.3-.9.3-1.3 0-.2-.1-.8-.2-1.8s-.2-2.1-.2-3c0-.7.1-1.2.2-1.7s.4-1 .7-1.4c.3-.4.7-.8 1.3-1 .6-.2 1.3-.3 2.2-.3.3 0 .6 0 .9.1.3 0 .7.1 1.2.3.4.2.8.4 1.1.7.2.2.6.7.9 1.2.2.6.4 1.2.5 2.1.1.5.1 1 .2 1.7 0 .6.1 1 .1 1.3.1.3.1.7.2 1.2.1.4.2.8.4 1.1.2.4.4.8.7 1.2.3.5.7 1 1.1 1.6.9 1 1.6 2.2 2.1 3.3.5 1 .8 2.4.8 3.8 0 .7-.1 1.4-.3 2.1.2 0 .3.1.4.2s.2.5.3.9l.1.8c.1.2.2.4.5.6.2.2.4.3.7.5.2.1.5.2.7.4.2.2.3.4.3.6 0 .3-.1.6-.3.8-.2.2-.4.3-.7.4l-1.2.6c-.5.3-1 .7-1.5 1.1l-1 .9c-.4.4-.8.7-1.1.9-.3.2-.7.3-1.1.3l-.7-.1c-.8-.2-1.3-.6-1.6-1.3-1.8 0-3.1-.1-3.9-.1"/></svg>',
+        other:
+          '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 2h9l5 5v15a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2Zm8 1.5V8h4.5"/></svg>',
+      };
+
+      const state = {
+        source: "proxy",
+        releaseTag: FALLBACK_TAG,
+        assets: FALLBACK_ASSETS,
+        usingFallback: true,
+        preferredTarget: {
+          platformKey: "unknown",
+          arch: null,
+        },
+      };
+
+      const grid = document.querySelector("#download-grid");
+      const statusEl = document.querySelector("#release-status");
+      const sourceButtons = Array.from(document.querySelectorAll("[data-source]"));
+
+      function getPlatformKey() {
+        const platform = `${navigator.userAgentData?.platform || navigator.platform || ""} ${
+          navigator.userAgent || ""
+        }`.toLowerCase();
+
+        if (platform.includes("win")) return "windows";
+        if (platform.includes("mac")) return "macos";
+        if (platform.includes("linux") || platform.includes("x11")) return "linux";
+        return "unknown";
+      }
+
+      function normalizeArch(value) {
+        const arch = `${value || ""}`.toLowerCase();
+        if (!arch) return null;
+        if (arch.includes("arm") || arch.includes("aarch")) return "arm64";
+        if (arch.includes("x86") || arch.includes("intel")) return "x64";
+        return null;
+      }
+
+      async function detectPreferredTarget() {
+        const platformKey = getPlatformKey();
+        let arch = null;
+
+        if (platformKey === "macos") {
+          try {
+            if (navigator.userAgentData?.getHighEntropyValues) {
+              const hints = await navigator.userAgentData.getHighEntropyValues([
+                "architecture",
+                "bitness",
+              ]);
+              arch = normalizeArch(hints.architecture);
+              if (!arch && hints.bitness === "64") {
+                arch = normalizeArch(hints.architecture);
+              }
+            }
+          } catch (error) {
+            console.warn("[NeuroMark] Failed to read userAgentData architecture:", error);
+          }
+
+          if (!arch) {
+            const ua = (navigator.userAgent || "").toLowerCase();
+            if (/arm64|aarch64|apple\s?silicon/.test(ua)) {
+              arch = "arm64";
+            }
+          }
+        }
+
+        state.preferredTarget = { platformKey, arch };
+      }
+
+      function formatBytes(bytes) {
+        if (!Number.isFinite(bytes) || bytes <= 0) return "未知";
+        return `${Math.round(bytes / 1024 / 1024)} MB`;
+      }
+
+      function classifyAsset(asset) {
+        const name = asset.name.toLowerCase();
+        const extension = name.endsWith(".appimage")
+          ? "AppImage"
+          : name.endsWith(".dmg")
+            ? "DMG"
+            : name.endsWith(".exe")
+              ? "EXE"
+              : name.endsWith(".deb")
+                ? "DEB"
+                : "安装包";
+
+        if (name.includes("windows") || name.endsWith(".exe")) {
+          return {
+            platform: "Windows",
+            platformKey: "windows",
+            arch: name.includes("arm64") ? "arm64" : "x64",
+            detail: name.includes("arm64") ? "ARM64" : "x64",
+            extension,
+            icon: PLATFORM_ICONS.windows,
+          };
+        }
+
+        if (name.includes("macos") || name.endsWith(".dmg")) {
+          return {
+            platform: "macOS",
+            platformKey: "macos",
+            arch: name.includes("arm64") ? "arm64" : "x64",
+            detail: name.includes("arm64") ? "Apple Silicon" : "Intel x64",
+            extension,
+            icon: PLATFORM_ICONS.macos,
+          };
+        }
+
+        if (name.includes("linux") || name.endsWith(".deb") || name.endsWith(".appimage")) {
+          return {
+            platform: "Linux",
+            platformKey: "linux",
+            arch: name.includes("arm64") ? "arm64" : "x64",
+            detail: name.includes("appimage") ? "x86_64" : "amd64",
+            extension,
+            icon: PLATFORM_ICONS.linux,
+          };
+        }
+
+        return {
+          platform: "其他平台",
+          platformKey: "other",
+          arch: null,
+          detail: "Release asset",
+          extension,
+          icon: PLATFORM_ICONS.other,
+        };
+      }
+
+      function getDownloadUrl(url) {
+        return state.source === "proxy" ? `${GH_PROXY_PREFIX}${url}` : url;
+      }
+
+      function isRecommendedAsset(info) {
+        if (state.preferredTarget.platformKey !== info.platformKey) return false;
+        if (info.platformKey === "macos" && state.preferredTarget.arch) {
+          return info.arch === state.preferredTarget.arch;
+        }
+        return true;
+      }
+
+      function getSortRank(info) {
+        if (isRecommendedAsset(info)) return 0;
+
+        const order = {
+          windows: state.preferredTarget.platformKey === "windows" ? 1 : 2,
+          macos: state.preferredTarget.platformKey === "macos" ? 1 : 3,
+          linux: state.preferredTarget.platformKey === "linux" ? 1 : 4,
+          other: 9,
+        };
+
+        if (
+          info.platformKey === "macos" &&
+          state.preferredTarget.platformKey === "macos" &&
+          state.preferredTarget.arch
+        ) {
+          return 1;
+        }
+
+        return order[info.platformKey] ?? 9;
+      }
+
+      function sortAssets(assets) {
+        return [...assets].sort((a, b) => {
+          const left = classifyAsset(a);
+          const right = classifyAsset(b);
+          const rank = getSortRank(left) - getSortRank(right);
+          if (rank !== 0) return rank;
+          return a.name.localeCompare(b.name);
+        });
+      }
+
+      function renderDownloads() {
+        const sourceLabel = state.source === "proxy" ? "国内加速" : "GitHub 直连";
+
+        sourceButtons.forEach((button) => {
+          button.setAttribute("aria-pressed", String(button.dataset.source === state.source));
+        });
+
+        grid.innerHTML = sortAssets(state.assets)
+          .map((asset) => {
+            const info = classifyAsset(asset);
+            const isRecommended = isRecommendedAsset(info);
+            const url = getDownloadUrl(asset.browser_download_url);
+
+            return `
+              <article class="download-card ${isRecommended ? "recommended" : ""}">
+                <div class="download-card-head">
+                  <div>
+                    <div class="platform-name">${info.platform}</div>
+                    <div class="download-meta" style="margin-top: 10px;">
+                      <span><em>架构 / 格式</em><b>${info.detail} · ${info.extension}</b></span>
+                    </div>
+                  </div>
+                  <span class="format-tag">${info.icon}</span>
+                </div>
+                <div class="download-meta">
+                  <span><em>文件大小</em><b>${formatBytes(asset.size)}</b></span>
+                  <span><em>当前来源</em><b>${sourceLabel}</b></span>
+                </div>
+                <a class="button download-link" href="${url}" download>下载 ${info.platform}</a>
+              </article>
+            `;
+          })
+          .join("");
+      }
+
+      function setReleaseStatus() {
+        if (state.usingFallback) {
+          statusEl.innerHTML = `无法读取最新 Release 时，已启用 <strong>${FALLBACK_TAG}</strong> 备用下载列表。`;
+          return;
+        }
+
+        statusEl.innerHTML = `GitHub 最新 Release：<strong>${state.releaseTag}</strong>。你可以在国内加速和 GitHub 直连之间切换。`;
+      }
+
+      async function loadLatestRelease() {
+        try {
+          const response = await fetch(REPO_RELEASE_API, {
+            headers: { Accept: "application/vnd.github+json" },
+          });
+
+          if (!response.ok) {
+            throw new Error(`GitHub API returned ${response.status}`);
+          }
+
+          const release = await response.json();
+          const assets = Array.isArray(release.assets)
+            ? release.assets.filter((asset) =>
+                /\.(dmg|exe|deb|appimage)$/i.test(asset.name)
+              )
+            : [];
+
+          if (assets.length === 0) {
+            throw new Error("No distributable assets found");
+          }
+
+          state.releaseTag = release.tag_name || "latest";
+          state.assets = assets;
+          state.usingFallback = false;
+        } catch (error) {
+          console.warn("[NeuroMark] Falling back to static release assets:", error);
+          state.releaseTag = FALLBACK_TAG;
+          state.assets = FALLBACK_ASSETS;
+          state.usingFallback = true;
+        } finally {
+          setReleaseStatus();
+          renderDownloads();
+        }
+      }
+
+      sourceButtons.forEach((button) => {
+        button.addEventListener("click", () => {
+          state.source = button.dataset.source;
+          renderDownloads();
+        });
+      });
+
+      async function initDownloads() {
+        await detectPreferredTarget();
+        renderDownloads();
+        loadLatestRelease();
+      }
+
+      initDownloads();
+    </script>
+  </body>
+</html>

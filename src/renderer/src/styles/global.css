@@ -1195,6 +1195,38 @@ textarea {
   overflow: hidden;
 }
 
+.smart-name-layout--suggestions {
+  height: clamp(760px, calc(100dvh - 150px), 1120px);
+  max-height: calc(100dvh - 150px);
+}
+
+.smart-name-layout--expanded-logs {
+  height: auto;
+  max-height: none;
+  align-items: start;
+  overflow: visible;
+}
+
+.smart-name-layout--expanded-logs .smart-name-main,
+.smart-name-layout--expanded-logs .result-workspace {
+  overflow: visible;
+}
+
+.smart-name-layout--expanded-logs .result-workspace {
+  height: auto;
+  min-height: 0;
+}
+
+.smart-name-layout--expanded-logs .result-workspace-scroll {
+  overflow: visible;
+  contain: none;
+  padding-right: 0;
+}
+
+.smart-name-layout--expanded-logs .stream-output-box {
+  max-height: none;
+}
+
 .smart-name-main {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);

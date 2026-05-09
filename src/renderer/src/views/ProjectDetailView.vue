@@ -61,7 +61,6 @@ import type {
   SmartNameMatchSnapshot,
   SmartNameMatchSuggestion,
   ProjectSettings,
-  ScorePostProcessProjectSnapshot,
 } from '@preload/contracts';
 import ImagePreviewTile from '@/components/ImagePreviewTile.vue';
 import JsonTreeView from '@/components/JsonTreeView.vue';
@@ -72,6 +71,7 @@ import StatusPill from '@/components/StatusPill.vue';
 import StudentInfoAutocompleteInput from '@/components/StudentInfoAutocompleteInput.vue';
 import { useDebugPanelStore } from '@/stores/debug-panel';
 import { useProjectsStore } from '@/stores/projects';
+import { useScorePostProcessStore } from '@/stores/score-post-process';
 import { useTasksStore } from '@/stores/tasks';
 import { useTokenVisualizerStore } from '@/stores/token-visualizer';
 import { toImageSrc } from '@/utils/file';
@@ -95,6 +95,7 @@ const route = useRoute();
 const router = useRouter();
 const message = useMessage();
 const projectsStore = useProjectsStore();
+const scorePostProcessStore = useScorePostProcessStore();
 const tasksStore = useTasksStore();
 const debugPanelStore = useDebugPanelStore();
 const visualizerStore = useTokenVisualizerStore();
@@ -216,8 +217,10 @@ let smartNameMatchUnsubscribe: (() => void) | null = null;
 let shellScrollObserver: ResizeObserver | null = null;
 let resultPrintDocumentTitleBeforePrint: string | null = null;
 let scoreDistributionChart: ECharts | null = null;
-const scorePostProcessSnapshot = ref<ScorePostProcessProjectSnapshot | null>(
-  null,
+const scorePostProcessSnapshot = computed(() =>
+  projectId.value
+    ? scorePostProcessStore.getProjectSnapshot(projectId.value)
+    : null,
 );
 
 function setShellScrollLocked(locked: boolean) {
@@ -812,12 +815,10 @@ function resizeScoreDistributionChart() {
 
 async function loadScorePostProcessSnapshot() {
   if (!projectId.value) {
-    scorePostProcessSnapshot.value = null;
     return;
   }
 
-  scorePostProcessSnapshot.value =
-    await window.neuromark.scorePostProcess.getProjectSnapshot(projectId.value);
+  await scorePostProcessStore.loadProjectSnapshot(projectId.value);
 }
 
 function buildOriginalPreviewImage(
@@ -1059,6 +1060,15 @@ const smartNameMatchState = computed<SmartNameMatchSnapshot>(() =>
 );
 const smartNameMatchIsRunning = computed(
   () => smartNameMatchState.value.status === 'running',
+);
+const smartNameMatchHasResult = computed(() =>
+  Boolean(smartNameMatchState.value.result),
+);
+const smartNameLayoutShouldExpandLogs = computed(
+  () =>
+    smartNameWorkspaceMode.value === 'auto' &&
+    smartNameMatchIsRunning.value &&
+    !smartNameMatchHasResult.value,
 );
 const smartNameMatchSuggestions = computed<SmartNameMatchSuggestion[]>(
   () => smartNameMatchState.value.result?.suggestions ?? [],
@@ -3972,6 +3982,10 @@ function goBack() {
           <div
             v-if="results.length"
             class="smart-name-layout"
+            :class="{
+              'smart-name-layout--expanded-logs': smartNameLayoutShouldExpandLogs,
+              'smart-name-layout--suggestions': smartNameMatchHasResult,
+            }"
             @mouseenter="isReviewScrollActive = true"
             @mouseleave="isReviewScrollActive = false"
             @click="hideSmartNameContextMenu"
