@@ -9,7 +9,7 @@ import {
 describe('student roster utils', () => {
   it('parses tabular roster text and detects the three student columns', () => {
     const parsed = parseStudentRosterText(
-      ['1120240584\t\t郭爽\t06212404', '1120240587\t\t李泽宣\t06212403'].join(
+      ['8394726105\t\t韩知远\tC7A4', '5739182046\t\t陆星禾\tC7A3'].join(
         '\n',
       ),
     );
@@ -24,7 +24,7 @@ describe('student roster utils', () => {
 
   it('supports chinese, full pinyin and initials search on roster entries', () => {
     const roster = buildStudentRosterData(
-      ['1120240584\t\t郭爽\t06212404', '1120240587\t\t李泽宣\t06212403'].join(
+      ['8394726105\t\t韩知远\tC7A4', '5739182046\t\t陆星禾\tC7A3'].join(
         '\n',
       ),
       ['studentId', 'name', 'className'],
@@ -33,17 +33,17 @@ describe('student roster utils', () => {
     expect(roster).not.toBeNull();
     const entries = roster?.entries ?? [];
 
-    expect(searchStudentRosterEntries(entries, 'name', '郭爽')[0]?.name).toBe(
-      '郭爽',
+    expect(searchStudentRosterEntries(entries, 'name', '韩知远')[0]?.name).toBe(
+      '韩知远',
     );
     expect(
-      searchStudentRosterEntries(entries, 'name', 'guoshuang')[0]?.name,
-    ).toBe('郭爽');
-    expect(searchStudentRosterEntries(entries, 'name', 'gs')[0]?.name).toBe(
-      '郭爽',
+      searchStudentRosterEntries(entries, 'name', 'hanzhiyuan')[0]?.name,
+    ).toBe('韩知远');
+    expect(searchStudentRosterEntries(entries, 'name', 'hzy')[0]?.name).toBe(
+      '韩知远',
     );
     expect(
-      searchStudentRosterEntries(entries, 'studentId', '06212403')[0]?.name,
-    ).toBe('李泽宣');
+      searchStudentRosterEntries(entries, 'studentId', '5739182046')[0]?.name,
+    ).toBe('陆星禾');
   });
 });

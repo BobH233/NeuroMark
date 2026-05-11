@@ -4,9 +4,9 @@ import { computeDisplayedTotal } from '../../src/renderer/src/utils/result';
 
 const baseResult: FinalResult = {
   studentInfo: {
-    className: '06212401',
-    studentId: '1120241001',
-    name: '测试学生',
+    className: 'D4C9',
+    studentId: '6918203745',
+    name: '许清和',
   },
   questionScores: [
     {

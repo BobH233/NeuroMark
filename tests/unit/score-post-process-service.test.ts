@@ -23,8 +23,8 @@ function createPaper(
     manualScore: 72,
     studentInfo: {
       className: '一班',
-      studentId: '001',
-      name: '张三',
+      studentId: '7482051936',
+      name: '沈沐阳',
     },
     questionScores: [],
     nameMatchStatus: 'verified',

@@ -5347,7 +5347,7 @@ function goBack() {
                     v-model:value="projectRosterDraftText"
                     type="textarea"
                     :autosize="{ minRows: 6, maxRows: 12 }"
-                    placeholder="逐行粘贴花名册，如：1120240584    郭爽    06212404"
+                    placeholder="逐行粘贴花名册，如：8394726105    韩知远    C7A4"
                   />
 
                   <div

@@ -100,9 +100,9 @@ describe('validateModelResult', () => {
     const result = validateModelResult(
       {
         studentInfo: {
-          className: '1班',
-          studentId: '1001',
-          name: '张三',
+          className: 'C1A8',
+          studentId: '2847396150',
+          name: '唐亦舟',
         },
         questionScores: [
           {
