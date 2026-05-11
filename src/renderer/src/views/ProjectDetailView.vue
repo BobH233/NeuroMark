@@ -4458,7 +4458,7 @@ function goBack() {
 
                   <div
                     v-if="smartNameMatchIsRunning"
-                    class="result-subsection-card"
+                    class="result-subsection-card smart-name-running-card"
                   >
                     <div class="answer-generation-pending">
                       <n-spin size="large" />

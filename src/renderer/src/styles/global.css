@@ -1223,8 +1223,19 @@ textarea {
   padding-right: 0;
 }
 
+.smart-name-layout--expanded-logs .result-sidebar {
+  align-self: start;
+  height: min(900px, calc(100dvh - 230px));
+  max-height: calc(100dvh - 230px);
+  overflow: hidden;
+}
+
+.smart-name-layout--expanded-logs .result-sidebar-scroll {
+  overflow: auto;
+}
+
 .smart-name-layout--expanded-logs .stream-output-box {
-  max-height: none;
+  max-height: min(320px, 38vh);
 }
 
 .smart-name-main {
@@ -1928,6 +1939,11 @@ textarea {
   max-height: min(360px, 36vh);
   overflow: auto;
   padding: 22px;
+}
+
+.smart-name-running-card {
+  min-height: 0;
+  overflow: visible;
 }
 
 .smart-name-summary-grid {
